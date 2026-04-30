@@ -135,6 +135,18 @@ public sealed class MjAutoCommand : IDisposable
                 HandlePoolIcons();
                 break;
 
+            case "discardhook":
+                {
+                    var drained = plugin.DiscardHook.DrainNew();
+                    plugin.DiscardHook.LogDrained(drained);
+                    Plugin.ChatGui.Print(
+                        $"[MjAuto] DiscardHook  active={plugin.DiscardHook.Active}  " +
+                        $"totalHits={plugin.DiscardHook.DiagHitCount}  " +
+                        $"lastTileId={plugin.DiscardHook.DiagLastTileId}  " +
+                        $"drainedNow={drained.Count} → {plugin.DiscardHook}");
+                }
+                break;
+
             case "log":
                 HandleLog(rest);
                 break;

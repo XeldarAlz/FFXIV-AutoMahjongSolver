@@ -39,5 +39,13 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool ShowSuggestionDetails { get; set; } = false;
 
+    /// <summary>
+    /// Write per-hand NDJSON game logs under <c>pluginConfigs/DomanMahjongAI/games/</c>.
+    /// Feeds the Doman-specific training corpus for later supervised policy learning.
+    /// On by default during development; opt-out for end-user builds that want to
+    /// skip the disk writes.
+    /// </summary>
+    public bool EnableGameLogging { get; set; } = true;
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

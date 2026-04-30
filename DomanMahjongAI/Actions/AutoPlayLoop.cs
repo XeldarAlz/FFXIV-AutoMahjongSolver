@@ -227,6 +227,8 @@ public sealed class AutoPlayLoop : IDisposable
                 LastActionDescription = $"auto-riichi-tsumogiri {tile} slot=13 → {result}";
                 Plugin.Log.Info(
                     $"[AutoPlayLoop] riichi-tsumogiri dispatch: {LastActionDescription}");
+                plugin.GameLogger.RecordAction(
+                    ActionKind.Discard, tile, 13, result.ToString(), "riichi-tsumogiri");
                 // Consumed: don't fire tsumogiri again on the next retry.
                 riichiConfirmLatched = false;
             }
@@ -267,6 +269,8 @@ public sealed class AutoPlayLoop : IDisposable
                 var result = plugin.Dispatcher.DispatchCallOption(0);
                 LastActionDescription = $"auto-variant[opt=0] → {result}";
                 Plugin.Log.Info($"[AutoPlayLoop] variant dispatch: {LastActionDescription}");
+                plugin.GameLogger.RecordAction(
+                    ActionKind.Chi, null, 0, result.ToString(), "chi-variant");
             }
             catch (Exception ex)
             {
@@ -312,6 +316,8 @@ public sealed class AutoPlayLoop : IDisposable
                 {
                     var result0 = plugin.Dispatcher.DispatchTsumo();
                     LastActionDescription = $"auto-tsumo → {result0}";
+                    plugin.GameLogger.RecordAction(
+                        ActionKind.Tsumo, null, null, result0.ToString(), choice.Reasoning);
                     return;
                 }
 
@@ -325,6 +331,8 @@ public sealed class AutoPlayLoop : IDisposable
                     }
                     var result1 = plugin.Dispatcher.DispatchKan(kanSlot);
                     LastActionDescription = $"auto-ankan {kanTile} slot={kanSlot} → {result1}";
+                    plugin.GameLogger.RecordAction(
+                        ActionKind.AnKan, kanTile, kanSlot, result1.ToString(), choice.Reasoning);
                     return;
                 }
 
@@ -353,6 +361,8 @@ public sealed class AutoPlayLoop : IDisposable
                     : plugin.Dispatcher.DispatchDiscard(slot);
                 string actionName = choice.Kind == ActionKind.Riichi ? "riichi" : "discard";
                 LastActionDescription = $"auto-{actionName} {tile} slot={slot} → {result}";
+                plugin.GameLogger.RecordAction(
+                    choice.Kind, tile, slot, result.ToString(), choice.Reasoning);
             }
             catch (Exception ex)
             {
@@ -411,6 +421,10 @@ public sealed class AutoPlayLoop : IDisposable
                         ? "riichi-confirm"
                         : choice.Kind.ToString().ToLowerInvariant();
                     LastActionDescription = $"auto-{label} → {result}";
+                    var loggedKind = acceptRiichiPopup ? ActionKind.Riichi : choice.Kind;
+                    plugin.GameLogger.RecordAction(
+                        loggedKind, null, null, result.ToString(),
+                        acceptRiichiPopup ? "riichi-confirm" : choice.Reasoning);
                     // Meld recording is handled centrally by InputEventLogger's
                     // FireCallback hook, which sees both our DispatchCall() and manual
                     // in-game clicks. Avoids double-recording.
@@ -438,6 +452,8 @@ public sealed class AutoPlayLoop : IDisposable
                     if (legal.Can(Engine.ActionFlags.Tsumo)) passIndex++;
                     result = plugin.Dispatcher.DispatchCallOption(passIndex);
                     LastActionDescription = $"auto-pass[opt={passIndex}] → {result}";
+                    plugin.GameLogger.RecordAction(
+                        ActionKind.Pass, null, passIndex, result.ToString(), choice.Reasoning);
                 }
 
                 Plugin.Log.Info($"[AutoPlayLoop] call-prompt dispatch: {LastActionDescription}");

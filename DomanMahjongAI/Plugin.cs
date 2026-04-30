@@ -8,6 +8,8 @@ using Dalamud.Plugin.Services;
 using DomanMahjongAI.Actions;
 using DomanMahjongAI.Commands;
 using DomanMahjongAI.GameState;
+using DomanMahjongAI.Hooks;
+using DomanMahjongAI.Logging;
 using DomanMahjongAI.Policy;
 using DomanMahjongAI.Policy.Efficiency;
 using DomanMahjongAI.Policy.Mcts;
@@ -43,7 +45,9 @@ public sealed class Plugin : IDalamudPlugin
     public IPolicy IsmctsPolicyInstance { get; }
     public InputEventLogger EventLogger { get; }
     public InputDispatcher Dispatcher { get; } = new();
+    public GameLogger GameLogger { get; }
     public AutoPlayLoop AutoPlay { get; }
+    public DiscardHook DiscardHook { get; }
 
     private readonly MjAutoCommand command;
 
@@ -57,7 +61,14 @@ public sealed class Plugin : IDalamudPlugin
         IsmctsPolicyInstance = new IsmctsPolicy();
         Policy = Configuration.PolicyTier == "mcts" ? IsmctsPolicyInstance : EfficiencyPolicyInstance;
         EventLogger = new InputEventLogger(AddonReader, MeldTracker);
+        GameLogger = new GameLogger(Aggregator, Configuration);
         AutoPlay = new AutoPlayLoop(this);
+        // Mid-function asm hook on the discard handler at ffxiv_dx11.exe+0x1A20A43.
+        // Captures every (pool_base, tile_id) tuple as the game commits each
+        // discard. Verified empirically via Cheat Engine 2026-04-27. If sigscan
+        // fails (e.g. patched binary), the hook stays inert and the rest of the
+        // plugin still works.
+        DiscardHook = new DiscardHook();
 
         MainWindow = new MainWindow(this);
         DebugOverlay = new DebugOverlay(this);
@@ -85,6 +96,8 @@ public sealed class Plugin : IDalamudPlugin
         DebugOverlay.Dispose();
         HandOverlay.Dispose();
         AutoPlay.Dispose();
+        DiscardHook.Dispose();
+        GameLogger.Dispose();
         EventLogger.Dispose();
         Aggregator.Dispose();
         AddonReader.Dispose();
