@@ -5,3 +5,9 @@ obj/
 .vs/
 .idea/
 *.DotSettings.user
+
+# Diagnostic dumps from /mjauto findtiles, hexdump, poolslots, poolicons
+emj-*.txt
+*.rcnet
+*_rcnet_data.xml
+reflect.txt
