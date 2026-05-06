@@ -23,7 +23,7 @@
     ],
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/DomanMahjongAI/images/icon.png",
     "Punchline": "Doman Mahjong helper — hints or auto-play.",
-    "Description": "!!! This plugin is in alpha stage, expect bugs, want to contribute please report them!\n\nA helper for Doman Mahjong at the Gold Saucer. Two modes:\n\n• Hint mode (default): shows the best tile to discard and a short explanation. You still click every move.\n• Auto-play: the plugin watches the table and clicks for you with natural pacing.\n\nStarts off by default. You must accept a short notice before auto-play can be turned on, and you can switch back to hints or turn it off at any time from the plugin window.",
+    "Description": "This plugin is in alpha stage, expect bugs, want to contribute please report them!\n\nA helper for Doman Mahjong at the Gold Saucer. Two modes:\n\n• Hint mode (default): shows the best tile to discard and a short explanation. You still click every move.\n• Auto-play: the plugin watches the table and clicks for you with natural pacing.\n\nStarts off by default. You must accept a short notice before auto-play can be turned on, and you can switch back to hints or turn it off at any time from the plugin window.",
     "Changelog": "v0.0.0.24 — New About window with GitHub / issue / discussion / security links and an alpha-stage notice asking for bug reports and contributors. The Dalamud installer description carries the same notice. Layout fix: the idle / in-match badge in the status card no longer overflows past the card's right border.",
     "DownloadCount": 303,
     "LastUpdate": 0,

@@ -2,7 +2,7 @@
   "Author": "XeldarAlz",
   "Name": "Doman Mahjong Solver",
   "Punchline": "Doman Mahjong helper — hints or auto-play.",
-  "Description": "!!! This plugin is in alpha stage, expect bugs, want to contribute please report them!\n\nA helper for Doman Mahjong at the Gold Saucer. Two modes:\n\n• Hint mode (default): shows the best tile to discard and a short explanation. You still click every move.\n• Auto-play: the plugin watches the table and clicks for you with natural pacing.\n\nStarts off by default. You must accept a short notice before auto-play can be turned on, and you can switch back to hints or turn it off at any time from the plugin window.",
+  "Description": "This plugin is in alpha stage, expect bugs, want to contribute please report them!\n\nA helper for Doman Mahjong at the Gold Saucer. Two modes:\n\n• Hint mode (default): shows the best tile to discard and a short explanation. You still click every move.\n• Auto-play: the plugin watches the table and clicks for you with natural pacing.\n\nStarts off by default. You must accept a short notice before auto-play can be turned on, and you can switch back to hints or turn it off at any time from the plugin window.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
   "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/DomanMahjongAI/images/icon.png",
