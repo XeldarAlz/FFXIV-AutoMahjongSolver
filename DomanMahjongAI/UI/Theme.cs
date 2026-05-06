@@ -105,13 +105,16 @@ internal static class Theme
     }
 
     // ---- Card (surface panel via drawlist channel-split) -----------------
+    public const float CardPadX = 12f;
+    public const float CardPadY = 10f;
+
     /// <summary>
     /// Open a surface card that auto-fits its content. Uses drawlist
     /// channel-split so the background paints behind content drawn inside
     /// the <c>using</c> block, without needing a fixed height.
     /// </summary>
     public static Card BeginCard(string id, bool alt = false)
-        => new(new Vector2(12, 10), alt ? SurfaceAlt : Surface, Border);
+        => new(new Vector2(CardPadX, CardPadY), alt ? SurfaceAlt : Surface, Border);
 
     public struct Card : IDisposable
     {
@@ -199,13 +202,18 @@ internal static class Theme
         ImGui.Dummy(size);
     }
 
-    /// <summary>Right-align the next item on the current line by shifting the cursor.</summary>
-    public static void RightAlign(float itemWidth)
+    /// <summary>
+    /// Right-align the next item on the current line by shifting the cursor.
+    /// Inside a Card the right padding isn't reflected by ImGui's content region
+    /// (only <c>Indent</c> for the left is), so callers must pass the same right
+    /// inset (e.g. <see cref="CardPadX"/>) they want as visual margin.
+    /// </summary>
+    public static void RightAlign(float itemWidth, float rightMargin = 0f)
     {
         ImGui.SameLine();
-        float remaining = ImGui.GetContentRegionAvail().X;
-        if (remaining > itemWidth)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + remaining - itemWidth);
+        float target = ImGui.GetContentRegionAvail().X - itemWidth - rightMargin;
+        if (target > 0f)
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + target);
     }
 
     // ---- Tile rendering --------------------------------------------------

@@ -35,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("DomanMahjongAI");
     public Configuration Configuration { get; }
     public MainWindow MainWindow { get; }
+    public AboutWindow AboutWindow { get; }
     public DebugOverlay DebugOverlay { get; }
     public HandOverlay HandOverlay { get; }
     public AddonEmjReader AddonReader { get; }
@@ -71,9 +72,11 @@ public sealed class Plugin : IDalamudPlugin
         DiscardHook = new DiscardHook();
 
         MainWindow = new MainWindow(this);
+        AboutWindow = new AboutWindow();
         DebugOverlay = new DebugOverlay(this);
         HandOverlay = new HandOverlay(this);
         WindowSystem.AddWindow(MainWindow);
+        WindowSystem.AddWindow(AboutWindow);
         WindowSystem.AddWindow(DebugOverlay);
 
         command = new MjAutoCommand(this);
@@ -93,6 +96,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainWindow;
         WindowSystem.RemoveAllWindows();
         MainWindow.Dispose();
+        AboutWindow.Dispose();
         DebugOverlay.Dispose();
         HandOverlay.Dispose();
         AutoPlay.Dispose();
@@ -104,6 +108,8 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     public void ToggleMainWindow() => MainWindow.Toggle();
+
+    public void ToggleAboutWindow() => AboutWindow.Toggle();
 
     public void ToggleDebugOverlay() => DebugOverlay.Toggle();
 

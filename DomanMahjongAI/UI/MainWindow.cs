@@ -50,6 +50,7 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
+        DrawTopToolbar();
         DrawStatusCard(cfg);
         ImGui.Dummy(new Vector2(0, 4));
         DrawModeCard(cfg);
@@ -57,6 +58,19 @@ public sealed class MainWindow : Window, IDisposable
         DrawLiveCard();
         ImGui.Dummy(new Vector2(0, 6));
         DrawSettings(cfg);
+    }
+
+    // ============================================================
+    // Top toolbar — right-aligned About button
+    // ============================================================
+    private void DrawTopToolbar()
+    {
+        const string label = "About";
+        float btnW = ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2;
+        float avail = ImGui.GetContentRegionAvail().X;
+        if (avail > btnW) ImGui.SetCursorPosX(ImGui.GetCursorPosX() + avail - btnW);
+        if (ImGui.SmallButton(label + "##about-toggle"))
+            plugin.ToggleAboutWindow();
     }
 
     // ============================================================
@@ -116,7 +130,7 @@ public sealed class MainWindow : Window, IDisposable
             string badgeText = addonOk ? "in match" : "idle";
             var badgeTint = addonOk ? Theme.Accent : Theme.Muted;
             float badgeW = ImGui.CalcTextSize(badgeText).X + 28;
-            Theme.RightAlign(badgeW);
+            Theme.RightAlign(badgeW, Theme.CardPadX);
             Theme.Pill(badgeText, badgeTint, filled: false);
         }
     }
