@@ -1,0 +1,41 @@
+<Project>
+
+  <!--
+    Single source of truth for cross-project MSBuild settings.
+
+    Every .csproj in this solution inherits the properties below. Project-
+    specific overrides (TargetFramework, RootNamespace, ProjectReferences)
+    stay in the individual .csproj files. Anything that should be uniform
+    across the whole repo lives here.
+
+    The <Version> property is read by .github/workflows/auto-tag.yml at
+    every push to main; if the parsed value has no matching v* tag the
+    workflow creates one and triggers release.yml. CI also asserts that
+    this value matches repo/repo.json (AssemblyVersion + TestingAssemblyVersion).
+  -->
+
+  <PropertyGroup Label="Identity">
+    <Version>0.1.0.0</Version>
+    <Authors>XeldarAlz</Authors>
+    <Copyright>Copyright (c) XeldarAlz</Copyright>
+    <PackageProjectUrl>https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver</PackageProjectUrl>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <NeutralLanguage>en-US</NeutralLanguage>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Compile">
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Determinism" Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>
