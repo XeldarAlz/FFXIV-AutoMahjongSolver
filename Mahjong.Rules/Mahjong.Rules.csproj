@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mahjong.Rules — pluggable rule definitions.
+
+    Contract:
+      * Builds on Mahjong.Core (value types) only. No I/O, no Dalamud.
+      * Every yaku is one IYakuRule implementation in its own file.
+      * Scoring tiers, dora cycles, fu tables are data on IScoringRule /
+        IDoraRule / IFuRule, never magic numbers in calling code.
+      * Variants (Riichi, Doman, Tenhou) compose rules — they don't subclass.
+
+    Consumers: Engine (Scorer orchestrates rules), Policy (reasoning over yaku),
+    Replay (Tenhou replays score under RiichiRuleSet).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Rules</RootNamespace>
+    <AssemblyName>Mahjong.Rules</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Core\Mahjong.Core.csproj" />
+  </ItemGroup>
+
+</Project>
