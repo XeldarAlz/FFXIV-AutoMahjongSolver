@@ -1,6 +1,4 @@
-using Xunit;
-
-namespace DomanMahjongAI.Engine.Tests;
+namespace Mahjong.Core.Tests;
 
 public class TileTests
 {

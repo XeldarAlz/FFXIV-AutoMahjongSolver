@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mahjong.Core — pure value types and primitive helpers.
+
+    Contract:
+      * No I/O, no Dalamud, no FFXIV. Just data and the smallest possible
+        helpers (parse, render, count) that are inseparable from the data.
+      * Every public type is immutable from the caller's perspective.
+        Constructors that accept lists or arrays must defensive-copy.
+      * Wall is the deliberate exception: it's a mutable seen-counter,
+        which is intentional and called out in its summary.
+
+    Consumers: Engine, Policy, Tuner, the Dalamud plugin. None of them
+    should declare value types of their own that fit naturally here —
+    if a type belongs to "the language of mahjong," it lives here.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Core</RootNamespace>
+    <AssemblyName>Mahjong.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>
