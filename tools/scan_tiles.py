@@ -75,7 +75,7 @@ if __name__ == "__main__":
     path = Path(sys.argv[1])
     text = path.read_text(encoding="utf-8", errors="replace")
     # Sizes must match the snap command's dump ranges (see WriteSnapFile in
-    # DomanMahjongAI/Commands/MjAutoCommand.cs). Out-of-sync sizes silently
+    # Mahjong.Plugin.Dalamud/Commands/MjAutoCommand.cs). Out-of-sync sizes silently
     # truncate the late part of the dump and hide potential tile patterns.
     addon = load_region(text, "-- addon @", 0x6000)
     agent = load_region(text, "-- AgentEmj @", 0x3000)

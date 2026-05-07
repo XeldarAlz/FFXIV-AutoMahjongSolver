@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="DomanMahjongAI/images/icon.png" width="120" alt="Doman Mahjong Solver icon">
+  <img src="Mahjong.Plugin.Dalamud/images/icon.png" width="120" alt="Doman Mahjong Solver icon">
 </p>
 
 <h1 align="center">Doman Mahjong Solver (WORK IN PROGRESS)</h1>
@@ -74,32 +74,53 @@ Tick the checkbox, save. Then `/xlplugins` → search **Doman Mahjong Solver** �
 ### Build & test
 
 ```bash
-dotnet build DomanMahjongAI.sln
-dotnet test  DomanMahjongAI.sln
+dotnet build Mahjong.Plugin.Dalamud.sln
+dotnet test  Mahjong.Plugin.Dalamud.sln
 ```
 
-**196 tests** across:
+**349 tests** across six suites:
 
-- **Engine** (140 tests) — tiles, shanten, ukeire, yaku, fu, scoring, call-candidate derivation.
-- **Policy** (56 tests) — efficiency policy, riichi / call / push-fold evaluators, Bayesian opponent model, ISMCTS with progressive widening, hand simulator, evolutionary weight tuner, Tenhou log parser.
+- **Mahjong.Core** (58) — value-type semantics, defensive-copy contract.
+- **Mahjong.Rules** (51) — yaku rules + scoring tiers + dora cycles + conflict declarations.
+- **Mahjong.Plugin.Game** (33) — `Result<T,E>`, JSON layout loader, `ActionStateMachine` transitions.
+- **Mahjong.Replay** (17) — Tenhou parser + golden-file regression suite.
+- **Engine** (113) — decomposition, shanten, ukeire, fu, scoring (via `Scorer + RiichiRuleSet`), yaku detection.
+- **Policy** (77) — every sub-policy in isolation, MCTS pool semantics, weight bundle defaults, JSON weight provider, structured `Decision<T>` rationale.
 
-Engine and Policy are Dalamud-free and portable.
+Every project except `Mahjong.Plugin.Dalamud` itself is Dalamud-free and portable. See [`docs/architecture.md`](docs/architecture.md) for the layered overview and extension points.
 
 ### Layout
 
 ```
 FFXIV-DomanMahjongSolver/
-├── DomanMahjongAI/       Plugin entry · UI · dispatch · reader · meld tracker
-├── Engine/               Tiles · shanten · ukeire · yaku · fu · scoring
-├── Policy/               Efficiency · ISMCTS · opponent model · tuners · Tenhou parser
-├── tests/                Engine.Tests · Policy.Tests
-├── repo/repo.json        Custom Dalamud repo manifest
-└── .github/workflows/    CI · auto-tag · release
+├── Mahjong.Core/                value types — Tile, Meld, Hand, Decomposition, ...
+├── Mahjong.Rules/               IRuleSet + 38 IYakuRule + scoring/dora/fu rules
+├── Mahjong.Policy.Abstractions/ contracts — IPolicy + sub-policies, IRandomSource, weights
+├── Mahjong.Plugin.Game/         plugin contracts + LayoutProfile + ActionStateMachine
+├── Mahjong.Replay/              Tenhou parser + golden-file regression harness
+├── Engine/                      decomposition · shanten · ukeire · Scorer
+├── Policy/                      heuristic + ISMCTS implementations · weight tuner
+├── Tuner/                       offline weight optimization (console exe)
+├── Mahjong.Plugin.Dalamud/              the Dalamud plugin (thin shell)
+│
+├── data/
+│   ├── layouts/                 per-variant addon offset profiles (JSON)
+│   ├── replays/                 Tenhou logs + golden snapshots for regression
+│   └── weights/                 tuner output — versioned weight bundles
+│
+├── docs/
+│   ├── architecture.md          layered overview · extension points
+│   └── ruleset.md               Doman vs Riichi rules spec
+│
+├── tests/                       per-project test suites (349 tests)
+├── tools/                       Python RE scripts for new-variant capture
+├── repo/repo.json               Dalamud plugin manifest
+└── .github/workflows/           CI (build · test · format · version sync) · auto-tag · release
 ```
 
 ### Releasing
 
-Bump `<Version>` in `DomanMahjongAI/DomanMahjongAI.csproj` **and** `AssemblyVersion` + `TestingAssemblyVersion` in `repo/repo.json` (all must match). Merge to main → `auto-tag` workflow creates the `vX.Y.Z` tag → `release` workflow builds and uploads `latest.zip`. On first run per version, the release tag sometimes needs a one-time manual re-push (GitHub won't let workflow-pushed tags trigger other workflows).
+Bump `<Version>` in [`Directory.Build.props`](Directory.Build.props) (single source of truth) **and** `AssemblyVersion` + `TestingAssemblyVersion` in `repo/repo.json`. CI's `guards` job fails fast if the three values don't match. Merge to main → `auto-tag` workflow creates the `vX.Y.Z` tag → `release` workflow builds and uploads `latest.zip`. On first run per version, the release tag sometimes needs a one-time manual re-push (GitHub won't let workflow-pushed tags trigger other workflows).
 
 ### Roadmap
 

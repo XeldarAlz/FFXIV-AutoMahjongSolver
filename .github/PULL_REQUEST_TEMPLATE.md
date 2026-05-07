@@ -16,8 +16,8 @@ Minimum steps a reviewer can run to verify the change. For engine/policy changes
 
 ## Checklist
 
-- [ ] `dotnet build DomanMahjongAI.sln` passes
-- [ ] `dotnet test DomanMahjongAI.sln` passes
+- [ ] `dotnet build Mahjong.Plugin.Dalamud.sln` passes
+- [ ] `dotnet test Mahjong.Plugin.Dalamud.sln` passes
 - [ ] Added or updated tests (if behavior changed)
 - [ ] If this changes user-visible behavior, README is updated
-- [ ] If this bumps the plugin version, both `DomanMahjongAI.csproj` and `repo/repo.json` are in sync
+- [ ] If this bumps the plugin version, both `Directory.Build.props` and `repo/repo.json` are in sync

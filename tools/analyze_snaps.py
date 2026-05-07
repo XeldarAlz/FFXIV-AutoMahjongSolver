@@ -20,7 +20,7 @@ REGION_ADDON = "addon"
 REGION_AGENT = "agent"
 
 # Must match the snap command's dump ranges (see WriteSnapFile in
-# DomanMahjongAI/Commands/MjAutoCommand.cs). If the dump grows, grow these too.
+# Mahjong.Plugin.Dalamud/Commands/MjAutoCommand.cs). If the dump grows, grow these too.
 ADDON_SIZE = 0x6000
 AGENT_SIZE = 0x3000
 

@@ -7,7 +7,51 @@ on:
     branches: [main, master]
 
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # Cheap gates that don't need the SDK or Dalamud — run them first so a
+  # version-sync mistake or whitespace drift fails fast without burning the
+  # full build.
+  # ---------------------------------------------------------------------------
+
+  guards:
+    name: Guards (version sync, formatting)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify version sync (Directory.Build.props ↔ repo.json)
+        shell: bash
+        run: |
+          build_ver=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          assembly_ver=$(jq -r '.[0].AssemblyVersion' repo/repo.json)
+          testing_ver=$(jq -r '.[0].TestingAssemblyVersion' repo/repo.json)
+          echo "Directory.Build.props <Version>      = $build_ver"
+          echo "repo.json AssemblyVersion           = $assembly_ver"
+          echo "repo.json TestingAssemblyVersion    = $testing_ver"
+          if [ "$build_ver" != "$assembly_ver" ] || [ "$build_ver" != "$testing_ver" ]; then
+            echo "::error::Version mismatch — Directory.Build.props ($build_ver), repo.json AssemblyVersion ($assembly_ver), TestingAssemblyVersion ($testing_ver) must all match."
+            exit 1
+          fi
+
+      - name: Verify whitespace formatting
+        run: dotnet format whitespace Mahjong.Plugin.Dalamud.sln --verify-no-changes --verbosity diagnostic
+
+  # ---------------------------------------------------------------------------
+  # Full build + tests. Needs Dalamud present at the standard plugin path so
+  # Dalamud.NET.Sdk can resolve $(DalamudLibPath).
+  # ---------------------------------------------------------------------------
+
   build-and-test:
+    name: Build & test (Windows)
+    needs: guards
     runs-on: windows-latest
 
     steps:
@@ -33,21 +77,18 @@ jobs:
           Remove-Item dalamud.zip
 
       - name: Restore
-        run: dotnet restore DomanMahjongAI.sln
+        run: dotnet restore Mahjong.Plugin.Dalamud.sln
 
       - name: Build (Release)
-        run: dotnet build DomanMahjongAI.sln --configuration Release --no-restore
+        run: dotnet build Mahjong.Plugin.Dalamud.sln --configuration Release --no-restore
 
-      - name: Run Engine tests
-        run: dotnet test tests/Engine.Tests/Engine.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"
-
-      - name: Run Policy tests
-        run: dotnet test tests/Policy.Tests/Policy.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"
+      - name: Test
+        run: dotnet test Mahjong.Plugin.Dalamud.sln --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Upload plugin artifact
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v4
         with:
-          name: DomanMahjongAI-plugin
-          path: DomanMahjongAI/bin/Release/DomanMahjongAI/latest.zip
+          name: Mahjong.Plugin.Dalamud-plugin
+          path: Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip
           if-no-files-found: warn

@@ -68,15 +68,15 @@ jobs:
           Remove-Item dalamud.zip
 
       - name: Build (Release)
-        run: dotnet build DomanMahjongAI.sln --configuration Release
+        run: dotnet build Mahjong.Plugin.Dalamud.sln --configuration Release
 
       - name: Run tests
-        run: dotnet test DomanMahjongAI.sln --configuration Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test Mahjong.Plugin.Dalamud.sln --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Package plugin
         shell: pwsh
         run: |
-          $output = "DomanMahjongAI/bin/Release/DomanMahjongAI/latest.zip"
+          $output = "Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip"
           if (-not (Test-Path $output)) {
             Write-Error "Plugin package not found at $output"
             exit 1
@@ -86,5 +86,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.target }}
-          files: DomanMahjongAI/bin/Release/DomanMahjongAI/latest.zip
+          files: Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip
           generate_release_notes: true

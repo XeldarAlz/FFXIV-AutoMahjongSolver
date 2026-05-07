@@ -7,22 +7,22 @@ Thanks for taking an interest. This is a small solo project, but PRs are welcome
 ```bash
 git clone https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver.git
 cd FFXIV-DomanMahjongSolver
-dotnet restore DomanMahjongAI.sln
-dotnet build   DomanMahjongAI.sln
-dotnet test    DomanMahjongAI.sln
+dotnet restore Mahjong.Plugin.Dalamud.sln
+dotnet build   Mahjong.Plugin.Dalamud.sln
+dotnet test    Mahjong.Plugin.Dalamud.sln
 ```
 
 You need .NET 10 SDK. The plugin itself requires Dalamud at runtime; CI pulls a Dalamud dev build automatically and that's enough to compile. See `.github/workflows/ci.yml` if you want to reproduce CI locally.
 
 ## Project layout
 
-- `DomanMahjongAI/` — Dalamud plugin: UI, dispatch, game reader. The only part that depends on Dalamud.
+- `Mahjong.Plugin.Dalamud/` — Dalamud plugin: UI, dispatch, game reader. The only part that depends on Dalamud.
 - `Engine/` — Core mahjong primitives (tiles, shanten, ukeire, yaku, fu, scoring). Dalamud-free and portable.
 - `Policy/` — Decision logic: efficiency policy, riichi / call / push-fold evaluators, Bayesian opponent model, ISMCTS, hand simulator, evolutionary tuner, Tenhou log parser. Also Dalamud-free.
 - `tests/` — xUnit tests for Engine and Policy. Anything in those two libraries should be covered.
 - `repo/repo.json` — Custom Dalamud repo manifest.
 
-Rule of thumb: if logic can live in `Engine` or `Policy`, put it there and test it. Keep `DomanMahjongAI/` focused on glue — reading addons, dispatching clicks, drawing windows.
+Rule of thumb: if logic can live in `Engine` or `Policy`, put it there and test it. Keep `Mahjong.Plugin.Dalamud/` focused on glue — reading addons, dispatching clicks, drawing windows.
 
 ## Before you open a PR
 
@@ -38,7 +38,7 @@ Check the issue tracker for anything labeled `good first issue`. If nothing's th
 
 ## Releasing (maintainers)
 
-Bump `Version` in `DomanMahjongAI/DomanMahjongAI.csproj` and `AssemblyVersion` in `repo/repo.json` to match, push a `vX.Y.Z` tag. The release workflow builds and uploads `latest.zip`.
+Bump `Version` in `Mahjong.Plugin.Dalamud/Mahjong.Plugin.Dalamud.csproj` and `AssemblyVersion` in `repo/repo.json` to match, push a `vX.Y.Z` tag. The release workflow builds and uploads `latest.zip`.
 
 ## Reporting bugs
 
