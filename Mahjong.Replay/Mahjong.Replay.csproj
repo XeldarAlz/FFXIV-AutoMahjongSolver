@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mahjong.Replay — Tenhou log parser and replay harness.
+
+    Tenhou games are played under standard Japanese riichi rules; any
+    consumer that scores replay decisions MUST pair this project's output
+    with RiichiRuleSet, never DomanRuleSet. Mixing rulesets corrupts tuning
+    data — see docs/ruleset.md for the rationale.
+
+    Consumers: Mahjong.Tuner (offline weight optimization),
+    Mahjong.Replay.Tests (golden-file regression suite that catches policy
+    drift between phases).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Replay</RootNamespace>
+    <AssemblyName>Mahjong.Replay</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Core\Mahjong.Core.csproj" />
+    <ProjectReference Include="..\Mahjong.Policy.Abstractions\Mahjong.Policy.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

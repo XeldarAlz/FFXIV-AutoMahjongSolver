@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Policy</RootNamespace>
+    <AssemblyName>Mahjong.Policy</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Core\Mahjong.Core.csproj" />
+    <ProjectReference Include="..\Mahjong.Rules\Mahjong.Rules.csproj" />
+    <ProjectReference Include="..\Mahjong.Policy.Abstractions\Mahjong.Policy.Abstractions.csproj" />
+    <ProjectReference Include="..\Mahjong.Engine\Mahjong.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

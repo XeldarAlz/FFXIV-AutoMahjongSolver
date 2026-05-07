@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Tuner</RootNamespace>
+    <AssemblyName>Mahjong.Tuner</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Core\Mahjong.Core.csproj" />
+    <ProjectReference Include="..\Mahjong.Policy.Abstractions\Mahjong.Policy.Abstractions.csproj" />
+    <ProjectReference Include="..\Mahjong.Engine\Mahjong.Engine.csproj" />
+    <ProjectReference Include="..\Mahjong.Policy\Mahjong.Policy.csproj" />
+  </ItemGroup>
+
+</Project>

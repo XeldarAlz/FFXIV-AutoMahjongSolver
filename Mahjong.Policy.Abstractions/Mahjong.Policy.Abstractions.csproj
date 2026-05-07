@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mahjong.Policy.Abstractions — contracts only.
+
+    Contains:
+      * Decision types (ActionChoice, Decision<T>, Reason, ScoredDiscard).
+      * Policy interfaces (IDecisionPolicy + sub-policies).
+      * Weight bundle records (DiscardWeights, OpponentWeights, ...) and
+        IWeightProvider for hot-loading them.
+      * IRandomSource + SeededRandomSource — every Policy class that wanted
+        new Random() takes one of these instead.
+
+    Consumers: Mahjong.Policy (concrete decision logic), Mahjong.Replay,
+    Mahjong.Tuner, Mahjong.Plugin.Game. Engine does NOT depend on this —
+    policy decisions are an opt-in layer above the rule engine.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Mahjong.Policy.Abstractions</RootNamespace>
+    <AssemblyName>Mahjong.Policy.Abstractions</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Core\Mahjong.Core.csproj" />
+  </ItemGroup>
+
+</Project>
