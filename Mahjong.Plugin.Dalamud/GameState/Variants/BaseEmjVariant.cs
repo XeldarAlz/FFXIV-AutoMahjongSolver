@@ -328,7 +328,14 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (labels.OffersPon)
         {
             flags |= ActionFlags.Pon;
-            AppendPonCandidate(hand, counts, pons);
+            // Prefer the discarded tile from AtkValues — Doman exposes it as a
+            // consecutive duplicate in [16..21]. Falls back to the unique-pair
+            // heuristic when the addon-side data isn't available (e.g. unit tests
+            // or a future variant where the duplicate signal moves).
+            if (atkValues != null)
+                AppendPonCandidateFromAtkValues(hand, counts, atkValues, atkCount, pons);
+            if (pons.Count == 0)
+                AppendPonCandidate(hand, counts, pons);
         }
 
         // MinKan: emit a candidate only when triplet is unambiguous AND pon isn't
@@ -359,6 +366,49 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (TryFindUniqueRunOrTriplet(counts, minCount: 2) is not int pairId)
             return;
         var claimed = Tile.FromId(pairId);
+        var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
+        pons.AddRange(derived.Pon);
+    }
+
+    /// <summary>
+    /// Read the discarded tile that triggered the pon prompt directly from the
+    /// addon's AtkValues. Doman publishes it as a consecutive duplicate Int in
+    /// the [16..21] range — verified empirically against two distinct pon
+    /// captures on 2026-05-08:
+    /// <list type="bullet">
+    ///   <item>Hand <c>44669m289p28s77z</c> ponning Red dragon: duplicate 76074
+    ///   at [20][21], decodes to tile_id 33.</item>
+    ///   <item>Hand <c>2233m5p1133s45z</c> ponning 3s: duplicate 76061 at
+    ///   [19][20], decodes to tile_id 20.</item>
+    /// </list>
+    /// The duplicate slot floats inside the range — neither a fixed index like
+    /// <c>chiClaimedTile</c> nor a count-based heuristic — so we scan and pick
+    /// the tile_id that appears at least twice. The user must also have ≥ 2 of
+    /// it (otherwise pon couldn't have been offered); the count check protects
+    /// against a future Doman patch repurposing this slot.
+    /// </summary>
+    private unsafe void AppendPonCandidateFromAtkValues(
+        List<Tile> hand, int[] counts, AtkValue* atkValues, int atkCount, List<MeldCandidate> pons)
+    {
+        const int scanLo = 16;
+        const int scanHi = 21;
+        int end = Math.Min(atkCount, scanHi + 1);
+        Span<int> seen = stackalloc int[Tile.Count34];
+        int? claimedId = null;
+        for (int i = scanLo; i < end; i++)
+        {
+            if (atkValues[i].Type != ValueType.Int)
+                continue;
+            int tileId = atkValues[i].Int - profile.TileTextureBase;
+            if (tileId < 0 || tileId >= Tile.Count34)
+                continue;
+            seen[tileId]++;
+            if (seen[tileId] >= 2)
+                claimedId = tileId;
+        }
+        if (claimedId is null || counts[claimedId.Value] < 2)
+            return;
+        var claimed = Tile.FromId(claimedId.Value);
         var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
         pons.AddRange(derived.Pon);
     }
