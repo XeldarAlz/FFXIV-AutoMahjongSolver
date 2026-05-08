@@ -20,14 +20,15 @@ public static class DiscardCaptureFactory
         IFramework framework,
         ISigScanner sigScanner,
         StateAggregator aggregator,
-        SeatPoolRegistry? seatPools = null)
+        SeatPoolRegistry? seatPools = null,
+        ISigprobeLog? sigprobes = null)
     {
         ArgumentNullException.ThrowIfNull(log);
         ArgumentNullException.ThrowIfNull(framework);
         ArgumentNullException.ThrowIfNull(sigScanner);
         ArgumentNullException.ThrowIfNull(aggregator);
 
-        var native = new NativeAsmDiscardCapture(log, framework, sigScanner, seatPools);
+        var native = new NativeAsmDiscardCapture(log, framework, sigScanner, seatPools, sigprobes);
         if (native.Health == HookHealth.Active)
             return native;
         native.Dispose();

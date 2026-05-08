@@ -103,9 +103,12 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     public ErrorSink ErrorSink { get; }
     public IFindingsLog FindingsLog { get; }
+    public ISigprobeLog SigprobeLog { get; }
     public SeatPoolRegistry SeatPoolRegistry { get; } = new();
     public MemoryDumpRecorder MemoryDumpRecorder { get; }
     public TelemetryUploader TelemetryUploader { get; }
+    public DiscardTracker DiscardTracker { get; }
+    public InputRecorder InputRecorder { get; }
 
     private readonly System.Net.Http.HttpClient telemetryHttp;
 
@@ -164,6 +167,7 @@ public sealed class Plugin : IDalamudPlugin
         var configDir = PluginInterface.GetPluginConfigDirectory();
         ErrorSink = new ErrorSink(configDir);
         FindingsLog = new FindingsLog(configDir, ErrorSink);
+        SigprobeLog = new SigprobeLog(configDir);
 
         // Resolve the addon-name helper from the container so its lastResolved
         // cache is shared across every collaborator that probes the addon.
@@ -176,6 +180,7 @@ public sealed class Plugin : IDalamudPlugin
         EventLogger = new InputEventLogger(
             AddonReader, MeldTracker, AddonLifecycle, GameInterop, Log, mahjongAddon, configDir);
         AddonReader.EventLogger = EventLogger;
+        InputRecorder = new InputRecorder(EventLogger, configDir);
         GameLogger = new GameLogger(Aggregator, ConfigService, Log, configDir);
         AutoPlay = new AutoPlayLoop(this, Framework, Log, mahjongAddon);
 
@@ -183,11 +188,13 @@ public sealed class Plugin : IDalamudPlugin
         // 2026-04-27 via Cheat Engine), with an addon-poll fallback that
         // diffs StateAggregator snapshots. The factory tries native first
         // and falls back automatically — Health/StrategyName surface which
-        // path is live.
+        // path is live. SigprobeLog is threaded in so every ScanText attempt
+        // gets recorded for the sigprobes telemetry stream.
         DiscardCapture = DiscardCaptureFactory.Create(
-            Log, Framework, SigScanner, Aggregator, SeatPoolRegistry);
+            Log, Framework, SigScanner, Aggregator, SeatPoolRegistry, SigprobeLog);
         DiscardCaptureLogger = new DiscardCaptureLogger(
             DiscardCapture, PluginInterface.GetPluginConfigDirectory());
+        DiscardTracker = new DiscardTracker(DiscardCapture, configDir);
 
         // ---- Remainder of telemetry pipeline ----
         // Sinks above wire into the readers; this section builds the
@@ -247,8 +254,10 @@ public sealed class Plugin : IDalamudPlugin
         HandOverlay.Dispose();
         AutoPlay.Dispose();
         DiscardCaptureLogger.Dispose();
+        DiscardTracker.Dispose();
         DiscardCapture.Dispose();
         GameLogger.Dispose();
+        InputRecorder.Dispose();
         EventLogger.Dispose();
         Aggregator.Dispose();
         AddonReader.Dispose();

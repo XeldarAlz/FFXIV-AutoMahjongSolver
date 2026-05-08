@@ -73,6 +73,16 @@ public sealed class InputEventLogger : IDisposable
 
     public string CaptureLogPath => capturePath;
 
+    /// <summary>
+    /// Fires once per FireCallback the Mahjong addon receives, AFTER the
+    /// original game callback runs (so subscribers see the post-call result).
+    /// Values are snapshot to a managed array before firing, so subscribers
+    /// can safely persist/log them without worrying about pointer lifetimes.
+    /// Always-on regardless of <see cref="Enabled"/> — that flag only gates
+    /// the verbose RE log.
+    /// </summary>
+    public event Action<InputCallbackEvent>? CallbackObserved;
+
     public unsafe InputEventLogger(
         AddonEmjReader reader,
         MeldTracker meldTracker,
@@ -230,6 +240,29 @@ public sealed class InputEventLogger : IDisposable
             try
             { meldTracker.Record(Meld.FromAcceptedCandidate(meld)); }
             catch (Exception ex) { log.Error($"MeldTracker record error: {ex.Message}"); }
+        }
+
+        // Always-on managed event for telemetry subscribers (InputRecorder ships
+        // these to the inputs/ stream). Snapshot int values now so the subscriber
+        // never sees the unmanaged AtkValue pointer.
+        if (CallbackObserved is { } observers
+            && addon != null && MahjongAddon.IsMahjongAddon(addon->NameString))
+        {
+            try
+            {
+                var ints = SnapshotInts(values, (int)valueCount, max: 16);
+                observers(new InputCallbackEvent(
+                    ObservedAtUtc: DateTime.UtcNow,
+                    AddonName: addon->NameString,
+                    ValueCount: valueCount,
+                    Close: close != 0,
+                    Result: result,
+                    IntValues: ints));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"FireCallback observer error: {ex.Message}");
+            }
         }
 
         try
@@ -426,6 +459,33 @@ public sealed class InputEventLogger : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Snapshot up to <paramref name="max"/> AtkValues into an int?[] for the
+    /// always-on telemetry path. Non-numeric AtkValue types serialize as null
+    /// so the subscriber doesn't have to know about AtkValueType at all —
+    /// what we care about for input recording is the action opcode + option
+    /// pair, both of which are ints. Strings/floats are dropped intentionally.
+    /// </summary>
+    private static unsafe int?[] SnapshotInts(AtkValue* values, int count, int max)
+    {
+        if (values == null || count <= 0)
+            return Array.Empty<int?>();
+        int n = Math.Min(count, max);
+        var result = new int?[n];
+        for (int i = 0; i < n; i++)
+        {
+            var v = values[i];
+            result[i] = v.Type switch
+            {
+                FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int => v.Int,
+                FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.UInt => unchecked((int)v.UInt),
+                FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Bool => v.Byte != 0 ? 1 : 0,
+                _ => (int?)null,
+            };
+        }
+        return result;
+    }
+
     private static unsafe string FormatValue(AtkValue v)
     {
         switch (v.Type)
@@ -448,3 +508,18 @@ public sealed class InputEventLogger : IDisposable
         }
     }
 }
+
+/// <summary>
+/// Managed snapshot of one FireCallback dispatched to the Mahjong addon.
+/// Fired by <see cref="InputEventLogger.CallbackObserved"/> after the original
+/// game callback runs. Only int-coercible AtkValues survive the snapshot —
+/// the action opcode + option pair is always int-typed, and that's what
+/// downstream consumers (input telemetry, ML training data) care about.
+/// </summary>
+public sealed record InputCallbackEvent(
+    DateTime ObservedAtUtc,
+    string AddonName,
+    uint ValueCount,
+    bool Close,
+    bool Result,
+    int?[] IntValues);

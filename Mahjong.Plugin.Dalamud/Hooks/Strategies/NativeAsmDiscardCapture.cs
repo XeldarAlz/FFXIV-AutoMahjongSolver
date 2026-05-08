@@ -59,6 +59,7 @@ public sealed class NativeAsmDiscardCapture : IDiscardCapture
     private readonly IPluginLog log;
     private readonly IFramework framework;
     private readonly SeatPoolRegistry? seatPools;
+    private readonly ISigprobeLog sigprobes;
     private nint buffer;
     private IAsmHook? asmHook;
     private bool disposed;
@@ -92,7 +93,8 @@ public sealed class NativeAsmDiscardCapture : IDiscardCapture
         IPluginLog log,
         IFramework framework,
         ISigScanner sigScanner,
-        SeatPoolRegistry? seatPools = null)
+        SeatPoolRegistry? seatPools = null,
+        ISigprobeLog? sigprobes = null)
     {
         ArgumentNullException.ThrowIfNull(log);
         ArgumentNullException.ThrowIfNull(framework);
@@ -100,6 +102,7 @@ public sealed class NativeAsmDiscardCapture : IDiscardCapture
         this.log = log;
         this.framework = framework;
         this.seatPools = seatPools;
+        this.sigprobes = sigprobes ?? NullSigprobeLog.Instance;
 
         AllocateBuffer();
         if (!TryActivateHook(sigScanner))
@@ -123,12 +126,28 @@ public sealed class NativeAsmDiscardCapture : IDiscardCapture
     private bool TryActivateHook(ISigScanner sigScanner)
     {
         nint matchAddress;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             matchAddress = sigScanner.ScanText(DiscardSig);
+            sw.Stop();
+            sigprobes.Record(
+                sigName: "doman.discard-handler",
+                pattern: DiscardSig,
+                matchAddress: matchAddress,
+                elapsedMs: sw.Elapsed.TotalMilliseconds,
+                success: true);
         }
         catch (Exception ex)
         {
+            sw.Stop();
+            sigprobes.Record(
+                sigName: "doman.discard-handler",
+                pattern: DiscardSig,
+                matchAddress: 0,
+                elapsedMs: sw.Elapsed.TotalMilliseconds,
+                success: false,
+                errorMessage: ex.Message);
             log.Error($"[DiscardCapture/native-asm] sigscan failed: {ex.Message}");
             return false;
         }
@@ -153,6 +172,13 @@ public sealed class NativeAsmDiscardCapture : IDiscardCapture
         }
         catch (Exception ex)
         {
+            sigprobes.Record(
+                sigName: "doman.discard-handler-asmhook",
+                pattern: DiscardSig,
+                matchAddress: hookSite,
+                elapsedMs: 0,
+                success: false,
+                errorMessage: ex.Message);
             log.Error($"[DiscardCapture/native-asm] failed to activate: {ex}");
             asmHook = null;
             return false;

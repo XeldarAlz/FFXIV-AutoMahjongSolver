@@ -26,7 +26,7 @@ public sealed class EndpointResolver
     /// deploy the Cloudflare Worker so even offline-at-startup users have
     /// a real target.</summary>
     public const string EmbeddedFallbackUrl =
-        "https://mahjong-telemetry.example.workers.dev/v1/upload";
+        "https://mahjong-telemetry.xeldaralz.workers.dev/v1/upload";
 
     /// <summary>Where the live config lives. Plain HTTPS GET, no auth — the
     /// file is public on the repo and contains nothing secret.</summary>
