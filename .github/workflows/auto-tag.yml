@@ -40,7 +40,11 @@ jobs:
       - name: Read plugin version from Directory.Build.props
         id: version
         run: |
-          version=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          # Match digits + dots only, anchored to the closing </Version>.
+          # The looser `[^<]+` was matching the prose comment that mentions
+          # <Version> first, producing a multi-line $version GitHub Actions
+          # rejected with "Invalid format" when written to GITHUB_OUTPUT.
+          version=$(grep -oP '<Version>\K[\d.]+(?=</Version>)' Directory.Build.props)
           if [ -z "$version" ]; then
             echo "::error::Could not parse <Version> from Directory.Build.props"
             exit 1

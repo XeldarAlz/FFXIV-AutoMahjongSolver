@@ -30,7 +30,12 @@ jobs:
       - name: Verify version sync (Directory.Build.props ↔ repo.json)
         shell: bash
         run: |
-          build_ver=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          # Tightened regex: only digits + dots, anchored to the closing
+          # </Version>. Earlier `[^<]+` swept through the explanatory comment
+          # in Directory.Build.props that mentions <Version> in prose, then
+          # collected the actual value too — yielding a multi-line $build_ver
+          # that always failed equality.
+          build_ver=$(grep -oP '<Version>\K[\d.]+(?=</Version>)' Directory.Build.props)
           assembly_ver=$(jq -r '.[0].AssemblyVersion' repo/repo.json)
           testing_ver=$(jq -r '.[0].TestingAssemblyVersion' repo/repo.json)
           echo "Directory.Build.props <Version>      = $build_ver"
