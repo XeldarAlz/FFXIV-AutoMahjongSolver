@@ -160,14 +160,30 @@ public sealed class EfficiencyPolicy : IPolicy
         return new ActionChoice(kind, Call: cand, Reasoning: $"call: {reason.Display}", Steps: steps);
     }
 
+    /// <summary>
+    /// Detect a hand/meld count mismatch — typically the symptom of a call
+    /// the plugin saw fire but couldn't reconstruct the meld for (the
+    /// claimed-tile parsing failed, so MeldTracker didn't record it). The
+    /// closed hand shrank but OurMelds didn't grow, leaving total ≠ 14.
+    ///
+    /// <para>Old behavior was to "tsumogiri" — discard the last hand tile
+    /// blind. That confidently surfaced a misleading suggestion in the hint
+    /// UI and a misleading auto-click in auto mode. Both were worse than no
+    /// suggestion: the user saw the highlight on a tile that had nothing to
+    /// do with their actual hand state.</para>
+    ///
+    /// <para>Now we return Pass with a clear "out of sync" reason. The hint
+    /// UI won't draw an overlay (DiscardTile is null), the auto-play loop
+    /// won't click, and the next state event whose count reconciles back to
+    /// 14 unblocks normal hint flow.</para>
+    /// </summary>
     private static ActionChoice? TsumogiriFallback(StateSnapshot state)
     {
         int totalTiles = state.Hand.Count + state.OurMelds.Count * 3;
         if (totalTiles == 14 || state.Hand.Count == 0)
             return null;
-        var drawn = state.Hand[^1];
-        return ActionChoice.Discard(drawn,
-            $"tsumogiri fallback — count mismatch (closed={state.Hand.Count}, melds={state.OurMelds.Count})");
+        return ActionChoice.Pass(
+            $"hand state out of sync — pausing hints (closed={state.Hand.Count}, melds={state.OurMelds.Count}; expected 14)");
     }
 
     private static string FormatDiscardSummary(ScoredDiscard best) =>
