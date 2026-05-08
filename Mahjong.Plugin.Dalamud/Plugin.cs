@@ -6,6 +6,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Mahjong.Plugin.Dalamud.Actions;
+using Mahjong.Plugin.Dalamud.Adapters;
 using Mahjong.Plugin.Dalamud.Commands;
 using Mahjong.Plugin.Dalamud.Composition;
 using Mahjong.Plugin.Dalamud.GameState;
@@ -111,6 +112,7 @@ public sealed class Plugin : IDalamudPlugin
     public InputRecorder InputRecorder { get; }
 
     private readonly System.Net.Http.HttpClient telemetryHttp;
+    private MirroredPluginLog mirroredLog = null!;
 
     private readonly MjAutoCommand command;
 
@@ -137,8 +139,16 @@ public sealed class Plugin : IDalamudPlugin
         // hand it to the composition root. After this point the rest of
         // the plugin reaches for services through constructor injection,
         // not through the static `Plugin.X` properties.
+        //
+        // The IPluginLog handed to the container is a `MirroredPluginLog`
+        // that forwards every call through to Dalamud's logger and
+        // additionally writes Warning/Error/Fatal events to the plugin's
+        // ErrorSink (attached below once the sink exists). Without this,
+        // Plugin.Log.Warning(...) calls only land in Dalamud's local log
+        // file and never reach the errors telemetry stream.
+        mirroredLog = new MirroredPluginLog(Log);
         var dalamud = new DalamudServices(
-            Log: Log,
+            Log: mirroredLog,
             Framework: Framework,
             PluginInterface: PluginInterface,
             CommandManager: CommandManager,
@@ -168,6 +178,11 @@ public sealed class Plugin : IDalamudPlugin
         ErrorSink = new ErrorSink(configDir);
         FindingsLog = new FindingsLog(configDir, ErrorSink);
         SigprobeLog = new SigprobeLog(configDir);
+        // Now that ErrorSink exists, hook it into the log mirror so every
+        // subsequent Plugin.Log.Warning/Error/Fatal also lands in the
+        // errors stream. Calls before this point (Dalamud's own load-time
+        // chatter) just pass through — short window, nothing critical.
+        mirroredLog.AttachSink(ErrorSink);
 
         // Resolve the addon-name helper from the container so its lastResolved
         // cache is shared across every collaborator that probes the addon.
