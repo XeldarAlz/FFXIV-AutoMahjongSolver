@@ -1,22 +1,53 @@
 # Cloudflare Worker config for the Mahjong telemetry ingest.
 #
+# Storage: Backblaze B2 (S3-compatible). The Worker signs and PUTs blobs to
+# B2; KV here is only used for the per-install daily rate-limit counter.
+#
 # Before deploying:
-#   1. wrangler r2 bucket create mahjong-telemetry
-#   2. wrangler kv:namespace create RATE_LIMIT_KV
-#      (paste the returned id below into kv_namespaces.id)
-#   3. wrangler deploy
+#   1. Sign up at https://www.backblaze.com/sign-up/cloud-storage
+#   2. Create a private bucket (e.g. "mahjong-telemetry") in the B2 console.
+#      Note the S3-compatible endpoint shown for the bucket — it looks like
+#      "https://s3.us-west-002.backblazeb2.com" — and the region in the
+#      hostname (e.g. "us-west-002").
+#   3. Create an Application Key restricted to that bucket with read+write
+#      access. Save the keyID and applicationKey — they're shown once.
+#   4. Fill in B2_REGION, B2_BUCKET, B2_ENDPOINT below.
+#   5. Push the credentials as Worker secrets:
+#        wrangler secret put B2_KEY_ID
+#        wrangler secret put B2_APPLICATION_KEY
+#   6. Create the KV namespace for rate limiting (if not already):
+#        wrangler kv:namespace create RATE_LIMIT_KV
+#      Paste the returned id into kv_namespaces.id below.
+#   7. wrangler deploy
 #
 # After deploying, take the *.workers.dev URL the CLI prints and write it
-# into ../server/telemetry-endpoint.json so plugin installs pick it up.
+# into ./telemetry-endpoint.json so plugin installs pick it up.
 
 name = "mahjong-telemetry"
 main = "worker.ts"
 compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
 
-# R2 bucket — stores the gzipped uploads. Keyed by {stream}/{install_id}/{date}/{filename}.gz.
-[[r2_buckets]]
-binding = "TELEMETRY_BUCKET"
-bucket_name = "mahjong-telemetry"
+# Workers Logs — persists console.log/warn/error output from the Worker for
+# 7 days, queryable in the dashboard ("Logs" tab) and via the API. Free on
+# both Workers Free and Paid plans. head_sampling_rate = 1.0 keeps every
+# invocation; lower it if volume ever becomes a cost concern.
+#
+# For longer retention, see the Logpush section in README.md (paid plan).
+[observability]
+enabled = true
+head_sampling_rate = 1.0
+
+# B2 connection settings. These are non-secret (the bucket is private and
+# requires the application key to write); committing them is fine.
+[vars]
+B2_REGION = "eu-central-003"
+B2_BUCKET = "mahjong-telemetry"
+B2_ENDPOINT = "https://s3.eu-central-003.backblazeb2.com"
+
+# Secrets pushed via `wrangler secret put` — DO NOT commit these.
+#   B2_KEY_ID
+#   B2_APPLICATION_KEY
 
 # KV namespace — per-install daily byte counters for the rate limiter.
 [[kv_namespaces]]

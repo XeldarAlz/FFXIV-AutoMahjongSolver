@@ -1,0 +1,19 @@
+{
+  "name": "mahjong-telemetry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that ingests Mahjong plugin telemetry to Backblaze B2.",
+  "main": "worker.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail mahjong-telemetry"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^4.0.0"
+  }
+}

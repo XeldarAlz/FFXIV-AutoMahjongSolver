@@ -1,0 +1,14 @@
+{
+  "lifecycleRules": [
+    {
+      "fileNamePrefix": "memdumps/",
+      "daysFromUploadingToHiding": 30,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "sigprobes/",
+      "daysFromUploadingToHiding": 60,
+      "daysFromHidingToDeleting": 1
+    }
+  ]
+}

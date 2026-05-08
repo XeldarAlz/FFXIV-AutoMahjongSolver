@@ -12,5 +12,7 @@ emj-*.txt
 *_rcnet_data.xml
 reflect.txt
 
-# Cloudflare Wrangler local dev cache (server/)
+# Cloudflare Wrangler local dev cache + Worker npm artifacts (server/)
 .wrangler/
+server/node_modules/
+server/dist/
