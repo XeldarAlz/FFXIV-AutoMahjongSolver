@@ -8,10 +8,25 @@ using Mahjong.Plugin.Game;
 namespace Mahjong.Plugin.Dalamud.Hooks;
 
 /// <summary>
-/// Builds the live <see cref="IDiscardCapture"/> by trying strategies in
-/// preference order — native asm hook first, addon-poll fallback second,
-/// inert null-object last. Disposes any failed attempt before returning the
-/// next candidate; the caller only ever sees one capture instance.
+/// Builds the live <see cref="IDiscardCapture"/>. Currently always returns
+/// <see cref="AddonPollDiscardCapture"/>; the native asm hook is constructed
+/// briefly so its sigscan still feeds the <c>sigprobes</c> telemetry stream,
+/// then disposed without driving discards.
+///
+/// <para><b>Why not native:</b> on post-2026-05 FFXIV builds the original
+/// 20-byte discard-handler signature (verified via Cheat Engine on 2026-04-27)
+/// matches an unrelated routine that runs in idle game code with EAX = 0.
+/// Real-world telemetry from one play session showed 135 captured "discards"
+/// — every one with <c>tile_id = 0</c> (1m), and the bursts started ~5 minutes
+/// before the Mahjong addon was even live. AddonPoll has more information
+/// anyway (it knows the seat the discard came from) and doesn't depend on
+/// any byte pattern; the only trade-off is ~one snapshot tick (~16ms) of
+/// latency, which the policy pipeline already absorbs.</para>
+///
+/// <para><b>Re-enabling native:</b> once a new sig is verified against the
+/// current FFXIV build, swap the early <c>Dispose()</c> below for the
+/// previous <c>if (native.Health == HookHealth.Active) return native;</c>
+/// short-circuit — or gate it on a config flag.</para>
 /// </summary>
 public static class DiscardCaptureFactory
 {
@@ -28,14 +43,15 @@ public static class DiscardCaptureFactory
         ArgumentNullException.ThrowIfNull(sigScanner);
         ArgumentNullException.ThrowIfNull(aggregator);
 
+        // Run the sigscan + hook activation briefly so the result still flows
+        // into the sigprobes stream — the data is useful for tracking when
+        // (and which) FFXIV patches break the pattern.
         var native = new NativeAsmDiscardCapture(log, framework, sigScanner, seatPools, sigprobes);
-        if (native.Health == HookHealth.Active)
-            return native;
         native.Dispose();
 
-        log.Warning(
-            "[DiscardCapture] native asm hook unavailable — falling back to addon-poll. " +
-            "Discard timing will lag by ~one snapshot tick.");
+        log.Info(
+            "[DiscardCapture] using addon-poll strategy (sigscan recorded for telemetry; " +
+            "asm hook disabled until a verified discard-handler sig lands).");
         var fallback = new AddonPollDiscardCapture(log);
         aggregator.Changed += fallback.OnSnapshotChanged;
         return fallback;
