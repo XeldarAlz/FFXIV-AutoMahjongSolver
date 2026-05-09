@@ -109,11 +109,14 @@ public sealed class AutoPlayLoop : IDisposable
         bool isCallPrompt = (snap.Legal.Flags & CallPromptFlags) != 0;
         bool isDiscardTurn = snap.Legal.Can(ActionFlags.Discard);
 
-        // The riichi popup signature persists across the post-click yaku-preview
-        // popup. Clear the latch when the prompt goes away or the Riichi flag
-        // specifically falls off, so the next round starts fresh.
-        if (!isCallPrompt || !snap.Legal.Can(ActionFlags.Riichi))
-            fsm.ClearRiichiConfirm();
+        // Hand-scope the riichi-confirm latch. Earlier we cleared it on every
+        // tick where the popup signature dropped, but popup signature DOES drop
+        // briefly between adjacent ticks of the same hand (state code transitions
+        // through neutral codes 19/22 etc), and that let the policy re-evaluate
+        // riichi every time the popup re-appeared and stack 20+ "Riichi-confirm"
+        // clicks in the same hand. ObserveWall clears the latch on the next
+        // hand instead — within a hand once we declared, never re-prompt.
+        fsm.ObserveWall(snap.WallRemaining);
 
         if (!isCallPrompt && !isDiscardTurn)
         {
@@ -273,8 +276,12 @@ public sealed class AutoPlayLoop : IDisposable
             LastActionDescription = $"auto-riichi-tsumogiri {tile} slot=13 → {result}";
             log.Info($"[AutoPlayLoop] riichi-tsumogiri dispatch: {LastActionDescription}");
             plugin.GameLogger.RecordAction(ActionKind.Discard, tile, 13, result.ToString(), "riichi-tsumogiri");
-            // Consumed — clear the latch so the next round/popup re-evaluates.
-            fsm.ClearRiichiConfirm();
+            // Don't clear the latch here — once we've declared riichi we
+            // must NOT let policy.Choose re-evaluate it later in the same
+            // hand (it would, since OurRiichi is always false in our
+            // snapshot today and the synthetic Discard|Riichi probe in
+            // ResolveRiichiPopupAcceptance would happily approve again).
+            // ObserveWall clears the latch on the next hand boundary.
         });
     }
 

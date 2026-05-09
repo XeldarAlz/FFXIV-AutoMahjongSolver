@@ -30,6 +30,7 @@ public sealed class ActionStateMachine
     private DateTime lastActionAt;
     private DispatchContext? lastContext;
     private bool riichiConfirmLatched;
+    private int lastObservedWall = -1;
 
     /// <summary>
     /// Construct with the timeouts that govern stuck-dispatch recovery and
@@ -102,8 +103,34 @@ public sealed class ActionStateMachine
     /// <summary>Latch the riichi-confirm flag. Set after a successful auto-riichi-accept dispatch.</summary>
     public void LatchRiichiConfirm() => riichiConfirmLatched = true;
 
-    /// <summary>Clear the latch — popup gone, hand count moved, or tsumogiri consumed it.</summary>
+    /// <summary>
+    /// Manually clear the latch. Should rarely be needed — <see cref="ObserveWall"/>
+    /// clears it on hand transitions automatically. Useful for tests or for an
+    /// explicit "we're starting fresh" signal.
+    /// </summary>
     public void ClearRiichiConfirm() => riichiConfirmLatched = false;
+
+    /// <summary>
+    /// Track the wall count tick by tick so we can detect a hand transition.
+    /// Within a hand the wall only ever decreases; a sharp upward jump (or
+    /// the very first observation crossing into a much-larger value) means a
+    /// new hand has been dealt and per-hand state needs reset. Used to clear
+    /// the riichi latch — without this the latch only cleared when the popup
+    /// signature briefly dropped between ticks, which let the policy re-evaluate
+    /// riichi every time the popup re-appeared in the same hand and produced
+    /// the 23-confirms-in-14-seconds spam observed 2026-05-09 09:53.
+    /// Tolerance of 5 rides over the transient wall-read glitches that
+    /// <see cref="GameLogger.MaybeRollHand"/> already documented.
+    /// </summary>
+    public void ObserveWall(int wall)
+    {
+        if (lastObservedWall >= 0 && wall > lastObservedWall + 5)
+        {
+            riichiConfirmLatched = false;
+            lastContext = null;
+        }
+        lastObservedWall = wall;
+    }
 }
 
 /// <summary>

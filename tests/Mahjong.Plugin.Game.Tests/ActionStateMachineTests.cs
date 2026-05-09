@@ -134,6 +134,42 @@ public class ActionStateMachineTests
     }
 
     [Fact]
+    public void ObserveWall_does_not_clear_latch_within_a_hand()
+    {
+        var fsm = NewFsm();
+        fsm.LatchRiichiConfirm();
+        // Within a hand the wall only ever decreases.
+        fsm.ObserveWall(70);
+        fsm.ObserveWall(45);
+        fsm.ObserveWall(30);
+        fsm.ObserveWall(10);
+        Assert.True(fsm.IsRiichiConfirmPending);
+    }
+
+    [Fact]
+    public void ObserveWall_clears_latch_on_hand_transition()
+    {
+        var fsm = NewFsm();
+        fsm.LatchRiichiConfirm();
+        fsm.ObserveWall(20);
+        // Sharp upward jump = new hand dealt.
+        fsm.ObserveWall(70);
+        Assert.False(fsm.IsRiichiConfirmPending);
+    }
+
+    [Fact]
+    public void ObserveWall_tolerates_minor_wall_jitter()
+    {
+        var fsm = NewFsm();
+        fsm.LatchRiichiConfirm();
+        fsm.ObserveWall(20);
+        // ±5 tolerance — read glitches between addon ticks shouldn't trigger reset.
+        fsm.ObserveWall(24);
+        fsm.ObserveWall(22);
+        Assert.True(fsm.IsRiichiConfirmPending);
+    }
+
+    [Fact]
     public void Cooldown_resets_when_a_new_dispatch_for_same_context_completes()
     {
         var fsm = NewFsm();
