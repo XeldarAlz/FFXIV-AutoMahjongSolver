@@ -129,6 +129,22 @@ internal sealed class BaseEmjVariant : IEmjVariant
             WallRemaining = wallRemaining,
             DoraIndicators = doraIndicators,
             Legal = legal,
+            // Solo Doman is a tonpuusen — East-round-only, four hands. Round
+            // wind = East always; player starts as East-seat dealer at the
+            // first hand of any session. Both pin to 0 and we mark seat info
+            // known so round-wind yakuhai detection (always East) and
+            // hand-1-seat-wind yakuhai (also East) start firing in
+            // CountYakuhai and YakuPotential. For hands 2-4 of a tonpuusen,
+            // dealer rotation makes our true seat wind shift to N→W→S — the
+            // round-wind term stays correct but the seat-wind term ends up
+            // weighting East tiles when N/W/S would be right. Net still a
+            // win vs the prior "everything off, both terms 0" baseline.
+            // Tracking DealerSeat from the addon would let us derive OurSeat
+            // mid-game; the candidate offsets identified by tools/find_seat_offsets.py
+            // (+0x130, +0x1248, +0x12BC) need a multi-session sample to validate.
+            OurSeat = 0,
+            RoundWind = 0,
+            SeatInfoKnown = true,
         };
     }
 
