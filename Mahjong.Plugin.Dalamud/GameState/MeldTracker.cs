@@ -8,11 +8,12 @@ namespace Mahjong.Plugin.Dalamud.GameState;
 /// The Emj addon doesn't surface open-meld records in any memory region we've been
 /// able to decode; instead we record melds at the moment the plugin (or the user,
 /// via hooked FireCallback) accepts a call prompt. Cleared at round start —
-/// detected when the closed hand returns to a no-meld count (13 or 14).
+/// detected via a sharp upward jump in the wall remaining count.
 /// </summary>
 public sealed class MeldTracker
 {
     private readonly List<Meld> melds = new();
+    private int lastObservedWall = -1;
 
     public IReadOnlyList<Meld> Melds => melds;
 
@@ -20,16 +21,30 @@ public sealed class MeldTracker
     public void Record(Meld meld) => melds.Add(meld);
 
     /// <summary>
-    /// Reset the tracked melds if the current closed-hand count indicates the round
-    /// has advanced past any open melds. With 0 melds the discardable closed count is
-    /// 14 and post-discard is 13 — so any count ≥ 13 proves the tracker has gone stale.
+    /// Track wall remaining tick by tick. A sharp upward jump (<paramref name="wallRemaining"/>
+    /// exceeding the previous reading by more than 5) means a fresh hand has been
+    /// dealt and any previously-tracked melds are stale.
+    ///
+    /// <para>Replaces the earlier closed-hand-count heuristic, which cleared the
+    /// tracker any tick where closed-hand was ≥ 13. That was correct for genuine
+    /// round transitions but also fired during the ~5 ms window after a chi/pon
+    /// accept, where the FireCallback hook had already recorded the meld but the
+    /// addon's hand-array hadn't yet reduced from 13 to 11. The tracker
+    /// self-erased the meld it had just received, leaving the discard scorer
+    /// staring at an 11-tile hand with melds=0 and panicking with "DiscardScorer
+    /// requires a 14-tile hand" — observed 2026-05-09 10:06.</para>
     /// </summary>
-    public void ResetIfRoundEnded(int closedHandCount)
+    public void ObserveWall(int wallRemaining)
     {
-        if (melds.Count > 0 && closedHandCount >= 13)
+        if (lastObservedWall >= 0 && wallRemaining > lastObservedWall + 5)
             melds.Clear();
+        lastObservedWall = wallRemaining;
     }
 
     /// <summary>Manual reset for commands / tests.</summary>
-    public void Clear() => melds.Clear();
+    public void Clear()
+    {
+        melds.Clear();
+        lastObservedWall = -1;
+    }
 }

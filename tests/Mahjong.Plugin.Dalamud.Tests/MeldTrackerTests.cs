@@ -39,42 +39,45 @@ public class MeldTrackerTests
     }
 
     [Fact]
-    public void ResetIfRoundEnded_clears_when_closed_hand_is_thirteen_with_open_melds()
+    public void ObserveWall_clears_on_wall_jump_up()
     {
         var tracker = new MeldTracker();
         tracker.Record(Meld.Pon(Tile.FromId(5), Tile.FromId(5), fromSeat: 1));
-        tracker.ResetIfRoundEnded(closedHandCount: 13);
+        tracker.ObserveWall(20);
+        tracker.ObserveWall(70);
         Assert.Empty(tracker.Melds);
     }
 
     [Fact]
-    public void ResetIfRoundEnded_clears_when_closed_hand_is_fourteen_with_open_melds()
+    public void ObserveWall_does_not_clear_within_a_hand()
     {
         var tracker = new MeldTracker();
         tracker.Record(Meld.Pon(Tile.FromId(5), Tile.FromId(5), fromSeat: 1));
-        tracker.ResetIfRoundEnded(closedHandCount: 14);
-        Assert.Empty(tracker.Melds);
-    }
-
-    [Theory]
-    [InlineData(11)]
-    [InlineData(10)]
-    [InlineData(8)]
-    [InlineData(2)]
-    [InlineData(0)]
-    public void ResetIfRoundEnded_does_not_clear_below_thirteen(int closedHandCount)
-    {
-        var tracker = new MeldTracker();
-        tracker.Record(Meld.Pon(Tile.FromId(5), Tile.FromId(5), fromSeat: 1));
-        tracker.ResetIfRoundEnded(closedHandCount);
+        tracker.ObserveWall(70);
+        tracker.ObserveWall(60);
+        tracker.ObserveWall(40);
+        tracker.ObserveWall(10);
         Assert.Single(tracker.Melds);
     }
 
     [Fact]
-    public void ResetIfRoundEnded_is_a_noop_when_already_empty()
+    public void ObserveWall_tolerates_minor_jitter()
     {
         var tracker = new MeldTracker();
-        tracker.ResetIfRoundEnded(closedHandCount: 14);
+        tracker.Record(Meld.Pon(Tile.FromId(5), Tile.FromId(5), fromSeat: 1));
+        tracker.ObserveWall(20);
+        // ±5 read-glitch tolerance — same threshold GameLogger.MaybeRollHand uses.
+        tracker.ObserveWall(24);
+        tracker.ObserveWall(22);
+        Assert.Single(tracker.Melds);
+    }
+
+    [Fact]
+    public void ObserveWall_is_a_noop_when_already_empty()
+    {
+        var tracker = new MeldTracker();
+        tracker.ObserveWall(20);
+        tracker.ObserveWall(70);
         Assert.Empty(tracker.Melds);
     }
 

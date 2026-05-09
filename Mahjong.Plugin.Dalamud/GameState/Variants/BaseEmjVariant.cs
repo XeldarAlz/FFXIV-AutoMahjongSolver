@@ -115,9 +115,12 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
         // Resolve our own open melds. The addon's on-disk meld struct is still
         // un-mapped; instead the MeldTracker captures each meld when the auto-play
-        // (or hooked manual click) accepts a call prompt. Reset the tracker when the
-        // closed-hand count proves a new round has started.
-        ctx.MeldTracker.ResetIfRoundEnded(hand.Count);
+        // (or hooked manual click) accepts a call prompt. Reset the tracker on
+        // wall jump up — same hand-transition signal GameLogger uses, and
+        // robust against the post-call window where the addon's hand-array
+        // briefly still reads pre-call (which would falsely fire a closed-hand
+        // -based reset and erase the meld we just recorded).
+        ctx.MeldTracker.ObserveWall(wallRemaining);
         var ourMelds = ctx.MeldTracker.Melds.ToArray();
 
         return StateSnapshot.Empty with
