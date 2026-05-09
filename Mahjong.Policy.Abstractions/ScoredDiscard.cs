@@ -13,4 +13,5 @@ public readonly record struct ScoredDiscard(
     int UkeireWeighted,
     int DoraRetained,
     int YakuhaiRetained,
-    double DealInCost);
+    double DealInCost,
+    double YakuPotential = 0.0);

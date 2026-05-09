@@ -41,8 +41,20 @@ public static class DiscardScorer
             var u = ukeire[i];
             int doraRetained = CountDora(hand, u.Discard, state.DoraIndicators);
             int yakuhaiRetained = CountYakuhai(hand, u.Discard, 27 + state.RoundWind, state);
+            double yakuPotential = YakuPotential.Score(hand, u.Discard, state);
 
             double dealInCost = opponentModel?.ExpectedDealInCost(u.Discard.Id) ?? 0.0;
+
+            // Yakuless tenpai is the trap that motivates this whole feature: at
+            // shanten=0 with a yaku-potential score below the 2-han threshold,
+            // the hand can only riichi as its yaku — and against a real-game
+            // opponent that's a coin flip on dealing into a mangan. Penalty
+            // grows linearly with how far below threshold we are; at exactly 0
+            // potential it dominates ukeire/dora and forces the scorer to pick
+            // a different shanten path.
+            double yakulessPenalty = u.ShantenAfter == 0 && yakuPotential < 0.5
+                ? w.YakulessTenpaiPenalty * (0.5 - yakuPotential) * 2.0
+                : 0.0;
 
             double score =
                 -w.Shanten * Math.Max(0, u.ShantenAfter)
@@ -50,13 +62,15 @@ public static class DiscardScorer
                 + w.UkeireWeighted * u.WeightedCount * p.Ukeire
                 + w.Dora * doraRetained * p.HandValue
                 + w.Yakuhai * yakuhaiRetained * p.HandValue
+                + w.YakuPotential * yakuPotential * p.HandValue
+                - yakulessPenalty * p.HandValue
                 + (IsIsolatedTerminalOrHonor(hand, u.Discard) ? w.IsolatedTerminal * p.Danger : 0.0)
                 - w.DealInCost * dealInCost * p.Danger;
 
             result[i] = new ScoredDiscard(
                 u.Discard, score, u.ShantenAfter,
                 u.AcceptedKinds.Length, u.WeightedCount,
-                doraRetained, yakuhaiRetained, dealInCost);
+                doraRetained, yakuhaiRetained, dealInCost, yakuPotential);
         }
 
         Array.Sort(result, (a, b) => b.Score.CompareTo(a.Score));

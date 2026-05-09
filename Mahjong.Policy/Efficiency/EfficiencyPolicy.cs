@@ -188,7 +188,7 @@ public sealed class EfficiencyPolicy : IPolicy
 
     private static string FormatDiscardSummary(ScoredDiscard best) =>
         $"best={best.Discard} shanten={best.ShantenAfter} ukeire={best.UkeireKinds}kinds/{best.UkeireWeighted}w " +
-        $"dora={best.DoraRetained} yakuhai={best.YakuhaiRetained} score={best.Score:F1}";
+        $"dora={best.DoraRetained} yakuhai={best.YakuhaiRetained} yaku-pot={best.YakuPotential:F2} score={best.Score:F1}";
 
     private static EfficiencyPolicy BuildDefault(IWeightProvider provider)
     {

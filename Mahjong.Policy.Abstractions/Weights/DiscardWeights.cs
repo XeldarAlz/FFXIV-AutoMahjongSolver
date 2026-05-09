@@ -17,7 +17,9 @@ public sealed record DiscardWeights(
     double Dora,
     double Yakuhai,
     double IsolatedTerminal,
-    double DealInCost)
+    double DealInCost,
+    double YakuPotential = 60.0,
+    double YakulessTenpaiPenalty = 120.0)
 {
     public static DiscardWeights Default { get; } = new(
         Shanten: 100.0,
@@ -26,5 +28,7 @@ public sealed record DiscardWeights(
         Dora: 36.9499,
         Yakuhai: 19.0784,
         IsolatedTerminal: 54.5092,
-        DealInCost: 0.019662);
+        DealInCost: 0.019662,
+        YakuPotential: 60.0,
+        YakulessTenpaiPenalty: 120.0);
 }

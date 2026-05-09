@@ -2,8 +2,8 @@
   "source": "synthetic-east-1.tenhou.json",
   "seat": 0,
   "totalDecisions": 3,
-  "matches": 2,
-  "accuracy": 0.6667,
+  "matches": 1,
+  "accuracy": 0.3333,
   "decisions": [
     {
       "turn": 0,
@@ -14,8 +14,8 @@
     {
       "turn": 1,
       "actual": "8p",
-      "policy": "8p",
-      "matched": true
+      "policy": "1m",
+      "matched": false
     },
     {
       "turn": 2,
