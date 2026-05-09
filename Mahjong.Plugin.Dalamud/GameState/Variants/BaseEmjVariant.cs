@@ -281,6 +281,19 @@ internal sealed class BaseEmjVariant : IEmjVariant
     ///   <item>Hand count satisfies <c>% 3 == 2</c> (14/11/8/5/2): plain discard.</item>
     ///   <item>Otherwise: no actions.</item>
     /// </list>
+    ///
+    /// <para><b>SelfDeclareList post-call gate:</b> state-6 (SelfDeclareList) is
+    /// dual-use. At <c>hand.Count == 14</c> it's the genuine self-declare popup
+    /// (Riichi/Tsumo/AnKan offered after a draw). At <c>hand.Count != 14</c> with
+    /// <c>hand.Count % 3 == 2</c> (typically 11 after a pon, 8 after a second
+    /// pon/chi, etc.) it's the post-call <i>discard-from-list</i> popup — the
+    /// same UI shell, but the visible list items are the player's closed hand
+    /// asking which tile to discard. Without this gate the variant decoder
+    /// reports <c>legal=Pon, Pass</c> on that popup (residual "Pon" string in
+    /// AtkValues from the just-resolved pon prompt) and the auto-loop spins
+    /// forever passing on a popup that actually wants a discard click — the
+    /// "stuck after pon, 11 tiles in hand" freeze observed 2026-05-09.
+    /// Fall through to the regular discard fallback in that case.</para>
     /// </summary>
     private unsafe LegalActions BuildLegalActions(
         AtkUnitBase* unit, int stateCode, List<Tile> hand, AtkValue* atkValues, int atkCount)
@@ -288,8 +301,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var states = profile.StateCodes;
         bool isCallPromptState =
             stateCode == states.CallPrompt ||
-            stateCode == states.SelfDeclareList ||
-            stateCode == states.CallPromptList;
+            stateCode == states.CallPromptList ||
+            (stateCode == states.SelfDeclareList && hand.Count == 14);
 
         if (isCallPromptState && IsCallModalVisible(unit))
         {
