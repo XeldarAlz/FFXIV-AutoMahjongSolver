@@ -74,8 +74,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
             int raw = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
             if (raw == 0)
                 break;
-            int tileId = raw - profile.TileTextureBase;
-            if (tileId >= 0 && tileId < Tile.Count34)
+            int tileId = DecodeTileId(raw);
+            if (tileId >= 0)
                 valid++;
             else
                 unknown++;
@@ -140,12 +140,30 @@ internal sealed class BaseEmjVariant : IEmjVariant
             int raw = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
             if (raw == 0)
                 break;
-            int tileId = raw - profile.TileTextureBase;
-            if (tileId < 0 || tileId >= Tile.Count34)
+            int tileId = DecodeTileId(raw);
+            if (tileId < 0)
                 continue;
             hand.Add(Tile.FromId(tileId));
         }
         return hand;
+    }
+
+    // Doman tags akadora 5m/5p/5s as raw indices 34/35/36 past TileTextureBase.
+    // Fold them into the plain tile id; without this the drawn akadora gets
+    // dropped from the closed hand and auto-play freezes (BuildLegalActions
+    // sees hand.Count % 3 != 2 and reports None even though it's our turn).
+    private int DecodeTileId(int raw)
+    {
+        int idx = raw - profile.TileTextureBase;
+        if (idx >= 0 && idx < Tile.Count34)
+            return idx;
+        return idx switch
+        {
+            34 => 4,
+            35 => 13,
+            36 => 22,
+            _ => -1,
+        };
     }
 
     private unsafe int[] ReadScores(byte* basePtr) =>
@@ -169,8 +187,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
     {
         var dora = new List<Tile>(1);
         int rawDora = *(int*)(basePtr + profile.Offsets.DoraIndicator);
-        int doraTileId = rawDora - profile.TileTextureBase;
-        if (doraTileId >= 0 && doraTileId < Tile.Count34)
+        int doraTileId = DecodeTileId(rawDora);
+        if (doraTileId >= 0)
             dora.Add(Tile.FromId(doraTileId));
         return dora;
     }
@@ -399,8 +417,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
         {
             if (atkValues[i].Type != ValueType.Int)
                 continue;
-            int tileId = atkValues[i].Int - profile.TileTextureBase;
-            if (tileId < 0 || tileId >= Tile.Count34)
+            int tileId = DecodeTileId(atkValues[i].Int);
+            if (tileId < 0)
                 continue;
             seen[tileId]++;
             if (seen[tileId] >= 2)
@@ -428,9 +446,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
         int idx = profile.AtkValues.ChiClaimedTile;
         if (atkValues == null || atkCount <= idx || atkValues[idx].Type != ValueType.Int)
             return;
-        int tex = atkValues[idx].Int;
-        int tileId = tex - profile.TileTextureBase;
-        if (tileId < 0 || tileId >= Tile.Count34)
+        int tileId = DecodeTileId(atkValues[idx].Int);
+        if (tileId < 0)
             return;
         var claimed = Tile.FromId(tileId);
         var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 3);
