@@ -411,13 +411,30 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return new LegalActions(flags, [], pons, chis, kans);
     }
 
+    /// <summary>
+    /// Fallback when <see cref="AppendPonCandidateFromAtkValues"/> didn't find
+    /// the claim tile in the AtkValue scan. Enumerate every pair we hold and
+    /// emit a Pon candidate per pair — the call policy picks the best by
+    /// shanten gain, and the click itself is just opcode-11 / option-0
+    /// (the game forms whichever tile is actually being claimed, regardless
+    /// of which candidate the policy reasoned about).
+    ///
+    /// <para>The earlier "unique pair only" rule silently dropped Pon prompts
+    /// whenever the hand carried two-or-more pairs — observed 2026-05-09 09:54
+    /// where a 3-pair hand declined every Pon offer with "no call candidates
+    /// offered" because the unique-pair check returned ambiguous and never
+    /// emitted anything.</para>
+    /// </summary>
     private void AppendPonCandidate(List<Tile> hand, int[] counts, List<MeldCandidate> pons)
     {
-        if (TryFindUniqueRunOrTriplet(counts, minCount: 2) is not int pairId)
-            return;
-        var claimed = Tile.FromId(pairId);
-        var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
-        pons.AddRange(derived.Pon);
+        for (int id = 0; id < Tile.Count34; id++)
+        {
+            if (counts[id] < 2)
+                continue;
+            var claimed = Tile.FromId(id);
+            var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
+            pons.AddRange(derived.Pon);
+        }
     }
 
     /// <summary>
@@ -472,18 +489,68 @@ internal sealed class BaseEmjVariant : IEmjVariant
         kans.AddRange(derived.Kan);
     }
 
+    /// <summary>
+    /// Resolve the chi-claimed tile from AtkValues. The configured slot
+    /// (<see cref="LayoutAtkValueIndices.ChiClaimedTile"/>, default 19) is
+    /// correct for some prompts — confirmed by the successful 2026-05-09
+    /// 10:06 chi accept where atk[19]=9s lined up with the user's 7s+8s.
+    /// But it's not consistent: at 2026-05-09 09:54 atk[19]=East across a
+    /// dozen back-to-back chi prompts, derivation always returned zero
+    /// (chi can't be on honors), and we declined every chi the game
+    /// offered — most of the post-fix call-decline volume.
+    ///
+    /// <para>Strategy: try the configured slot first; if it produces a
+    /// derivable chi, use it. Otherwise scan a wider window for any int
+    /// slot whose tile id, treated as a chi claim, yields ≥1 valid
+    /// sequence with the current hand. Take the first match. The candidate
+    /// is only used by the call policy's evaluator — the click itself
+    /// is just opcode-11 / option-0, and the game forms whichever
+    /// chi-variant matches the actual offer.</para>
+    /// </summary>
     private unsafe void AppendChiCandidate(
         List<Tile> hand, AtkValue* atkValues, int atkCount, List<MeldCandidate> chis)
     {
-        int idx = profile.AtkValues.ChiClaimedTile;
-        if (atkValues == null || atkCount <= idx || atkValues[idx].Type != ValueType.Int)
+        if (atkValues == null)
             return;
-        int tileId = DecodeTileId(atkValues[idx].Int);
+
+        int configuredIdx = profile.AtkValues.ChiClaimedTile;
+        if (TryDeriveChiFromSlot(hand, atkValues, atkCount, configuredIdx, chis))
+            return;
+
+        // Configured slot didn't yield a chi. Scan the [0..30] window for any
+        // suited tile whose claim derives ≥1 chi against the current hand.
+        // Bounded scan because beyond ~30 the array tends to carry unrelated
+        // payloads (seat scores, discard piles further upstream) that would
+        // produce false-positive candidates.
+        int scanLimit = Math.Min(atkCount, 30);
+        for (int i = 0; i < scanLimit; i++)
+        {
+            if (i == configuredIdx)
+                continue;
+            if (TryDeriveChiFromSlot(hand, atkValues, atkCount, i, chis))
+                return;
+        }
+    }
+
+    private unsafe bool TryDeriveChiFromSlot(
+        List<Tile> hand, AtkValue* atkValues, int atkCount,
+        int slot, List<MeldCandidate> chis)
+    {
+        if (slot < 0 || slot >= atkCount)
+            return false;
+        if (atkValues[slot].Type != ValueType.Int)
+            return false;
+        int tileId = DecodeTileId(atkValues[slot].Int);
         if (tileId < 0)
-            return;
+            return false;
         var claimed = Tile.FromId(tileId);
+        if (claimed.IsHonor)
+            return false;
         var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 3);
+        if (derived.Chi.Count == 0)
+            return false;
         chis.AddRange(derived.Chi);
+        return true;
     }
 
     /// <summary>
