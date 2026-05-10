@@ -51,6 +51,18 @@ namespace Mahjong.Plugin.Dalamud.Telemetry;
 public sealed class MemoryDumpRecorder : IDisposable
 {
     public const int SchemaVersion = 1;
+
+    // The state-change cadence captures three discrete addon "shapes" by
+    // AtkValuesCount: 50 (lobby/idle), 73 (menu/transition), and 109 (active
+    // hand). The 2026-05 corpus showed 50/73 dumps account for ~32% of all
+    // memdump traffic without carrying any signal the gameplay layer can
+    // use — every interesting field (hand, seat blocks, dora) is only
+    // populated in the 109-bucket. Drop ticks below this threshold for
+    // state-change captures; explicit pre-discard / post-call captures
+    // still go through (they're rarer and the count can be transient at
+    // those moments).
+    internal const int MinAtkValuesForStateChangeDump = 100;
+
     private const int AddonDumpBytes = 0x300 + 0x1000; // header + 4 KB tail (covers all 4 seat blocks)
     // Root node: header + ~0x300 of live region. The full 0x1000 we used to
     // capture is mostly a static AtkNode tree on the released build — a
@@ -120,6 +132,14 @@ public sealed class MemoryDumpRecorder : IDisposable
                 return;
 
             var unit = (AtkUnitBase*)obs.Address;
+
+            // Gate the high-frequency state-change cadence on AtkValuesCount.
+            // Other reasons (pre-discard / post-call from action dispatchers)
+            // are coarse, rare, and useful even mid-transition — let them
+            // through unconditionally so we never miss a labeled pair.
+            if (reason == "state-change" && unit->AtkValuesCount < MinAtkValuesForStateChangeDump)
+                return;
+
             var entry = BuildEntry(reason, unit);
 
             // Hash-dedup: identical-bytes snapshot shouldn't ship twice
