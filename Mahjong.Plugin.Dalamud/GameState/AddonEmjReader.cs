@@ -140,7 +140,7 @@ public sealed class AddonEmjReader : IDisposable
                 $"{string.Join(", ", variants.ConvertAll(v => v.Name))}");
             findings?.Record("layouts_loaded", new Dictionary<string, object?>
             {
-                ["dir"] = layoutsDir,
+                ["dir"] = PathRedactor.Redact(layoutsDir),
                 ["count"] = variants.Count,
                 ["names"] = variants.Select(v => v.Name).ToArray(),
             });
@@ -151,7 +151,7 @@ public sealed class AddonEmjReader : IDisposable
             log.Error($"[MjAuto] Layout profile load failed at {layoutsDir}: {ex.Message}");
             findings?.Record("layouts_load_fail", new Dictionary<string, object?>
             {
-                ["dir"] = layoutsDir,
+                ["dir"] = PathRedactor.Redact(layoutsDir),
                 ["exception_type"] = ex.GetType().FullName,
                 ["message"] = ex.Message,
             });

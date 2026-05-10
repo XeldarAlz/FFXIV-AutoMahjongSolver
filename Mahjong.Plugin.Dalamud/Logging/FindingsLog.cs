@@ -84,6 +84,7 @@ internal sealed class FindingsLog : IFindingsLog, IDisposable
     {
         try
         {
+            entry = ScrubPaths(entry);
             var line = JsonSerializer.Serialize(entry, JsonOpts);
             var path = Path.Combine(findingsDir, $"findings-{DateTime.UtcNow:yyyyMMdd}.ndjson");
             lock (writerLock)
@@ -104,6 +105,46 @@ internal sealed class FindingsLog : IFindingsLog, IDisposable
 
     private static string NowIso() =>
         DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+
+    // Defense in depth against PII leaking through this sink: scrub every
+    // string value in the data bag and the free-form note. Callers (e.g.
+    // AddonEmjReader) are expected to pre-redact, but a future caller that
+    // forgets — or a future field added with an absolute path in error —
+    // shouldn't leak the user's home directory to the corpus.
+    private static FindingEntry ScrubPaths(FindingEntry entry)
+    {
+        Dictionary<string, object?>? scrubbed = null;
+        if (entry.Data is { Count: > 0 })
+        {
+            scrubbed = new Dictionary<string, object?>(entry.Data.Count);
+            foreach (var kv in entry.Data)
+                scrubbed[kv.Key] = ScrubValue(kv.Value);
+        }
+        var scrubbedNote = entry.Note is null ? null : ScrubIfPathLike(entry.Note);
+        return entry with { Data = scrubbed, Note = scrubbedNote };
+    }
+
+    private static object? ScrubValue(object? value) => value switch
+    {
+        string s => ScrubIfPathLike(s),
+        _ => value,
+    };
+
+    private static string ScrubIfPathLike(string s) =>
+        LooksLikePath(s) ? PathRedactor.Redact(s) : s;
+
+    private static bool LooksLikePath(string s)
+    {
+        if (s.Length < 3)
+            return false;
+        // Windows drive prefix or POSIX absolute path. Cheap precheck — full
+        // redactor handles the "preserve trailing segments" rules.
+        if (s.Length >= 3 && char.IsLetter(s[0]) && s[1] == ':' && (s[2] == '\\' || s[2] == '/'))
+            return true;
+        if (s[0] == '/' || s[0] == '\\')
+            return true;
+        return false;
+    }
 
     private sealed record FindingEntry(
         [property: JsonPropertyName("t")] string T,

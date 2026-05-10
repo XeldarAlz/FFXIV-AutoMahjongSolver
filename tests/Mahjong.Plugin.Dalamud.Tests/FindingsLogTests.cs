@@ -104,6 +104,58 @@ public class FindingsLogTests
     }
 
     [Fact]
+    public void Path_like_strings_in_data_are_scrubbed()
+    {
+        using var tmp = new TempDir();
+        using var errors = new ErrorSink(tmp.Path);
+        using var sink = new FindingsLog(tmp.Path, errors);
+
+        sink.Record("layouts_loaded", new Dictionary<string, object?>
+        {
+            ["dir"] = @"C:\Users\xelda\AppData\Roaming\XIVLauncher\installedPlugins\Mahjong.Plugin.Dalamud\0.1.0.0\layouts",
+            ["count"] = 2,
+        });
+
+        var contents = File.ReadAllText(Directory.GetFiles(sink.FindingsDir, "findings-*.ndjson")[0]);
+        Assert.DoesNotContain(@"C:\\Users\\xelda", contents);
+        Assert.DoesNotContain(@"\\Users\\", contents);
+        Assert.Contains(@"XIVLauncher\\installedPlugins", contents);
+    }
+
+    [Fact]
+    public void Path_like_note_is_scrubbed()
+    {
+        using var tmp = new TempDir();
+        using var errors = new ErrorSink(tmp.Path);
+        using var sink = new FindingsLog(tmp.Path, errors);
+
+        sink.Record("layouts_load_fail", @"/home/lux/.xlcore/installedPlugins/Mahjong.Plugin.Dalamud/0.1.0.0/layouts");
+
+        var contents = File.ReadAllText(Directory.GetFiles(sink.FindingsDir, "findings-*.ndjson")[0]);
+        Assert.DoesNotContain("/home/lux", contents);
+        Assert.DoesNotContain(@"\\home\\lux", contents);
+        Assert.Contains(".xlcore", contents);
+    }
+
+    [Fact]
+    public void Non_path_strings_are_left_alone()
+    {
+        using var tmp = new TempDir();
+        using var errors = new ErrorSink(tmp.Path);
+        using var sink = new FindingsLog(tmp.Path, errors);
+
+        sink.Record("variant_match", new Dictionary<string, object?>
+        {
+            ["addon"] = "Emj",
+            ["variants"] = new[] { "Emj", "EmjL" },
+        });
+
+        var contents = File.ReadAllText(Directory.GetFiles(sink.FindingsDir, "findings-*.ndjson")[0]);
+        Assert.Contains("\"addon\":\"Emj\"", contents);
+        Assert.Contains("\"variants\":[\"Emj\",\"EmjL\"]", contents);
+    }
+
+    [Fact]
     public void Sequence_numbers_are_monotonic_per_instance()
     {
         using var tmp = new TempDir();
