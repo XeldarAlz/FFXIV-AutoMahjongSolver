@@ -39,6 +39,17 @@ public sealed class InputDispatcher
     /// Discard the tile at the given closed-hand slot (0..13). Slot 13 = last-drawn tile.
     /// FireCallback returns false on invalid state; we surface that as HookFailed rather
     /// than crashing (unlike ReceiveEvent synthesis).
+    ///
+    /// <para><b>Post-call discard popup:</b> state-6 SelfDeclareList with
+    /// hand.Count != 14 is the list-widget post-chi/pon/kan discard popup —
+    /// the same modal shell as the standalone Riichi/Pass list. Opcode 7
+    /// <c>FireCallback</c> returns false against the list widget (verified
+    /// 2026-05-10 17:48: bot dispatched chi → addon entered state-6 list popup
+    /// → DispatchDiscard slot=2 returned <c>HookFailed</c> → AutoPlayLoop FSM
+    /// suppressed retries for 3 s → bot stalled). When that shell is active
+    /// we route through <see cref="TryDispatchListItemClick"/> just like
+    /// <see cref="DispatchCallOption"/> does. The list items are the closed
+    /// hand in slot order, so <paramref name="slotIndex"/> maps directly.</para>
     /// </summary>
     public unsafe DispatchResult DispatchDiscard(int slotIndex)
     {
@@ -50,11 +61,32 @@ public sealed class InputDispatcher
         if (!unit->IsVisible)
             return DispatchResult.AddonNotVisible;
 
+        if (IsListWidgetPopupActive(unit) && TryDispatchListItemClick(unit, slotIndex))
+            return DispatchResult.Ok;
+
         var values = stackalloc AtkValue[2];
         values[0].SetInt(7);
         values[1].SetInt(slotIndex);
         bool ok = unit->FireCallback(2, values, true);
         return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
+    }
+
+    /// <summary>
+    /// True when the call-modal host (node 104) is visible and its inner
+    /// shell (node 3) is an AtkComponentList. Distinguishes the list-widget
+    /// popups (state-6 SelfDeclareList, state-28 CallPromptList) from the
+    /// in-hand discard surface (state-30, no modal node) and from classic
+    /// button-row popups (state-15 with string labels).
+    /// </summary>
+    private static unsafe bool IsListWidgetPopupActive(AtkUnitBase* unit)
+    {
+        var host = unit->GetNodeById(104);
+        if (host == null || (int)host->Type < 1000) return false;
+        if (!host->IsVisible()) return false;
+        var hostComp = ((AtkComponentNode*)host)->Component;
+        if (hostComp == null) return false;
+        var shell = hostComp->GetNodeById(3);
+        return shell != null && (int)shell->Type == 1030;
     }
 
     /// <summary>

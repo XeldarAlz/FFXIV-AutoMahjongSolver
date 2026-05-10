@@ -247,6 +247,22 @@ public sealed class AutoPlayLoop : IDisposable
         });
     }
 
+    /// <summary>
+    /// If the most recent dispatch returned a transient failure
+    /// (<see cref="InputDispatcher.DispatchResult.HookFailed"/>), wipe the
+    /// (state, hand) context the FSM uses to debounce retries. Without this
+    /// the next 3 s of ticks observe the same context and skip dispatching,
+    /// stranding the bot whenever a discard click misses (observed 2026-05-10
+    /// 17:48: opcode-7 FireCallback against the post-chi list widget returned
+    /// false → FSM suppressed retries → bot froze with the post-call popup
+    /// still up).
+    /// </summary>
+    private void ClearRetryDebounceIfHookFailed(InputDispatcher.DispatchResult result)
+    {
+        if (result == InputDispatcher.DispatchResult.HookFailed)
+            fsm.ClearContext();
+    }
+
     private void ScheduleCallDecision(DispatchContext context)
     {
         ScheduleAction("call", context, CallDecisionDelayMs, () =>
@@ -276,6 +292,7 @@ public sealed class AutoPlayLoop : IDisposable
             LastActionDescription = $"auto-riichi-tsumogiri {tile} slot=13 → {result}";
             log.Info($"[AutoPlayLoop] riichi-tsumogiri dispatch: {LastActionDescription}");
             plugin.GameLogger.RecordAction(ActionKind.Discard, tile, 13, result.ToString(), "riichi-tsumogiri");
+            ClearRetryDebounceIfHookFailed(result);
             // Don't clear the latch here — once we've declared riichi we
             // must NOT let policy.Choose re-evaluate it later in the same
             // hand (it would, since OurRiichi is always false in our
@@ -296,6 +313,7 @@ public sealed class AutoPlayLoop : IDisposable
             var result = plugin.Dispatcher.DispatchTsumo();
             LastActionDescription = $"auto-tsumo → {result}";
             plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
+            ClearRetryDebounceIfHookFailed(result);
             return;
         }
 
@@ -330,6 +348,7 @@ public sealed class AutoPlayLoop : IDisposable
         var result = plugin.Dispatcher.DispatchKan(slot);
         LastActionDescription = $"auto-ankan {kanTile} slot={slot} → {result}";
         plugin.GameLogger.RecordAction(ActionKind.AnKan, kanTile, slot, result.ToString(), choice.Reasoning);
+        ClearRetryDebounceIfHookFailed(result);
     }
 
     private void DispatchDiscardOrRiichi(StateSnapshot snap, ActionChoice choice)
@@ -348,6 +367,7 @@ public sealed class AutoPlayLoop : IDisposable
         string actionName = choice.Kind == ActionKind.Riichi ? "riichi" : "discard";
         LastActionDescription = $"auto-{actionName} {tile} slot={slot} → {result}";
         plugin.GameLogger.RecordAction(choice.Kind, tile, slot, result.ToString(), choice.Reasoning);
+        ClearRetryDebounceIfHookFailed(result);
     }
 
     private void DispatchCallChoice(StateSnapshot snap, ActionChoice choice)
