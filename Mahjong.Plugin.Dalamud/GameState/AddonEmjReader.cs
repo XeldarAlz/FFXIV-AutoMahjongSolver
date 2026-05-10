@@ -71,6 +71,16 @@ public sealed class AddonEmjReader : IDisposable
 
     public AddonEmjObservation LastObservation { get; private set; } = AddonEmjObservation.Empty;
 
+    /// <summary>
+    /// The most recently-resolved variant's layout profile, or null if no
+    /// variant has resolved this session. Set inside <see cref="TryBuildSnapshot"/>
+    /// the first time a variant successfully matches the live addon, and updated
+    /// on every subsequent successful resolution. Read by the memory-dump
+    /// recorder so each snapshot can travel with the seat-offset map that
+    /// describes how to slice <c>addon_b64</c>.
+    /// </summary>
+    public LayoutProfile? ActiveLayout { get; private set; }
+
     /// <summary>Fired whenever any lifecycle event updates the observation.</summary>
     public event Action<AddonEmjObservation>? ObservationChanged;
 
@@ -337,6 +347,11 @@ public sealed class AddonEmjReader : IDisposable
         var variant = selector.Resolve(unit, resolvedName);
         if (variant is null)
             return null;
+
+        // Variant resolved → the layout is now known for this addon. Record
+        // it so the memory-dump recorder can include the seat-offset map in
+        // each snapshot, even if the snapshot build below fails.
+        ActiveLayout = variant.Profile;
 
         if (EventLogger is null)
             return null;

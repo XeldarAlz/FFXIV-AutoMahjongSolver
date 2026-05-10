@@ -18,11 +18,23 @@ namespace Mahjong.Plugin.Dalamud.Telemetry;
 /// them through the telemetry pipeline so cross-client RE can be done
 /// offline against a real corpus instead of one developer's reproductions.
 ///
-/// <para><b>Per-snapshot scope (~64 KB):</b>
+/// <para><b>Per-snapshot scope (~6 KB):</b>
 /// <list type="bullet">
-///   <item><c>AtkUnitBase</c> header + a 4 KB tail (covers AddonEmj's known size).</item>
+///   <item><c>AtkUnitBase</c> header + a 4 KB tail (covers AddonEmj's known
+///   size, including all four seat blocks at layout offsets ~0x04FE / 0x07DE
+///   / 0x0ABE / 0x0D9E for the released Emj variant).</item>
+///   <item><c>RootNode</c> header + the live ~0x300 region. Empirical byte
+///   variability across a 77-min capture (461e8ece, 2026-05-10) showed
+///   everything past 0x400 in the root node is near-static node-tree
+///   plumbing — capturing 0x1000 there wastes ~3 KB per snapshot.</item>
 ///   <item>Each observed seat-pool struct from <see cref="SeatPoolRegistry"/>
-///   (4 KB each, up to 4 seats).</item>
+///   (4 KB each, up to 4 seats). Currently empty in production: the only
+///   producer of pool addresses is the asm-hook discard capture (see
+///   <see cref="Hooks.Strategies.NativeAsmDiscardCapture"/>), which the
+///   factory keeps disabled because the 2026-04-27 sig collides with idle
+///   game code on post-2026-05 builds. Per-seat data is still captured —
+///   it lives inside the addon dump above; the heap-allocated pool structs
+///   the asm hook used to expose are separate and currently invisible.</item>
 ///   <item>Full <c>AtkValues</c> array (variable, capped at 1024 entries).</item>
 /// </list></para>
 ///
@@ -39,7 +51,13 @@ namespace Mahjong.Plugin.Dalamud.Telemetry;
 public sealed class MemoryDumpRecorder : IDisposable
 {
     public const int SchemaVersion = 1;
-    private const int AddonDumpBytes = 0x300 + 0x1000; // header + 4 KB tail
+    private const int AddonDumpBytes = 0x300 + 0x1000; // header + 4 KB tail (covers all 4 seat blocks)
+    // Root node: header + ~0x300 of live region. The full 0x1000 we used to
+    // capture is mostly a static AtkNode tree on the released build — a
+    // 77-min capture (461e8ece, 2026-05-10) found two real signal bytes
+    // (~0x310, ~0x3F0) and a long lockstep-pointer cluster at 0x280..0x3B0
+    // that only flips on UI re-allocation. Past 0x400 was 95%+ dead.
+    private const int RootDumpBytes = 0x400;
     private const int SeatPoolDumpBytes = 0x1000;
     private const int MaxAtkValues = 1024;
     private const long FileRolloverBytes = 1024 * 1024;
@@ -124,15 +142,15 @@ public sealed class MemoryDumpRecorder : IDisposable
         var addonBytes = SafeReadBytes((nint)unit, AddonDumpBytes);
 
         // RootNode dump — useful for node-id RE since the tree layout
-        // varies across client variants. Bounded to 4 KB; deeper nodes
-        // can be reconstructed offline from the address graph in the
+        // varies across client variants. Bounded to RootDumpBytes; deeper
+        // nodes can be reconstructed offline from the address graph in the
         // addon dump itself.
         byte[]? rootBytes = null;
         nint rootAddr = 0;
         if (unit->RootNode != null)
         {
             rootAddr = (nint)unit->RootNode;
-            rootBytes = SafeReadBytes(rootAddr, 0x1000);
+            rootBytes = SafeReadBytes(rootAddr, RootDumpBytes);
         }
 
         // AtkValues — addon's parameter array. Bounded at MaxAtkValues
@@ -147,17 +165,35 @@ public sealed class MemoryDumpRecorder : IDisposable
             atkBytes = SafeReadBytes(atkAddr, atkCount * sizeof(AtkValue));
         }
 
-        var pools = new List<SeatPoolDump>();
+        List<SeatPoolDump>? pools = null;
         foreach (var poolBase in seatPools.Bases)
         {
             var poolBytes = SafeReadBytes(poolBase, SeatPoolDumpBytes);
-            if (poolBytes is not null)
-                pools.Add(new SeatPoolDump(
-                    Address: poolBase.ToInt64(),
-                    BytesB64: Convert.ToBase64String(poolBytes)));
+            if (poolBytes is null)
+                continue;
+            pools ??= new List<SeatPoolDump>(4);
+            pools.Add(new SeatPoolDump(
+                Address: poolBase.ToInt64(),
+                BytesB64: Convert.ToBase64String(poolBytes)));
         }
 
         var hash = ComputeHash(addonBytes, rootBytes, atkBytes, pools);
+
+        // Layout-aware metadata. Both fields stay null until the variant
+        // selector has resolved a layout this session — pre-resolution
+        // snapshots (rare; only the first few ticks of a session) ship
+        // without them and analyzers can fall back to addon-name lookup.
+        var layout = reader.ActiveLayout;
+        var seatOffsets = layout is null ? null : new AddonSeatOffsets(
+            SelfCount:     layout.Offsets.SelfDiscardCountByte,
+            SelfScore:     layout.Offsets.SelfScore,
+            ShimochaCount: layout.Offsets.ShimochaDiscardCountByte,
+            ShimochaScore: layout.Offsets.ShimochaScore,
+            ToimenCount:   layout.Offsets.ToimenDiscardCountByte,
+            ToimenScore:   layout.Offsets.ToimenScore,
+            KamichaCount:  layout.Offsets.KamichaDiscardCountByte,
+            KamichaScore:  layout.Offsets.KamichaScore,
+            HandArrayStart: layout.Offsets.HandArrayStart);
 
         return new MemDumpEntry(
             T: NowIso(),
@@ -172,6 +208,8 @@ public sealed class MemoryDumpRecorder : IDisposable
             AtkValuesCount: atkCount,
             AtkValuesBytesB64: atkBytes is null ? null : Convert.ToBase64String(atkBytes),
             SeatPools: pools,
+            Variant: layout?.Name,
+            AddonSeatOffsets: seatOffsets,
             Hash: hash);
     }
 
@@ -198,7 +236,7 @@ public sealed class MemoryDumpRecorder : IDisposable
     }
 
     private static string ComputeHash(
-        byte[]? addonBytes, byte[]? rootBytes, byte[]? atkBytes, List<SeatPoolDump> pools)
+        byte[]? addonBytes, byte[]? rootBytes, byte[]? atkBytes, List<SeatPoolDump>? pools)
     {
         using var sha = SHA256.Create();
         if (addonBytes is not null)
@@ -207,10 +245,13 @@ public sealed class MemoryDumpRecorder : IDisposable
             sha.TransformBlock(rootBytes, 0, rootBytes.Length, null, 0);
         if (atkBytes is not null)
             sha.TransformBlock(atkBytes, 0, atkBytes.Length, null, 0);
-        foreach (var p in pools)
+        if (pools is not null)
         {
-            var b = Convert.FromBase64String(p.BytesB64);
-            sha.TransformBlock(b, 0, b.Length, null, 0);
+            foreach (var p in pools)
+            {
+                var b = Convert.FromBase64String(p.BytesB64);
+                sha.TransformBlock(b, 0, b.Length, null, 0);
+            }
         }
         sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
         return Convert.ToHexString(sha.Hash!).Substring(0, 16);
@@ -259,10 +300,38 @@ public sealed class MemoryDumpRecorder : IDisposable
         [property: JsonPropertyName("atk_addr")] long AtkValuesAddress,
         [property: JsonPropertyName("atk_count")] int AtkValuesCount,
         [property: JsonPropertyName("atk_b64")] string? AtkValuesBytesB64,
-        [property: JsonPropertyName("seat_pools")] List<SeatPoolDump> SeatPools,
+        // Null (and omitted via JsonIgnoreCondition.WhenWritingNull) when no
+        // seat-pool addresses have been observed this session — the typical
+        // case on the released build, where the asm-hook producer is offline.
+        // Keeping the field as nullable rather than ripping it out preserves
+        // forward compatibility for when the asm hook lands a verified sig.
+        [property: JsonPropertyName("seat_pools")] List<SeatPoolDump>? SeatPools,
+        // Variant name ("Emj" / "EmjL" / ...) and per-seat byte offsets into
+        // the addon dump. Both null until the variant selector has resolved a
+        // layout this session. Lets offline analyzers slice the four seat
+        // blocks out of `addon_b64` without name-guessing the layout file.
+        [property: JsonPropertyName("variant")] string? Variant,
+        [property: JsonPropertyName("addon_seat_offsets")] AddonSeatOffsets? AddonSeatOffsets,
         [property: JsonPropertyName("hash")] string Hash);
 
     private sealed record SeatPoolDump(
         [property: JsonPropertyName("addr")] long Address,
         [property: JsonPropertyName("b64")] string BytesB64);
+
+    /// <summary>
+    /// Per-seat byte offsets into the addon dump (<c>addon_b64</c>). The
+    /// score field is the start of a 4-byte int; the count_byte field is a
+    /// single byte two bytes before the score. Hand array is the player's
+    /// closed hand, 14 × 4-byte ints starting at <c>hand_array_start</c>.
+    /// </summary>
+    private sealed record AddonSeatOffsets(
+        [property: JsonPropertyName("self_count_byte")]      int SelfCount,
+        [property: JsonPropertyName("self_score")]           int SelfScore,
+        [property: JsonPropertyName("shimocha_count_byte")]  int ShimochaCount,
+        [property: JsonPropertyName("shimocha_score")]       int ShimochaScore,
+        [property: JsonPropertyName("toimen_count_byte")]    int ToimenCount,
+        [property: JsonPropertyName("toimen_score")]         int ToimenScore,
+        [property: JsonPropertyName("kamicha_count_byte")]   int KamichaCount,
+        [property: JsonPropertyName("kamicha_score")]        int KamichaScore,
+        [property: JsonPropertyName("hand_array_start")]     int HandArrayStart);
 }

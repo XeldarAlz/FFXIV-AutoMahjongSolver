@@ -1,5 +1,6 @@
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Mahjong.Engine;
+using Mahjong.Plugin.Game.Variants;
 
 namespace Mahjong.Plugin.Dalamud.GameState.Variants;
 
@@ -23,6 +24,14 @@ internal interface IEmjVariant
     /// encoding fingerprint is inconclusive.
     /// </summary>
     string PreferredAddonName { get; }
+
+    /// <summary>
+    /// The layout profile backing this variant. Exposed so the memory-dump
+    /// recorder can travel the per-seat offset map alongside each snapshot,
+    /// letting offline analyzers slice <c>addon_b64</c> without having to
+    /// cross-reference <c>data/layouts/*.json</c> by addon name.
+    /// </summary>
+    LayoutProfile Profile { get; }
 
     /// <summary>
     /// Cheap structural fingerprint. Called on a live addon pointer. Must not

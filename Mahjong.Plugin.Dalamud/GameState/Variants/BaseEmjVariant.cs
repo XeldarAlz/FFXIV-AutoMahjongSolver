@@ -36,6 +36,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
     public string Name => profile.Name;
     public string PreferredAddonName => profile.AddonName;
+    public LayoutProfile Profile => profile;
 
     // Log de-dupe state for diagnostic dumps. Scoped per-variant so each
     // variant handles its own state-code convention without cross-talk.
