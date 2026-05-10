@@ -185,14 +185,14 @@ public sealed class MemoryDumpRecorder : IDisposable
         // without them and analyzers can fall back to addon-name lookup.
         var layout = reader.ActiveLayout;
         var seatOffsets = layout is null ? null : new AddonSeatOffsets(
-            SelfCount:     layout.Offsets.SelfDiscardCountByte,
-            SelfScore:     layout.Offsets.SelfScore,
+            SelfCount: layout.Offsets.SelfDiscardCountByte,
+            SelfScore: layout.Offsets.SelfScore,
             ShimochaCount: layout.Offsets.ShimochaDiscardCountByte,
             ShimochaScore: layout.Offsets.ShimochaScore,
-            ToimenCount:   layout.Offsets.ToimenDiscardCountByte,
-            ToimenScore:   layout.Offsets.ToimenScore,
-            KamichaCount:  layout.Offsets.KamichaDiscardCountByte,
-            KamichaScore:  layout.Offsets.KamichaScore,
+            ToimenCount: layout.Offsets.ToimenDiscardCountByte,
+            ToimenScore: layout.Offsets.ToimenScore,
+            KamichaCount: layout.Offsets.KamichaDiscardCountByte,
+            KamichaScore: layout.Offsets.KamichaScore,
             HandArrayStart: layout.Offsets.HandArrayStart);
 
         return new MemDumpEntry(
@@ -325,13 +325,13 @@ public sealed class MemoryDumpRecorder : IDisposable
     /// closed hand, 14 × 4-byte ints starting at <c>hand_array_start</c>.
     /// </summary>
     private sealed record AddonSeatOffsets(
-        [property: JsonPropertyName("self_count_byte")]      int SelfCount,
-        [property: JsonPropertyName("self_score")]           int SelfScore,
-        [property: JsonPropertyName("shimocha_count_byte")]  int ShimochaCount,
-        [property: JsonPropertyName("shimocha_score")]       int ShimochaScore,
-        [property: JsonPropertyName("toimen_count_byte")]    int ToimenCount,
-        [property: JsonPropertyName("toimen_score")]         int ToimenScore,
-        [property: JsonPropertyName("kamicha_count_byte")]   int KamichaCount,
-        [property: JsonPropertyName("kamicha_score")]        int KamichaScore,
-        [property: JsonPropertyName("hand_array_start")]     int HandArrayStart);
+        [property: JsonPropertyName("self_count_byte")] int SelfCount,
+        [property: JsonPropertyName("self_score")] int SelfScore,
+        [property: JsonPropertyName("shimocha_count_byte")] int ShimochaCount,
+        [property: JsonPropertyName("shimocha_score")] int ShimochaScore,
+        [property: JsonPropertyName("toimen_count_byte")] int ToimenCount,
+        [property: JsonPropertyName("toimen_score")] int ToimenScore,
+        [property: JsonPropertyName("kamicha_count_byte")] int KamichaCount,
+        [property: JsonPropertyName("kamicha_score")] int KamichaScore,
+        [property: JsonPropertyName("hand_array_start")] int HandArrayStart);
 }
