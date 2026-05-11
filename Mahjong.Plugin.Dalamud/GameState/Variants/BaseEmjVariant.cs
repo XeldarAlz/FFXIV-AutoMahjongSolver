@@ -106,7 +106,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var atkValues = unit->AtkValues;
         int atkCount = unit->AtkValuesCount;
         int stateCode = ReadStateCode(atkValues, atkCount);
-        int wallRemaining = ResolveWallRemaining(stateCode, atkValues, atkCount, discardCounts);
+        int wallRemaining = ResolveWallRemaining(discardCounts);
 
         var seats = BuildSeatViews(discardCounts);
         var legal = BuildLegalActions(unit, stateCode, hand, atkValues, atkCount);
@@ -239,21 +239,21 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return v.Type == ValueType.Int ? v.Int : -1;
     }
 
-    private unsafe int ResolveWallRemaining(int stateCode, AtkValue* atkValues, int atkCount, int[] discardCounts)
+    // wall_remaining ≈ initial_live_wall − total_discards (each discard follows
+    // a draw). Ignores kan draws from the dead wall, a minor under-estimate.
+    //
+    // Pre-2026-05-11 this also trusted atkValues[WallCount] when stateCode ==
+    // PostDrawIdle. That value uses a different baseline — +6 higher than the
+    // discard-derived count, consistent with kan-reserve accounting — and
+    // flipped on every CallPrompt→PostDrawIdle transition. The +6 mode-switch
+    // beat MaybeRollHand's +5 tolerance and rolled a fresh hand file on every
+    // call-modal close. Confirmed in the 2026-05-11 telemetry, install
+    // 6a4a0a70: 5 spurious hand rolls in 30 s with byte-identical addon dumps
+    // (see .local/by-date/2026-05-11/.../RESTART-CLUSTER-ANALYSIS.md). The
+    // discard-derived value was monotonic and correct in every cluster
+    // snapshot, so we use it unconditionally.
+    private int ResolveWallRemaining(int[] discardCounts)
     {
-        // Trust the addon's wall count when state == post-draw idle and the slot is set.
-        if (stateCode == profile.StateCodes.PostDrawIdle
-            && atkValues != null
-            && atkCount > profile.AtkValues.WallCount
-            && atkValues[profile.AtkValues.WallCount].Type == ValueType.Int)
-        {
-            int reported = atkValues[profile.AtkValues.WallCount].Int;
-            if (reported > 0 && reported <= 136)
-                return reported;
-        }
-
-        // Fallback: wall_remaining ≈ initial_live_wall − total_discards (each discard
-        // follows a draw). Ignores kan draws from the dead wall (minor under-estimate).
         int totalDiscards = 0;
         foreach (var c in discardCounts)
             totalDiscards += c;

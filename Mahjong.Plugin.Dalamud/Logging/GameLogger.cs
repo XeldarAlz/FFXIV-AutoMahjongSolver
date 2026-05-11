@@ -259,12 +259,25 @@ public sealed class GameLogger : IDisposable
     /// New-hand detection: inside a hand the wall only decreases. A sharp upward
     /// jump (+5 tolerance to ride over transient read glitches) means a fresh
     /// deal. First snapshot after construction also rolls a file.
+    ///
+    /// <para>Hand-size guard: an upward wall jump that arrives while the closed
+    /// hand is at a mid-hand count (e.g. 6 after a pon, 11 after a chi) is a
+    /// transient read or a state-transition artifact, not a genuine deal. Roll
+    /// only when the hand is at a deal-shape count: 0 (between hands), 13
+    /// (non-dealer fresh), or 14 (dealer fresh / mid-turn). This catches the
+    /// remaining wall-jump cases the <see cref="BaseEmjVariant.ResolveWallRemaining"/>
+    /// fix could miss (e.g. addon detach/reattach with stale dc). First-roll
+    /// (currentPath == null) bypasses the guard so the plugin can latch onto
+    /// any addon state.</para>
     /// </summary>
     private void MaybeRollHand(StateSnapshot snap)
     {
-        bool isNewHand = currentPath is null || snap.WallRemaining > lastWall + 5;
+        bool firstRoll = currentPath is null;
+        bool wallJumpUp = !firstRoll && snap.WallRemaining > lastWall + 5;
         lastWall = snap.WallRemaining;
-        if (!isNewHand)
+        if (!firstRoll && !wallJumpUp)
+            return;
+        if (wallJumpUp && snap.Hand.Count != 0 && snap.Hand.Count != 13 && snap.Hand.Count != 14)
             return;
 
         RollWriter();
