@@ -50,11 +50,23 @@ public sealed record LayoutNodeIds(
 /// Indices into the addon's <c>AtkValues</c> array. The state code drives
 /// branching in the variant reader; the wall count and chi-claimed-tile
 /// indices are read conditionally based on state.
+///
+/// <para>The scan-window fields (<see cref="PonClaimScanLo"/>,
+/// <see cref="PonClaimScanHi"/>, <see cref="ChiFallbackScanLimit"/>,
+/// <see cref="ButtonLabelScanLimit"/>) used to be hardcoded constants in
+/// the variant reader. They're per-variant because EmjL is suspected to
+/// place the chi/pon claim slots at different indices than Emj (see #30);
+/// surfacing them here lets a JSON-only override fix EmjL once telemetry
+/// pins the right values, without a code change.</para>
 /// </summary>
 public sealed record LayoutAtkValueIndices(
     int StateCode,
     int WallCount,
-    int ChiClaimedTile);
+    int ChiClaimedTile,
+    int PonClaimScanLo = 16,
+    int PonClaimScanHi = 21,
+    int ChiFallbackScanLimit = 30,
+    int ButtonLabelScanLimit = 20);
 
 /// <summary>
 /// Magic numbers for the addon's state-code field. The codes drive call-prompt

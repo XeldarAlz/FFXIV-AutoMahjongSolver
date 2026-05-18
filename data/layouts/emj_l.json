@@ -21,7 +21,11 @@
   "atkValues": {
     "stateCode": 0,
     "wallCount": 1,
-    "chiClaimedTile": 19
+    "chiClaimedTile": 19,
+    "ponClaimScanLo": 16,
+    "ponClaimScanHi": 21,
+    "chiFallbackScanLimit": 30,
+    "buttonLabelScanLimit": 20
   },
   "stateCodes": {
     "ourTurnDiscard": 30,

@@ -352,7 +352,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
     private unsafe LegalActions BuildCallPromptLegal(
         List<Tile> hand, AtkValue* atkValues, int atkCount)
     {
-        var labels = ScanButtonLabels(atkValues, atkCount, scanLimit: 20);
+        var labels = ScanButtonLabels(atkValues, atkCount, scanLimit: profile.AtkValues.ButtonLabelScanLimit);
         if (!labels.HasAnyAcceptOffer)
             return new LegalActions(ActionFlags.Pass, [], [], [], []);
 
@@ -457,8 +457,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
     private unsafe void AppendPonCandidateFromAtkValues(
         List<Tile> hand, int[] counts, AtkValue* atkValues, int atkCount, List<MeldCandidate> pons)
     {
-        const int scanLo = 16;
-        const int scanHi = 21;
+        int scanLo = profile.AtkValues.PonClaimScanLo;
+        int scanHi = profile.AtkValues.PonClaimScanHi;
         int end = Math.Min(atkCount, scanHi + 1);
         Span<int> seen = stackalloc int[Tile.Count34];
         int? claimedId = null;
@@ -517,12 +517,12 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (TryDeriveChiFromSlot(hand, atkValues, atkCount, configuredIdx, chis))
             return;
 
-        // Configured slot didn't yield a chi. Scan the [0..30] window for any
-        // suited tile whose claim derives ≥1 chi against the current hand.
-        // Bounded scan because beyond ~30 the array tends to carry unrelated
-        // payloads (seat scores, discard piles further upstream) that would
-        // produce false-positive candidates.
-        int scanLimit = Math.Min(atkCount, 30);
+        // Configured slot didn't yield a chi. Scan the [0..ChiFallbackScanLimit]
+        // window for any suited tile whose claim derives ≥1 chi against the
+        // current hand. Bounded scan because beyond the limit the array tends
+        // to carry unrelated payloads (seat scores, discard piles further
+        // upstream) that would produce false-positive candidates.
+        int scanLimit = Math.Min(atkCount, profile.AtkValues.ChiFallbackScanLimit);
         for (int i = 0; i < scanLimit; i++)
         {
             if (i == configuredIdx)
