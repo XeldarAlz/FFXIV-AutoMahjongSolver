@@ -154,13 +154,13 @@ public class GameLoggerDedupTests
 
     [Theory]
     // tsumo: 1 winner, 3 losers.
-    [InlineData(new[] { 8000, -2000, -4000, -2000 }, "tsumo", 0,    (object?)null)]
+    [InlineData(new[] { 8000, -2000, -4000, -2000 }, "tsumo", 0, (object?)null)]
     // ron: 1 winner takes from a single discarder; two seats untouched.
-    [InlineData(new[] { 0, 5200, 0, -5200 },        "ron",   1,    3)]
+    [InlineData(new[] { 0, 5200, 0, -5200 }, "ron", 1, 3)]
     // exhaustive draw, 2 tenpai vs 2 noten: 1500 each way.
-    [InlineData(new[] { 1500, -1500, 1500, -1500 }, "draw",  (object?)null, (object?)null)]
+    [InlineData(new[] { 1500, -1500, 1500, -1500 }, "draw", (object?)null, (object?)null)]
     // no-change draw (abortive / chombo edge cases): all zero.
-    [InlineData(new[] { 0, 0, 0, 0 },                "draw",  (object?)null, (object?)null)]
+    [InlineData(new[] { 0, 0, 0, 0 }, "draw", (object?)null, (object?)null)]
     public void InferResultKind_classifies_delta_shapes(int[] deltas, string expectedKind, object? expectedWinner, object? expectedLoser)
     {
         var (kind, winner, loser) = GameLogger.InferResultKind(deltas);

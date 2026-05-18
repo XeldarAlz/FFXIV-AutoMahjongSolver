@@ -326,7 +326,8 @@ public sealed class GameLogger : IDisposable
             Loser: loser,
             Deltas: deltas,
             ScoresAfter: scoresAfter.ToArray());
-        try { WriteLine(JsonSerializer.Serialize(evt, JsonOpts)); }
+        try
+        { WriteLine(JsonSerializer.Serialize(evt, JsonOpts)); }
         catch (Exception ex) { log.Error($"GameLogger hand-end-write error: {ex.Message}"); }
     }
 
@@ -357,16 +358,20 @@ public sealed class GameLogger : IDisposable
             if (deltas[i] > 0)
             {
                 pos++;
-                if (deltas[i] > maxPos) { maxPos = deltas[i]; winnerIdx = i; }
+                if (deltas[i] > maxPos)
+                { maxPos = deltas[i]; winnerIdx = i; }
             }
             else if (deltas[i] < 0)
             {
                 neg++;
-                if (deltas[i] < minNeg) { minNeg = deltas[i]; loserIdx = i; }
+                if (deltas[i] < minNeg)
+                { minNeg = deltas[i]; loserIdx = i; }
             }
         }
-        if (pos == 1 && neg == 1) return ("ron",   winnerIdx, loserIdx);
-        if (pos == 1 && neg == 3) return ("tsumo", winnerIdx, null);
+        if (pos == 1 && neg == 1)
+            return ("ron", winnerIdx, loserIdx);
+        if (pos == 1 && neg == 3)
+            return ("tsumo", winnerIdx, null);
         return ("draw", null, null);
     }
 
