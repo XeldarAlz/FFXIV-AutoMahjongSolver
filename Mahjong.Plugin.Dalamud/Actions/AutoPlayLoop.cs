@@ -46,6 +46,13 @@ public sealed class AutoPlayLoop : IDisposable
     private readonly MahjongAddon addon;
     private readonly ActionStateMachine fsm = new(DispatchTimeout, RetryCooldown);
     private bool disposed;
+    // One-shot diagnostic: when the tick decides to skip dispatch, log the
+    // reason exactly once per transition (not 60×/sec). Lets dalamud.log
+    // answer "why didn't auto-play fire" without manual repro on the
+    // developer's machine — observed twice now (2026-05-18 22:30, 23:03)
+    // where the plugin shows hints but auto-play stays silent and there's
+    // zero signal in the log to triage.
+    private string? lastSkipReason;
 
     /// <summary>Short human-readable description of the most recent auto action. For the overlay.</summary>
     public string LastActionDescription { get; private set; } = "(none)";
@@ -83,15 +90,23 @@ public sealed class AutoPlayLoop : IDisposable
             return;
 
         if (!IsAutomationArmed())
+        {
+            var cfg = plugin.Configuration;
+            EmitSkipReason($"gate: tos={cfg.TosAccepted} armed={cfg.AutomationArmed} suggest_only={cfg.SuggestionOnly}");
             return;
+        }
 
         if (!ContinueAfterStuckRecovery())
+        {
+            EmitSkipReason("dispatch in flight (still within timeout)");
             return;
+        }
 
         var snap = plugin.AddonReader.TryBuildSnapshot();
         if (snap is null)
         {
             fsm.ClearContext();
+            EmitSkipReason("snapshot unavailable");
             return;
         }
 
@@ -102,6 +117,7 @@ public sealed class AutoPlayLoop : IDisposable
 
         if (state == ChiVariantSelectStateCode)
         {
+            EmitProgressing();
             HandleChiVariantSelect(context);
             return;
         }
@@ -121,19 +137,53 @@ public sealed class AutoPlayLoop : IDisposable
         if (!isCallPrompt && !isDiscardTurn)
         {
             fsm.ClearContext();
+            EmitSkipReason($"not actionable (state={state} hand={snap.Hand.Count} legal={snap.Legal.Flags})");
             return;
         }
 
         if (fsm.ShouldSuppressForContext(context, DateTime.UtcNow))
+        {
+            EmitSkipReason($"suppressed for context (state={context.State} hand={context.Hand})");
             return;
+        }
 
         if (TryHandleRiichiConfirmTsumogiri(snap, context, isCallPrompt))
+        {
+            EmitProgressing();
             return;
+        }
 
+        EmitProgressing();
         if (isCallPrompt)
             ScheduleCallDecision(context);
         else
             ScheduleDiscard(context);
+    }
+
+    /// <summary>
+    /// Log one Plugin.Log.Info line per skip-reason transition. The auto-play
+    /// loop ticks 60×/sec, so logging every skip would flood the log; this
+    /// dedups by exact reason string so a steady "gate: tos=True armed=True
+    /// suggest_only=True" lands as one log entry, not 3600 per minute.
+    /// </summary>
+    private void EmitSkipReason(string reason)
+    {
+        if (lastSkipReason == reason)
+            return;
+        lastSkipReason = reason;
+        log.Info($"[AutoPlayLoop] skip: {reason}");
+    }
+
+    /// <summary>
+    /// Clear the dedup latch when the loop is actively dispatching. The next
+    /// skip — whatever its reason — will log as a fresh transition.
+    /// </summary>
+    private void EmitProgressing()
+    {
+        if (lastSkipReason is null)
+            return;
+        log.Info($"[AutoPlayLoop] resumed (was: {lastSkipReason})");
+        lastSkipReason = null;
     }
 
     private bool IsAutomationArmed()
