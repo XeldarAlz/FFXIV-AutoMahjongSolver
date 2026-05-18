@@ -424,6 +424,28 @@ public sealed class AutoPlayLoop : IDisposable
     {
         var legal = snap.Legal;
 
+        // State-6 SelfDeclareList at hand=14 is dual-use: the popup offers
+        // Riichi/Tsumo/AnKan AND lists the closed hand as discardable items.
+        // When the policy returns Discard (or a manual-tile Riichi), the user
+        // wants to discard a specific tile from the list, not press "Pass" on
+        // the Riichi/Tsumo offer. The list-widget click path
+        // (DispatchDiscard → TryDispatchListItemClick → SelectItem) already
+        // handles the list shell correctly, so route Discard/Riichi through
+        // DispatchPolicyChoice instead of falling through to Pass.
+        //
+        // Without this gate AutoPlay would press opcode-11 option-1 (Pass)
+        // every retry-cooldown, dismissing the Riichi offer without
+        // discarding — the game stays at state=6 hand=14 forever and
+        // auto-play silently stalls. Reproduced 2026-05-19 00:04 (live logs
+        // showed the 3-second-cycle stall in v0.1.0.4 diagnostics).
+        if (choice.Kind is ActionKind.Discard or ActionKind.Riichi
+            && choice.DiscardTile.HasValue)
+        {
+            DispatchPolicyChoice(snap, choice);
+            log.Info($"[AutoPlayLoop] discard-from-call-popup dispatch: {LastActionDescription}");
+            return;
+        }
+
         bool acceptRiichiPopup = ResolveRiichiPopupAcceptance(snap, choice, out var riichiReason);
 
         bool shouldAccept = acceptRiichiPopup || choice.Kind is
