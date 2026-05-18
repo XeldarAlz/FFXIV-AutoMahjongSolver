@@ -276,7 +276,8 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleMainWindow;
 
-        Log.Information("Doman Mahjong Solver loaded.");
+        var asmVersion = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "(unknown)";
+        Log.Information($"Doman Mahjong Solver v{asmVersion} loaded.");
     }
 
     public void Dispose()

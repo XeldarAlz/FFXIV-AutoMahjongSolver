@@ -289,11 +289,14 @@ public sealed class AutoPlayLoop : IDisposable
             if (snap is null || !snap.Legal.Can(ActionFlags.Discard))
             {
                 LastActionDescription = $"discard aborted: not a discard state (hand={snap?.Hand.Count ?? -1})";
+                log.Info($"[AutoPlayLoop] {LastActionDescription}");
                 return;
             }
 
             var choice = plugin.Policy.Choose(snap);
+            log.Info($"[AutoPlayLoop] discard body: state={context.State} hand={snap.Hand.Count} flags={snap.Legal.Flags} choice={choice.Kind} tile={choice.DiscardTile}");
             DispatchPolicyChoice(snap, choice);
+            log.Info($"[AutoPlayLoop] discard body done: {LastActionDescription}");
         });
     }
 
@@ -321,9 +324,12 @@ public sealed class AutoPlayLoop : IDisposable
             if (snap is null)
             {
                 LastActionDescription = "call: no snapshot";
+                log.Info($"[AutoPlayLoop] {LastActionDescription}");
                 return;
             }
-            DispatchCallChoice(snap, plugin.Policy.Choose(snap));
+            var choice = plugin.Policy.Choose(snap);
+            log.Info($"[AutoPlayLoop] call body: state={context.State} hand={snap.Hand.Count} flags={snap.Legal.Flags} choice={choice.Kind} tile={choice.DiscardTile}");
+            DispatchCallChoice(snap, choice);
         });
     }
 
