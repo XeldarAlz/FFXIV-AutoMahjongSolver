@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Mahjong.Plugin.Dalamud.GameState;
 using Mahjong.Plugin.Dalamud.Logging;
@@ -50,7 +51,10 @@ namespace Mahjong.Plugin.Dalamud.Telemetry;
 /// </summary>
 public sealed class MemoryDumpRecorder : IDisposable
 {
-    public const int SchemaVersion = 1;
+    // v2 adds `agent_addr` + `agent_b64` (AgentEmj 0x2000-byte dump) to
+    // unblock opponent discard-array RE. Analyzers consuming v1 corpus
+    // entries should treat missing agent_* fields as absent.
+    public const int SchemaVersion = 2;
 
     // The state-change cadence captures three discrete addon "shapes" by
     // AtkValuesCount: 50 (lobby/idle), 73 (menu/transition), and 109 (active
@@ -73,6 +77,20 @@ public sealed class MemoryDumpRecorder : IDisposable
     private const int SeatPoolDumpBytes = 0x1000;
     private const int MaxAtkValues = 1024;
     private const long FileRolloverBytes = 1024 * 1024;
+
+    // AgentEmj dump bytes. 2026-05-19 inspection found that opponent discard
+    // tile arrays are NOT in the AtkUnitBase memory range we already capture:
+    // diffs between clean +1 discard transitions show only the count byte
+    // mutating, no array writes within the seat block. The per-seat tile
+    // history therefore lives in the agent, which exposes the per-round
+    // dealer state, hand history, and discard piles. 0x2000 is the size
+    // BaseEmjVariant.DumpAgentEmj reads for its diagnostic file; matching it
+    // here keeps the offline analyzers' coordinates aligned.
+    private const int AgentDumpBytes = 0x2000;
+    // AgentEmj's stable agent id. FFXIVClientStructs assigns 5 to the
+    // mahjong agent (verified empirically in BaseEmjVariant.DumpAgentEmj
+    // diagnostic and surviving across the 2026-05 patch window).
+    private const int AgentEmjId = 5;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -212,7 +230,34 @@ public sealed class MemoryDumpRecorder : IDisposable
                 BytesB64: Convert.ToBase64String(poolBytes)));
         }
 
-        var hash = ComputeHash(addonBytes, rootBytes, atkBytes, pools);
+        // AgentEmj dump. Resolved via the global AgentModule, not stored —
+        // the agent pointer can move between sessions and the dump is the
+        // value, not the address. AccessViolation-safe via SafeReadBytes.
+        byte[]? agentBytes = null;
+        nint agentAddr = 0;
+        try
+        {
+            var module = AgentModule.Instance();
+            if (module != null)
+            {
+                var agent = module->GetAgentByInternalId((AgentId)AgentEmjId);
+                if (agent != null)
+                {
+                    agentAddr = (nint)agent;
+                    agentBytes = SafeReadBytes(agentAddr, AgentDumpBytes);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // AgentModule.Instance() can return a stale pointer immediately
+            // after a zone change. Surface but don't fail the whole dump —
+            // the agent capture is additive, the rest of the snapshot stays
+            // useful even without it.
+            errors.RecordException("MemoryDumpRecorder.AgentDump", ex);
+        }
+
+        var hash = ComputeHash(addonBytes, rootBytes, atkBytes, pools, agentBytes);
 
         // Layout-aware metadata. Both fields stay null until the variant
         // selector has resolved a layout this session — pre-resolution
@@ -243,6 +288,8 @@ public sealed class MemoryDumpRecorder : IDisposable
             AtkValuesCount: atkCount,
             AtkValuesBytesB64: atkBytes is null ? null : Convert.ToBase64String(atkBytes),
             SeatPools: pools,
+            AgentAddress: agentAddr.ToInt64(),
+            AgentBytesB64: agentBytes is null ? null : Convert.ToBase64String(agentBytes),
             Variant: layout?.Name,
             AddonSeatOffsets: seatOffsets,
             Hash: hash);
@@ -271,7 +318,8 @@ public sealed class MemoryDumpRecorder : IDisposable
     }
 
     private static string ComputeHash(
-        byte[]? addonBytes, byte[]? rootBytes, byte[]? atkBytes, List<SeatPoolDump>? pools)
+        byte[]? addonBytes, byte[]? rootBytes, byte[]? atkBytes, List<SeatPoolDump>? pools,
+        byte[]? agentBytes)
     {
         using var sha = SHA256.Create();
         if (addonBytes is not null)
@@ -288,6 +336,8 @@ public sealed class MemoryDumpRecorder : IDisposable
                 sha.TransformBlock(b, 0, b.Length, null, 0);
             }
         }
+        if (agentBytes is not null)
+            sha.TransformBlock(agentBytes, 0, agentBytes.Length, null, 0);
         sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
         return Convert.ToHexString(sha.Hash!).Substring(0, 16);
     }
@@ -341,6 +391,16 @@ public sealed class MemoryDumpRecorder : IDisposable
         // Keeping the field as nullable rather than ripping it out preserves
         // forward compatibility for when the asm hook lands a verified sig.
         [property: JsonPropertyName("seat_pools")] List<SeatPoolDump>? SeatPools,
+        // AgentEmj dump — 0x2000 bytes of the mahjong agent's runtime state.
+        // The 2026-05-19 inspection of 11591 addon snapshots from install
+        // 461e8ece found that opponent discard arrays are NOT in `addon_b64`
+        // (clean +1 discard transitions show only the count byte mutating).
+        // The per-seat tile history therefore lives in the agent. Capturing
+        // it unlocks the find-discard-offset.mjs analyzer to actually pin
+        // the per-seat array starts. Address is 0 / b64 null when the agent
+        // module isn't available (zone-change transient).
+        [property: JsonPropertyName("agent_addr")] long AgentAddress,
+        [property: JsonPropertyName("agent_b64")] string? AgentBytesB64,
         // Variant name ("Emj" / "EmjL" / ...) and per-seat byte offsets into
         // the addon dump. Both null until the variant selector has resolved a
         // layout this session. Lets offline analyzers slice the four seat

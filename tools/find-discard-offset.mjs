@@ -22,6 +22,13 @@
 // The dirs are local mirrors (one install / one date is enough). Inputs
 // dir is optional but tightens the recommendation.
 //
+// 2026-05-19: inspection of 11591 records from install 461e8ece confirmed
+// addon_b64 carries only the count byte change between adjacent +1
+// transitions — the actual tile array lives in `agent_b64` (added in
+// MemoryDumpRecorder schema v2). For post-v2 corpus, run
+// tools/find-discard-offset-agent.mjs instead; this one stays
+// addon-targeted as the historical baseline.
+//
 // Layout assumptions (Emj variant):
 //   - Self / Shimocha / Toimen / Kamicha discard-count bytes at addon offsets
 //     0x04FE / 0x07DE / 0x0ABE / 0x0D9E
