@@ -324,4 +324,105 @@ public class MeldTrackerTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             tracker.ObserveSnapshot(Hand("123m"), [0, 0, 0, 0], ourSeat: -2));
     }
+
+    // ---------------- Open-meld akadora tracking ----------------
+
+    [Fact]
+    public void MeldAkadora_starts_zero_and_stays_zero_without_meld()
+    {
+        var tracker = new MeldTracker();
+        Assert.Equal(0, tracker.MeldAkadora);
+
+        tracker.ObserveSnapshot(Hand("123m45p67s11z123m"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 1);
+        // Normal discard (hand shrinks by 1, no meld inferred): akadora is
+        // tracked but not credited to MeldAkadora.
+        tracker.ObserveSnapshot(Hand("123m45p67s11z23m"), [1, 0, 0, 0], ourSeat: 0, currentAkadora: 1);
+        Assert.Equal(0, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void MeldAkadora_increments_when_pon_consumes_red_pair()
+    {
+        // Pre-meld: hand has 55m pair (one red 5m → akadora=1). Pon the 5m
+        // — closed hand loses both 5m, akadora drops to 0, the red moved
+        // into the meld.
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 1);
+        var inferred = tracker.ObserveSnapshot(
+            Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0, currentAkadora: 0);
+
+        Assert.NotNull(inferred);
+        Assert.Equal(MeldKind.Pon, inferred!.Value.Kind);
+        Assert.Equal(1, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void MeldAkadora_increments_by_two_when_chi_consumes_two_reds()
+    {
+        // Hand has 44m 5m+5m as akadora donors — implausible without a
+        // pair-of-reds tile encoding but the tracker doesn't care about
+        // tile identity for akadora delta; it just diffs the count. Use
+        // a chi: 5m + 5m removed, both red. (Realistically you can't have
+        // two red 5m simultaneously, but defensive math: delta of 2 in
+        // count should credit 2.)
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("234m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 2);
+        var inferred = tracker.ObserveSnapshot(
+            Hand("234m789p1234567z"), [0, 0, 1, 0], ourSeat: 0, currentAkadora: 0);
+
+        Assert.NotNull(inferred);
+        Assert.Equal(2, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void MeldAkadora_does_not_credit_when_no_red_was_consumed()
+    {
+        // Hand has akadora=1 throughout (the red wasn't in the consumed pair).
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 1);
+        var inferred = tracker.ObserveSnapshot(
+            Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0, currentAkadora: 1);
+
+        Assert.NotNull(inferred);
+        Assert.Equal(0, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void MeldAkadora_resets_on_hand_boundary()
+    {
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 1);
+        tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0, currentAkadora: 0);
+        Assert.Equal(1, tracker.MeldAkadora);
+
+        // New hand begins (wall reset). Akadora carried over from prior hand
+        // does not leak in — the scorer should see only the current hand's
+        // red 5s.
+        tracker.ObserveWall(40); // baseline
+        tracker.ObserveWall(70); // hand boundary
+        Assert.Equal(0, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void MeldAkadora_clamps_at_zero_when_count_jumps_up()
+    {
+        // Unlikely physical case — closed-hand akadora can't go up across a
+        // meld inference — but defensive math: if the count somehow increases
+        // between observations, don't credit a negative delta. Pin the clamp.
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: 0);
+        var inferred = tracker.ObserveSnapshot(
+            Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0, currentAkadora: 2);
+
+        Assert.NotNull(inferred);
+        Assert.Equal(0, tracker.MeldAkadora);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_rejects_negative_akadora()
+    {
+        var tracker = new MeldTracker();
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            tracker.ObserveSnapshot(Hand("123m"), [0, 0, 0, 0], ourSeat: 0, currentAkadora: -1));
+    }
 }

@@ -109,4 +109,20 @@ public class DoraTests
         var r1 = TestRules.Scorer.Evaluate(hand, withBoth)!;
         Assert.Equal(r0.Han + 2, r1.Han);
     }
+
+    [Fact]
+    public void AkaDora_combines_closed_and_open_meld_reds()
+    {
+        // The variant reader sums closed-hand akadora + MeldTracker.MeldAkadora
+        // before plumbing through to WinContext. A win-context AkaDora=2
+        // represents "one red still in closed hand, one red in an open meld."
+        // The scorer treats them the same — both add to dora han.
+        var hand = Hand.FromNotation("234m456p789s234s99m");
+        var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
+        var twoReds = baseCtx with { AkaDora = 2 };
+
+        var r0 = TestRules.Scorer.Evaluate(hand, baseCtx)!;
+        var r1 = TestRules.Scorer.Evaluate(hand, twoReds)!;
+        Assert.Equal(r0.Han + 2, r1.Han);
+    }
 }

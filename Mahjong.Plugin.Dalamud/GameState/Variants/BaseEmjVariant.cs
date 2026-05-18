@@ -121,8 +121,13 @@ internal sealed class BaseEmjVariant : IEmjVariant
         // before we read Melds so a meld that just landed this tick is
         // already in the list. ObserveWall provides the hand-boundary reset.
         ctx.MeldTracker.ObserveWall(wallRemaining);
-        ctx.MeldTracker.ObserveSnapshot(hand, discardCounts, ourSeat: 0);
+        ctx.MeldTracker.ObserveSnapshot(hand, discardCounts, ourSeat: 0, currentAkadora: akaDora);
         var ourMelds = ctx.MeldTracker.Melds.ToArray();
+        // Total akadora = current closed hand + reds that already moved
+        // into open melds. The scorer adds the snapshot's AkaDora to dora
+        // han at win time, so we need the full tile-pool count, not just
+        // the closed-hand slice.
+        int totalAkadora = akaDora + ctx.MeldTracker.MeldAkadora;
 
         return StateSnapshot.Empty with
         {
@@ -149,7 +154,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             OurSeat = 0,
             RoundWind = 0,
             SeatInfoKnown = true,
-            AkaDora = akaDora,
+            AkaDora = totalAkadora,
         };
     }
 

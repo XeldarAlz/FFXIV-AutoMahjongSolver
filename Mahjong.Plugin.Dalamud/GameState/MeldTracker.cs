@@ -37,6 +37,14 @@ public sealed class MeldTracker
     private readonly int[] lastDiscardCounts = new int[4];
     private int lastObservedWall = -1;
     private List<Tile>? lastHand;
+    // Last-observed closed-hand akadora count. We diff this against the
+    // current akadora at meld-inference time: when the closed hand shrinks
+    // by 2/3 in lockstep with an opp discard AND the closed-hand red count
+    // drops, those reds went into the new meld. Sum across the hand gives
+    // `MeldAkadora` — the akadora that's no longer in the closed hand but
+    // is still in the player's tile pool (open melds).
+    private int? lastAkadora;
+    private int meldAkadora;
     // The opp seat whose discard count incremented most recently within
     // this hand. We can't compare counts to "previous tick" when inferring
     // a meld — the opp discard fires several ticks before we click chi/pon
@@ -47,6 +55,22 @@ public sealed class MeldTracker
     private int pendingOppDiscardSeat = -1;
 
     public IReadOnlyList<Meld> Melds => melds;
+
+    /// <summary>
+    /// Running sum of red 5m/5p/5s tiles that moved from the closed hand
+    /// into open melds during the current hand. Resets at hand boundaries
+    /// alongside <see cref="Melds"/>. Add to the snapshot's closed-hand
+    /// AkaDora field to get the player's total akadora — the value the
+    /// scorer adds to dora han at win time.
+    ///
+    /// <para>Limitation: this captures only akadora taken from the
+    /// player's own hand into a meld. If a red 5 is claimed FROM an
+    /// opponent's discard via pon/chi/minkan, the akadora bit lives in
+    /// the raw addon read at claim time, which the tracker doesn't have
+    /// access to. That case is undercounted by 1 per claim-of-red until
+    /// the variant reader plumbs claim-time akadora through too.</para>
+    /// </summary>
+    public int MeldAkadora => meldAkadora;
 
     /// <summary>
     /// Record a meld directly. Reserved for self-declared melds (AnKan,
@@ -61,6 +85,8 @@ public sealed class MeldTracker
         melds.Clear();
         lastObservedWall = -1;
         lastHand = null;
+        lastAkadora = null;
+        meldAkadora = 0;
         pendingOppDiscardSeat = -1;
         Array.Clear(lastDiscardCounts);
     }
@@ -76,6 +102,8 @@ public sealed class MeldTracker
         {
             melds.Clear();
             lastHand = null;
+            lastAkadora = null;
+            meldAkadora = 0;
             pendingOppDiscardSeat = -1;
             Array.Clear(lastDiscardCounts);
         }
@@ -99,7 +127,14 @@ public sealed class MeldTracker
     /// Pass <c>-1</c> when our seat is not known; the tracker will then refuse to
     /// infer melds (the alternative — guessing — risks mis-attributing the
     /// claimed-from seat, which corrupts fu and wait scoring).</param>
-    public Meld? ObserveSnapshot(IReadOnlyList<Tile> currentHand, int[] discardCounts, int ourSeat)
+    /// <param name="currentAkadora">Akadora count in the current closed hand
+    /// (red 5m/5p/5s tiles, sourced from the variant reader's raw scan). When
+    /// a meld is inferred and the value drops since the previous tick, the
+    /// missing reds went into the new meld and are added to
+    /// <see cref="MeldAkadora"/>. Default 0 keeps existing callers
+    /// (pre-akadora-aware tests) working unchanged.</param>
+    public Meld? ObserveSnapshot(
+        IReadOnlyList<Tile> currentHand, int[] discardCounts, int ourSeat, int currentAkadora = 0)
     {
         ArgumentNullException.ThrowIfNull(currentHand);
         ArgumentNullException.ThrowIfNull(discardCounts);
@@ -107,6 +142,8 @@ public sealed class MeldTracker
             throw new ArgumentException("discardCounts must be length 4", nameof(discardCounts));
         if (ourSeat is < -1 or > 3)
             throw new ArgumentOutOfRangeException(nameof(ourSeat));
+        if (currentAkadora < 0)
+            throw new ArgumentOutOfRangeException(nameof(currentAkadora));
 
         // Unknown seat: snapshot state for the next tick so wall/hand deltas
         // continue to work, but skip every inference path. Better to record
@@ -115,6 +152,7 @@ public sealed class MeldTracker
         if (ourSeat < 0)
         {
             lastHand = new List<Tile>(currentHand);
+            lastAkadora = currentAkadora;
             Array.Copy(discardCounts, lastDiscardCounts, 4);
             return null;
         }
@@ -140,6 +178,12 @@ public sealed class MeldTracker
                     if (inferred is { } m)
                     {
                         melds.Add(m);
+                        // Akadora delta: if the closed-hand red count dropped
+                        // by N this tick, N reds moved into the new meld.
+                        // Clamp to 0 to avoid negative deltas if the caller's
+                        // count is non-monotonic for unrelated reasons.
+                        if (lastAkadora is int prev)
+                            meldAkadora += Math.Max(0, prev - currentAkadora);
                         // The pending discarder is consumed by this call —
                         // a subsequent chi/pon needs its own fresh opp
                         // discard to fire.
@@ -152,6 +196,7 @@ public sealed class MeldTracker
         // Snapshot state for next tick. Copy currentHand so later mutations
         // by the caller (e.g. snapshot reuse) don't invalidate our diff.
         lastHand = new List<Tile>(currentHand);
+        lastAkadora = currentAkadora;
         Array.Copy(discardCounts, lastDiscardCounts, 4);
         return inferred;
     }
