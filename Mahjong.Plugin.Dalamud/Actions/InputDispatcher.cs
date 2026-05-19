@@ -276,8 +276,23 @@ public sealed class InputDispatcher
 
     /// <summary>
     /// Declare riichi while also discarding the tile at <paramref name="slotIndex"/>.
-    /// WARNING: opcode unconfirmed — this will likely fail (return HookFailed) until
-    /// the user captures a real riichi event and the correct payload is filled in.
+    ///
+    /// <para><b>WARNING:</b> opcode 8 is speculative AND unused in the live flow.
+    /// Corpus cross-reference (tools/cross-ref-action-opcodes.mjs) of 8
+    /// action=riichi events against the inputs stream finds zero opcode-8
+    /// FireCallbacks; instead 4 of 8 riichi events pair with opcode 11
+    /// (CallPrompt) within ±2 s. The production sequence is:</para>
+    /// <list type="number">
+    ///   <item>State-6 hand=14 popup: <see cref="DispatchCallOption"/> with the
+    ///         Riichi button index (opcode 11).</item>
+    ///   <item><see cref="ActionStateMachine.LatchRiichiConfirm"/> latches
+    ///         post-click.</item>
+    ///   <item>Next tick: <see cref="AutoPlayLoop.ScheduleRiichiTsumogiri"/>
+    ///         calls <see cref="DispatchDiscard"/> (opcode 7) on the drawn tile.</item>
+    /// </list>
+    /// <para>This combined Riichi+discard dispatch is therefore dead code on the
+    /// shipping Doman addon. Retained as forward-compat scaffolding in case a
+    /// future variant exposes a true single-callback opcode.</para>
     /// </summary>
     public unsafe DispatchResult DispatchRiichi(int slotIndex)
     {
