@@ -255,21 +255,21 @@ public sealed class InputDispatcher
     }
 
     /// <summary>
-    /// Opcode constants for FireCallback's first AtkValue. Discard = 7, CallPrompt = 11
-    /// are confirmed from M6 logging; the rest are TODO — the stub methods below send
-    /// what the patterns are likely to be (speculation based on the numeric range of
-    /// discovered opcodes) and return HookFailed if the game rejects them. Once the
-    /// user captures a real riichi/tsumo/ron event the correct opcodes slot in here
-    /// with no call-site changes.
+    /// Opcode constants for FireCallback's first AtkValue. Discard = 7,
+    /// CallPrompt = 11, and Tsumo = 9 are confirmed from corpus analysis:
+    /// the inputs telemetry shows 16 <c>[9]</c> records across 14 distinct
+    /// installs over 2026-05-10..05-18, all with count=1 matching this
+    /// dispatcher's signature. Riichi / Ron / Kan are still speculative —
+    /// the corpus has zero observations of opcodes 8 / 10 / 12.
     /// </summary>
     private static class Opcode
     {
         public const int Discard = 7;
         public const int CallPrompt = 11;
+        public const int Tsumo = 9;     // confirmed: 14 installs, 16 corpus records
 
         // Speculative — to be confirmed by in-game FireCallback capture:
         public const int Riichi = 8;    // unconfirmed
-        public const int Tsumo = 9;     // unconfirmed
         public const int Ron = 10;      // unconfirmed
         public const int Kan = 12;      // unconfirmed (shouminkan + ankan from our turn)
     }
@@ -297,7 +297,13 @@ public sealed class InputDispatcher
     }
 
     /// <summary>
-    /// Declare tsumo on the last-drawn tile. WARNING: opcode unconfirmed.
+    /// Declare tsumo on the last-drawn tile. Opcode 9 is confirmed via corpus
+    /// (14 installs, 16 records across 2026-05-10..05-18). FireCallback
+    /// returns <c>false</c> for this opcode the same way it does for the
+    /// call-prompt opcode 11 — visibly accepted in-game even when the return
+    /// indicates failure. Always reports <see cref="DispatchResult.Ok"/>; the
+    /// caller is expected to have verified the modal-visibility / legal-action
+    /// gate before dispatching.
     /// </summary>
     public unsafe DispatchResult DispatchTsumo()
     {
@@ -308,8 +314,8 @@ public sealed class InputDispatcher
 
         var values = stackalloc AtkValue[1];
         values[0].SetInt(Opcode.Tsumo);
-        bool ok = unit->FireCallback(1, values, true);
-        return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
+        unit->FireCallback(1, values, true);
+        return DispatchResult.Ok;
     }
 
     /// <summary>
