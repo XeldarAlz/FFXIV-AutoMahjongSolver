@@ -37,19 +37,28 @@ public sealed class InputDispatcher
 
     /// <summary>
     /// Discard the tile at the given closed-hand slot (0..13). Slot 13 = last-drawn tile.
-    /// FireCallback returns false on invalid state; we surface that as HookFailed rather
-    /// than crashing (unlike ReceiveEvent synthesis).
     ///
-    /// <para><b>Post-call discard popup:</b> state-6 SelfDeclareList with
-    /// hand.Count != 14 is the list-widget post-chi/pon/kan discard popup —
-    /// the same modal shell as the standalone Riichi/Pass list. Opcode 7
-    /// <c>FireCallback</c> returns false against the list widget (verified
-    /// 2026-05-10 17:48: bot dispatched chi → addon entered state-6 list popup
-    /// → DispatchDiscard slot=2 returned <c>HookFailed</c> → AutoPlayLoop FSM
-    /// suppressed retries for 3 s → bot stalled). When that shell is active
-    /// we route through <see cref="TryDispatchListItemClick"/> just like
-    /// <see cref="DispatchCallOption"/> does. The list items are the closed
-    /// hand in slot order, so <paramref name="slotIndex"/> maps directly.</para>
+    /// <para>Three click paths cover the addon's discard UI shapes:</para>
+    /// <list type="bullet">
+    ///   <item><b>List-widget click</b> (<see cref="TryDispatchListItemClick"/>):
+    ///     state-6 SelfDeclareList post-call popup (hand.Count != 14) and
+    ///     state-28 CallPromptList novice-table popup. The call modal at
+    ///     node 104 is visible AND its inner shell at node 3 is an
+    ///     AtkComponentList; SelectItem on the slot index commits.</item>
+    ///   <item><b>Opcode 15 tile-click</b>: state-6 SelfDeclareList with no
+    ///     call modal visible — the addon shows the closed hand as the
+    ///     primary clickable surface and expects a tile-texture click, not
+    ///     a slot-index callback. Corpus evidence (2026-05-18 inputs
+    ///     telemetry): 226 game-source FireCallback([15, textureBase +
+    ///     tile_id]) records from manual user discards, confirming this is
+    ///     the path the game receives when a player clicks a hand tile.
+    ///     Opcode 7 silently no-ops here (verified 2026-05-19: stuck
+    ///     session with dispatch_attempted result=Ok repeating every 3 s
+    ///     while game state stayed at state=6 hand=14).</item>
+    ///   <item><b>Opcode 7 slot-discard</b>: state-30 OurTurnDiscard — the
+    ///     classic in-hand discard surface where the slot index is what
+    ///     the addon's callback expects.</item>
+    /// </list>
     /// </summary>
     public unsafe DispatchResult DispatchDiscard(int slotIndex)
     {
@@ -64,11 +73,61 @@ public sealed class InputDispatcher
         if (IsListWidgetPopupActive(unit) && TryDispatchListItemClick(unit, slotIndex))
             return DispatchResult.Ok;
 
+        // State-6 (SelfDeclareList) without a visible call modal: the game
+        // is showing the closed hand as a clickable list surface (not the
+        // call popup), and the dispatch shape is opcode 15 with the tile's
+        // raw texture id rather than opcode 7 with the slot index. The
+        // 2026-05-19 stuck-session findings showed opcode 7 falling through
+        // to a silent no-op here — the cycle was decision → dispatch=Ok →
+        // suppressed-for-context, with the game stuck at state=6 hand=14
+        // for the entire session. Read the slot's raw int (texture-relative
+        // tile id, includes the akadora bit at 34/35/36) directly from the
+        // addon's hand array and fire [15, raw] instead.
+        if (ReadStateCode(unit) == StateCodeSelfDeclareList)
+        {
+            int raw = ReadHandSlotRaw(unit, slotIndex);
+            if (raw > 0)
+            {
+                var v15 = stackalloc AtkValue[2];
+                v15[0].SetInt(15);
+                v15[1].SetInt(raw);
+                unit->FireCallback(2, v15, true);
+                return DispatchResult.Ok;
+            }
+        }
+
         var values = stackalloc AtkValue[2];
         values[0].SetInt(7);
         values[1].SetInt(slotIndex);
         bool ok = unit->FireCallback(2, values, true);
         return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
+    }
+
+    // SelfDeclareList state code from the Emj/EmjL layout profiles. Hardcoded
+    // here rather than threaded through from LayoutProfile because the
+    // dispatcher's only state-aware branch needs the value at exactly one
+    // point and the value has been stable across both shipping variants
+    // (data/layouts/{emj,emj_l}.json both set selfDeclareList=6).
+    private const int StateCodeSelfDeclareList = 6;
+
+    // Hand-array byte offset, identical across Emj and EmjL (verified
+    // 2026-05-18). Each tile is a 4-byte texture-relative int.
+    private const int HandArrayStartOffset = 0x0DB8;
+
+    private static unsafe int ReadStateCode(AtkUnitBase* unit)
+    {
+        if (unit->AtkValues == null || unit->AtkValuesCount == 0)
+            return -1;
+        var v = unit->AtkValues[0];
+        return v.Type == FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int ? v.Int : -1;
+    }
+
+    private static unsafe int ReadHandSlotRaw(AtkUnitBase* unit, int slotIndex)
+    {
+        if (slotIndex is < 0 or > 13)
+            return 0;
+        byte* basePtr = (byte*)unit;
+        return *(int*)(basePtr + HandArrayStartOffset + slotIndex * 4);
     }
 
     /// <summary>
