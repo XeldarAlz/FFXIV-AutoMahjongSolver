@@ -107,6 +107,21 @@ public sealed class AutoPlayLoop : IDisposable
         }
 
         var snap = plugin.AddonReader.TryBuildSnapshot();
+
+        // Verify the most recent dispatch's outcome each tick. This emits
+        // the dispatch_outcome finding (commit=true/false) so the corpus
+        // can detect addon-silent-no-op dispatches automatically. Runs
+        // BEFORE the snapshot-null guard so a transient null snapshot
+        // doesn't drop the verification window — windowExpired path
+        // tolerates a null snap and still emits commit=false.
+        CheckPendingDispatchOutcome(snap);
+
+        // Detect long stalls at the same (state, hand) — the post-MinKan
+        // and post-2nd-pon freezes show up as exactly this pattern. Fires
+        // once per stuck-window so the corpus can flag these without
+        // needing chat-log analysis.
+        CheckStuckStateAndEmit(snap);
+
         if (snap is null)
         {
             // Don't clear FSM context on transient snapshot misses (addon
@@ -251,10 +266,20 @@ public sealed class AutoPlayLoop : IDisposable
     /// addon silently no-ops some shapes, so without this annotation a stall
     /// shows up as repeated identical Ok results with no way to know which
     /// branch fired.</para>
+    ///
+    /// <para><c>cur_state</c>, <c>cur_hand</c>, <c>cur_legal</c>, <c>cur_melds</c>
+    /// snapshot the variant-reader's view at the moment the dispatcher fires
+    /// (which can drift from the original scheduled context across the humanized
+    /// delay). Combined with the next-tick `dispatch_outcome` finding, an
+    /// analyzer can prove "fired at (state, hand) → snapshot (state', hand')
+    /// at +N ticks → committed/no-op." Replaces the historical need to
+    /// cross-reference `findings` against `games` against the local
+    /// `dalamud.log` to triage a single freeze.</para>
     /// </summary>
     private void EmitDispatchFinding(
         string label, InputDispatcher.DispatchResult result,
-        int? option = null, Tile? tile = null, int? slot = null, int? state = null)
+        int? option = null, Tile? tile = null, int? slot = null, int? state = null,
+        StateSnapshot? snap = null)
     {
         plugin.FindingsLog?.Record("dispatch_attempted", new Dictionary<string, object?>
         {
@@ -265,7 +290,181 @@ public sealed class AutoPlayLoop : IDisposable
             ["slot"] = slot,
             ["state"] = state,
             ["path"] = plugin.Dispatcher.LastDiscardPath,
+            ["cur_state"] = snap?.AddonStateCode,
+            ["cur_hand"] = snap?.Hand.Count,
+            ["cur_melds"] = snap?.OurMelds.Count,
+            ["cur_legal"] = snap?.Legal.Flags.ToString(),
         });
+
+        // Remember the (state, hand) we dispatched against so the next-tick
+        // verification loop can compare against the post-dispatch snapshot
+        // and emit a `dispatch_outcome` finding with commit=true/false.
+        // Without this verification the addon-silently-no-ops bug class is
+        // invisible in telemetry — every dispatch reports `Ok` regardless.
+        if (snap is not null)
+        {
+            pendingOutcome = new PendingDispatchOutcome(
+                Label: label,
+                DispatchedAt: DateTime.UtcNow,
+                StateAtDispatch: snap.AddonStateCode,
+                HandAtDispatch: snap.Hand.Count,
+                MeldsAtDispatch: snap.OurMelds.Count,
+                LastDispatchPath: plugin.Dispatcher.LastDiscardPath);
+        }
+    }
+
+    /// <summary>
+    /// Bookkeeping for the dispatch_outcome verification — captured by
+    /// <see cref="EmitDispatchFinding"/> and consumed on subsequent ticks
+    /// inside <see cref="OnUpdate"/>. Null when no dispatch is awaiting
+    /// outcome verification.
+    /// </summary>
+    private PendingDispatchOutcome? pendingOutcome;
+
+    /// <summary>
+    /// Window for the dispatch_outcome verification to wait for state
+    /// change before declaring the dispatch a no-op. ~30 framework ticks
+    /// at 60 Hz ≈ 500 ms — enough for animation transitions, short enough
+    /// to flag stalls quickly.
+    /// </summary>
+    private static readonly TimeSpan DispatchOutcomeWindow = TimeSpan.FromMilliseconds(500);
+
+    private readonly record struct PendingDispatchOutcome(
+        string Label,
+        DateTime DispatchedAt,
+        int StateAtDispatch,
+        int HandAtDispatch,
+        int MeldsAtDispatch,
+        string LastDispatchPath);
+
+    /// <summary>
+    /// Threshold for emitting a `stuck_state` finding. ~10 seconds at the
+    /// same (state, hand, legal) tuple with no dispatch commits is well past
+    /// any legitimate animation / opp-turn delay and indicates a real stall.
+    /// Field-observed freezes (post-MinKan, post-2nd-pon) sat at the same
+    /// context for 60-180+ seconds before user intervention — 10 s is
+    /// generous against false positives.
+    /// </summary>
+    private static readonly TimeSpan StuckStateThreshold = TimeSpan.FromSeconds(10);
+
+    private int? stuckStateCode;
+    private int? stuckHandCount;
+    private ActionFlags? stuckLegal;
+    private DateTime stuckSince;
+    private bool stuckEmitted;
+
+    /// <summary>
+    /// Detect and report sustained "same context, no progress" stalls. The
+    /// canonical example: post-2nd-pon at state=6 hand=10 melds=1 — bot
+    /// returns Pass cleanly, snapshot doesn't change, game waits for input
+    /// the bot can't determine. Pre-fix these were only visible by reading
+    /// the local dalamud.log; now they self-report.
+    /// </summary>
+    private void CheckStuckStateAndEmit(StateSnapshot? snap)
+    {
+        if (snap is null)
+        {
+            // Transient snapshot drop — don't update the stuck timer (it's
+            // not a "different context", just a brief gap).
+            return;
+        }
+
+        var legal = snap.Legal.Flags;
+        if (stuckStateCode != snap.AddonStateCode
+            || stuckHandCount != snap.Hand.Count
+            || stuckLegal != legal)
+        {
+            stuckStateCode = snap.AddonStateCode;
+            stuckHandCount = snap.Hand.Count;
+            stuckLegal = legal;
+            stuckSince = DateTime.UtcNow;
+            stuckEmitted = false;
+            return;
+        }
+
+        if (stuckEmitted)
+            return;
+
+        var elapsed = DateTime.UtcNow - stuckSince;
+        if (elapsed < StuckStateThreshold)
+            return;
+
+        plugin.FindingsLog?.Record("stuck_state", new Dictionary<string, object?>
+        {
+            ["state"] = snap.AddonStateCode,
+            ["hand"] = snap.Hand.Count,
+            ["melds"] = snap.OurMelds.Count,
+            ["legal"] = legal.ToString(),
+            ["elapsed_ms"] = (int)elapsed.TotalMilliseconds,
+            ["last_dispatch_path"] = plugin.Dispatcher.LastDiscardPath,
+            ["last_action"] = LastActionDescription,
+        });
+        log.Warning(
+            $"[AutoPlayLoop] STUCK at state={snap.AddonStateCode} hand={snap.Hand.Count} " +
+            $"melds={snap.OurMelds.Count} legal={legal} for {(int)elapsed.TotalSeconds}s. " +
+            $"Last dispatch: {LastActionDescription} (path={plugin.Dispatcher.LastDiscardPath}). " +
+            $"Manual click required.");
+        stuckEmitted = true;
+    }
+
+    /// <summary>
+    /// Per-tick verification of the most recent dispatch's outcome.
+    /// Compares the live snapshot's (state, hand, melds) against the
+    /// pre-dispatch values:
+    /// <list type="bullet">
+    ///   <item>If the tuple changed within <see cref="DispatchOutcomeWindow"/>,
+    ///         emit <c>dispatch_outcome</c> with <c>commit=true</c>.</item>
+    ///   <item>If the window expires unchanged, emit with <c>commit=false</c>
+    ///         — i.e. the addon silently no-opped the dispatch (the bug class
+    ///         that masked the two-callback discard handshake gap for months).</item>
+    /// </list>
+    /// Emits once per dispatched action then clears the pending marker.
+    /// </summary>
+    private void CheckPendingDispatchOutcome(StateSnapshot? snap)
+    {
+        if (pendingOutcome is not { } pending)
+            return;
+
+        bool stateChanged = snap is not null &&
+            (snap.AddonStateCode != pending.StateAtDispatch
+             || snap.Hand.Count != pending.HandAtDispatch
+             || snap.OurMelds.Count != pending.MeldsAtDispatch);
+        bool windowExpired = DateTime.UtcNow - pending.DispatchedAt > DispatchOutcomeWindow;
+
+        if (stateChanged)
+        {
+            plugin.FindingsLog?.Record("dispatch_outcome", new Dictionary<string, object?>
+            {
+                ["label"] = pending.Label,
+                ["commit"] = true,
+                ["path"] = pending.LastDispatchPath,
+                ["state_at_dispatch"] = pending.StateAtDispatch,
+                ["hand_at_dispatch"] = pending.HandAtDispatch,
+                ["melds_at_dispatch"] = pending.MeldsAtDispatch,
+                ["state_after"] = snap?.AddonStateCode,
+                ["hand_after"] = snap?.Hand.Count,
+                ["melds_after"] = snap?.OurMelds.Count,
+                ["elapsed_ms"] = (int)(DateTime.UtcNow - pending.DispatchedAt).TotalMilliseconds,
+            });
+            pendingOutcome = null;
+        }
+        else if (windowExpired)
+        {
+            plugin.FindingsLog?.Record("dispatch_outcome", new Dictionary<string, object?>
+            {
+                ["label"] = pending.Label,
+                ["commit"] = false,
+                ["path"] = pending.LastDispatchPath,
+                ["state_at_dispatch"] = pending.StateAtDispatch,
+                ["hand_at_dispatch"] = pending.HandAtDispatch,
+                ["melds_at_dispatch"] = pending.MeldsAtDispatch,
+                ["state_after"] = snap?.AddonStateCode,
+                ["hand_after"] = snap?.Hand.Count,
+                ["melds_after"] = snap?.OurMelds.Count,
+                ["elapsed_ms"] = (int)(DateTime.UtcNow - pending.DispatchedAt).TotalMilliseconds,
+            });
+            pendingOutcome = null;
+        }
     }
 
     private bool IsAutomationArmed()
@@ -360,7 +559,8 @@ public sealed class AutoPlayLoop : IDisposable
             LastActionDescription = $"auto-variant[opt=0] → {result}";
             log.Info($"[AutoPlayLoop] variant dispatch: {LastActionDescription}");
             plugin.GameLogger.RecordAction(ActionKind.Chi, null, 0, result.ToString(), "chi-variant");
-            EmitDispatchFinding("chi-variant", result, option: 0, state: currentState);
+            EmitDispatchFinding("chi-variant", result, option: 0, state: currentState,
+                snap: plugin.AddonReader.TryBuildSnapshot());
         });
     }
 
@@ -450,7 +650,7 @@ public sealed class AutoPlayLoop : IDisposable
             LastActionDescription = $"auto-riichi-tsumogiri {tile} slot=13 → {result}";
             log.Info($"[AutoPlayLoop] riichi-tsumogiri dispatch: {LastActionDescription}");
             plugin.GameLogger.RecordAction(ActionKind.Discard, tile, 13, result.ToString(), "riichi-tsumogiri");
-            EmitDispatchFinding("riichi-tsumogiri", result, tile: tile, slot: 13);
+            EmitDispatchFinding("riichi-tsumogiri", result, tile: tile, slot: 13, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             // Don't clear the latch here — once we've declared riichi we
             // must NOT let policy.Choose re-evaluate it later in the same
@@ -472,7 +672,7 @@ public sealed class AutoPlayLoop : IDisposable
             var result = plugin.Dispatcher.DispatchTsumo();
             LastActionDescription = $"auto-tsumo → {result}";
             plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("tsumo", result);
+            EmitDispatchFinding("tsumo", result, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             return;
         }
@@ -508,7 +708,7 @@ public sealed class AutoPlayLoop : IDisposable
         var result = plugin.Dispatcher.DispatchKan(slot);
         LastActionDescription = $"auto-ankan {kanTile} slot={slot} → {result}";
         plugin.GameLogger.RecordAction(ActionKind.AnKan, kanTile, slot, result.ToString(), choice.Reasoning);
-        EmitDispatchFinding("ankan", result, tile: kanTile, slot: slot);
+        EmitDispatchFinding("ankan", result, tile: kanTile, slot: slot, snap: snap);
         ClearRetryDebounceIfHookFailed(result);
 
         // Self-declared kans never produce an opp-discard signal, so the
@@ -550,7 +750,7 @@ public sealed class AutoPlayLoop : IDisposable
             var rResult = plugin.Dispatcher.DispatchCallOption(riichiIdx);
             LastActionDescription = $"auto-riichi[opt={riichiIdx}] (tile preview={tile}) → {rResult}";
             plugin.GameLogger.RecordAction(ActionKind.Riichi, tile, riichiIdx, rResult.ToString(), choice.Reasoning);
-            EmitDispatchFinding("riichi", rResult, option: riichiIdx, tile: tile);
+            EmitDispatchFinding("riichi", rResult, option: riichiIdx, tile: tile, snap: snap);
             fsm.LatchRiichiConfirm();
             ClearRetryDebounceIfHookFailed(rResult);
             return;
@@ -559,7 +759,7 @@ public sealed class AutoPlayLoop : IDisposable
         var result = plugin.Dispatcher.DispatchDiscard(slot);
         LastActionDescription = $"auto-discard {tile} slot={slot} → {result}";
         plugin.GameLogger.RecordAction(ActionKind.Discard, tile, slot, result.ToString(), choice.Reasoning);
-        EmitDispatchFinding("discard", result, tile: tile, slot: slot);
+        EmitDispatchFinding("discard", result, tile: tile, slot: slot, snap: snap);
         ClearRetryDebounceIfHookFailed(result);
     }
 
@@ -597,9 +797,9 @@ public sealed class AutoPlayLoop : IDisposable
             ActionKind.MinKan or ActionKind.ShouMinKan;
 
         if (shouldAccept)
-            DispatchAccept(choice, legal, acceptRiichiPopup, riichiReason!);
+            DispatchAccept(snap, choice, legal, acceptRiichiPopup, riichiReason!);
         else
-            DispatchPass(choice, legal, riichiReason);
+            DispatchPass(snap, choice, legal, riichiReason);
 
         log.Info($"[AutoPlayLoop] call-prompt dispatch: {LastActionDescription}");
     }
@@ -653,7 +853,7 @@ public sealed class AutoPlayLoop : IDisposable
         return true;
     }
 
-    private void DispatchAccept(ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, string riichiReason)
+    private void DispatchAccept(StateSnapshot snap, ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, string riichiReason)
     {
         // Tsumo and Ron have dedicated opcodes (9 and 10) — NOT the call-prompt
         // opcode-11 button index. Tsumo opcode-9 is corpus-confirmed (14 installs,
@@ -669,7 +869,7 @@ public sealed class AutoPlayLoop : IDisposable
             var result = plugin.Dispatcher.DispatchTsumo();
             LastActionDescription = $"auto-tsumo → {result}";
             plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("tsumo", result);
+            EmitDispatchFinding("tsumo", result, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             return;
         }
@@ -678,7 +878,7 @@ public sealed class AutoPlayLoop : IDisposable
             var result = plugin.Dispatcher.DispatchRon();
             LastActionDescription = $"auto-ron → {result}";
             plugin.GameLogger.RecordAction(ActionKind.Ron, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("ron", result);
+            EmitDispatchFinding("ron", result, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             return;
         }
@@ -701,7 +901,7 @@ public sealed class AutoPlayLoop : IDisposable
         plugin.GameLogger.RecordAction(
             loggedKind, null, acceptIndex, result2.ToString(),
             acceptRiichiPopup ? riichiReason : choice.Reasoning);
-        EmitDispatchFinding(label, result2, option: acceptIndex);
+        EmitDispatchFinding(label, result2, option: acceptIndex, snap: snap);
 
         // Latch on for the post-riichi-confirm popup: the yaku-preview confirm
         // popup shares the Riichi-flag signature of the initial popup, so
@@ -710,7 +910,7 @@ public sealed class AutoPlayLoop : IDisposable
             fsm.LatchRiichiConfirm();
     }
 
-    private void DispatchPass(ActionChoice choice, LegalActions legal, string? reasonOverride = null)
+    private void DispatchPass(StateSnapshot snap, ActionChoice choice, LegalActions legal, string? reasonOverride = null)
     {
         // Pass is always the rightmost button: its option index equals the
         // number of accept buttons shown. Multi-chi adds extra accept slots
@@ -720,7 +920,7 @@ public sealed class AutoPlayLoop : IDisposable
         LastActionDescription = $"auto-pass[opt={passIndex}] → {result}";
         string reasoning = string.IsNullOrEmpty(reasonOverride) ? choice.Reasoning : reasonOverride;
         plugin.GameLogger.RecordAction(ActionKind.Pass, null, passIndex, result.ToString(), reasoning);
-        EmitDispatchFinding("pass", result, option: passIndex);
+        EmitDispatchFinding("pass", result, option: passIndex, snap: snap);
     }
 
     /// <summary>

@@ -155,6 +155,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             RoundWind = 0,
             SeatInfoKnown = true,
             AkaDora = totalAkadora,
+            AddonStateCode = stateCode,
         };
     }
 

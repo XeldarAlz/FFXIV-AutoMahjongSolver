@@ -75,9 +75,21 @@ public sealed record StateSnapshot(
     // rather than a per-Tile flag so Tile stays a 1-byte primitive. Plumbed
     // into WinContext.AkaDora when the policy evaluates a hand value; Scorer
     // adds it to the dora total (gated off yakuman by existing logic).
-    int AkaDora = 0)
+    int AkaDora = 0,
+
+    // Raw addon state code read from AtkValues[stateCode index] at snapshot
+    // time. -1 means "unknown / not read" (variant doesn't expose, or the
+    // addon isn't loaded). Doman uses codes like 6 (SelfDeclareList),
+    // 15 (CallPrompt), 28 (CallPromptList), 30 (OurTurnDiscard) plus
+    // transient codes 5/9/12/17/19/22 that we surface in telemetry without
+    // routing on. Game-stream consumers (analyzers, replay-harness) use
+    // this to distinguish dispatch contexts that the high-level Legal
+    // enum can't tell apart (e.g. state-6 hand=14 self-declare popup vs.
+    // state-30 hand=14 classic discard surface — both have legal=Discard
+    // but need different dispatch shapes).
+    int AddonStateCode = -1)
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public IReadOnlyList<Tile> Hand { get; init; } = [.. Hand];
     public IReadOnlyList<Meld> OurMelds { get; init; } = [.. OurMelds];

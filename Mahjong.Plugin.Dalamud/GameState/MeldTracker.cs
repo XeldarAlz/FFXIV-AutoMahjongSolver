@@ -73,6 +73,22 @@ public sealed class MeldTracker
     public IReadOnlyList<Meld> Melds => melds;
 
     /// <summary>
+    /// Diagnostic snapshot of the tracker's internal state — used by the
+    /// game-stream `decision` event so the field corpus can distinguish
+    /// "meld was inferred cleanly" from "meld inference is mid-race / deferred"
+    /// from "meld was missed entirely." Before this was plumbed, the only
+    /// way to debug a tracker-state regression was reading the local
+    /// `dalamud.log` while reproducing live. Captured by value — safe to
+    /// serialize without holding a reference to the tracker.
+    /// </summary>
+    public MeldTrackerStateDto SerializeState() => new(
+        Melds: melds.Count,
+        DeferredTicks: deferredTicks,
+        PendingOppDiscardSeat: pendingOppDiscardSeat,
+        MeldAkadora: meldAkadora,
+        LastObservedWall: lastObservedWall);
+
+    /// <summary>
     /// Running sum of red 5m/5p/5s tiles that moved from the closed hand
     /// into open melds during the current hand. Resets at hand boundaries
     /// alongside <see cref="Melds"/>. Add to the snapshot's closed-hand
@@ -365,3 +381,16 @@ public sealed class MeldTracker
         return null;
     }
 }
+
+/// <summary>
+/// Diagnostic snapshot of the MeldTracker's internal state. Plumbed into the
+/// games-stream `decision` event so the field corpus can disambiguate clean
+/// inference vs. mid-race deferral vs. missed-and-given-up. All fields are
+/// the raw private state — interpret per <see cref="MeldTracker"/>.
+/// </summary>
+public readonly record struct MeldTrackerStateDto(
+    int Melds,
+    int DeferredTicks,
+    int PendingOppDiscardSeat,
+    int MeldAkadora,
+    int LastObservedWall);

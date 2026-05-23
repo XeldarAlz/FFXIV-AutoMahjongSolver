@@ -54,7 +54,7 @@ namespace Mahjong.Plugin.Dalamud.Logging;
 /// </summary>
 public sealed class GameLogger : IDisposable
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -67,6 +67,7 @@ public sealed class GameLogger : IDisposable
     private readonly string gamesDir;
     private readonly object writerLock = new();
     private readonly Func<IPolicy>? policyAccessor;
+    private readonly Func<MeldTrackerStateDto>? meldTrackerAccessor;
     private readonly InputEventLogger? eventLogger;
 
     private string? currentPath;
@@ -86,7 +87,8 @@ public sealed class GameLogger : IDisposable
         IPluginLog log,
         string pluginConfigDir,
         Func<IPolicy>? policyAccessor = null,
-        InputEventLogger? eventLogger = null)
+        InputEventLogger? eventLogger = null,
+        Func<MeldTrackerStateDto>? meldTrackerAccessor = null)
     {
         ArgumentNullException.ThrowIfNull(aggregator);
         ArgumentNullException.ThrowIfNull(configService);
@@ -97,6 +99,7 @@ public sealed class GameLogger : IDisposable
         this.log = log;
         this.policyAccessor = policyAccessor;
         this.eventLogger = eventLogger;
+        this.meldTrackerAccessor = meldTrackerAccessor;
         gamesDir = Path.Combine(pluginConfigDir, "games");
         Directory.CreateDirectory(gamesDir);
         aggregator.Changed += OnStateChanged;
@@ -190,7 +193,10 @@ public sealed class GameLogger : IDisposable
             return;
         }
         try
-        { WriteLine(JsonSerializer.Serialize(BuildDecisionEvent(choice), JsonOpts)); }
+        {
+            var tracker = meldTrackerAccessor?.Invoke();
+            WriteLine(JsonSerializer.Serialize(BuildDecisionEvent(choice, tracker), JsonOpts));
+        }
         catch (Exception ex)
         {
             log.Error($"GameLogger decision-write error: {ex.Message}");
@@ -485,7 +491,7 @@ public sealed class GameLogger : IDisposable
         return h.ToHashCode();
     }
 
-    private static DecisionEvent BuildDecisionEvent(ActionChoice choice) => new(
+    private static DecisionEvent BuildDecisionEvent(ActionChoice choice, MeldTrackerStateDto? tracker) => new(
         T: Now(),
         E: "decision",
         Kind: choice.Kind.ToString(),
@@ -494,11 +500,19 @@ public sealed class GameLogger : IDisposable
         Why: string.IsNullOrEmpty(choice.Reasoning) ? null : choice.Reasoning,
         Steps: choice.Steps is { Count: > 0 } steps
             ? steps.Select(r => new StepDto(K: r.Code, D: r.Display)).ToArray()
+            : null,
+        Tracker: tracker is { } t
+            ? new TrackerDto(
+                Melds: t.Melds,
+                DeferredTicks: t.DeferredTicks,
+                PendingSeat: t.PendingOppDiscardSeat,
+                MeldAkadora: t.MeldAkadora)
             : null);
 
     private static StateEvent BuildStateEvent(StateSnapshot snap) => new(
         T: Now(),
         E: "state",
+        StateCode: snap.AddonStateCode,
         Wall: snap.WallRemaining,
         Turn: snap.TurnIndex,
         Hand: snap.Hand.Select(t => (int)t.Id).ToArray(),
@@ -552,6 +566,11 @@ public sealed class GameLogger : IDisposable
     private sealed record StateEvent(
         [property: JsonPropertyName("t")] string T,
         [property: JsonPropertyName("e")] string E,
+        // Raw addon state code (Doman: 6/15/28/30 plus transients). Lets
+        // corpus analyzers distinguish dispatch contexts the `legal` enum
+        // can't tell apart (state-6 hand=14 self-declare popup vs.
+        // state-30 hand=14 classic discard). -1 = unknown/unread.
+        [property: JsonPropertyName("state_code")] int StateCode,
         [property: JsonPropertyName("wall")] int Wall,
         [property: JsonPropertyName("turn")] int Turn,
         [property: JsonPropertyName("hand")] int[] Hand,
@@ -579,11 +598,22 @@ public sealed class GameLogger : IDisposable
         [property: JsonPropertyName("tile")] int? Tile,
         [property: JsonPropertyName("call_kind")] string? CallKind,
         [property: JsonPropertyName("why")] string? Why,
-        [property: JsonPropertyName("steps")] StepDto[]? Steps);
+        [property: JsonPropertyName("steps")] StepDto[]? Steps,
+        // MeldTracker internal state at decision time. Lets the corpus
+        // distinguish clean inference from mid-race deferral from missed.
+        // Null when no tracker accessor was injected (test constructor or
+        // pre-fix builds).
+        [property: JsonPropertyName("tracker")] TrackerDto? Tracker);
 
     private sealed record StepDto(
         [property: JsonPropertyName("k")] string K,
         [property: JsonPropertyName("d")] string D);
+
+    private sealed record TrackerDto(
+        [property: JsonPropertyName("melds")] int Melds,
+        [property: JsonPropertyName("deferred_ticks")] int DeferredTicks,
+        [property: JsonPropertyName("pending_seat")] int PendingSeat,
+        [property: JsonPropertyName("meld_akadora")] int MeldAkadora);
 
     private sealed record SeatDto(
         [property: JsonPropertyName("dc")] int Dc,
