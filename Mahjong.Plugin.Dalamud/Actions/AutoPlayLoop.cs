@@ -228,6 +228,13 @@ public sealed class AutoPlayLoop : IDisposable
     /// Record a structured `dispatch_attempted` finding for every InputDispatcher
     /// call. The corpus can then verify "policy decided X, dispatcher fired X,
     /// game accepted X" instead of guessing from interleaved log lines.
+    ///
+    /// <para>The <c>path</c> field is the dispatcher's most recent path-taken
+    /// label for the discard family (opcode-15 / list-widget / opcode-7). The
+    /// uniform <c>DispatchResult.Ok</c> can't tell them apart and the live
+    /// addon silently no-ops some shapes, so without this annotation a stall
+    /// shows up as repeated identical Ok results with no way to know which
+    /// branch fired.</para>
     /// </summary>
     private void EmitDispatchFinding(
         string label, InputDispatcher.DispatchResult result,
@@ -241,6 +248,7 @@ public sealed class AutoPlayLoop : IDisposable
             ["tile"] = tile?.ToString(),
             ["slot"] = slot,
             ["state"] = state,
+            ["path"] = plugin.Dispatcher.LastDiscardPath,
         });
     }
 

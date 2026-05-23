@@ -36,6 +36,17 @@ public sealed class InputDispatcher
     }
 
     /// <summary>
+    /// Records which click path the most recent <see cref="DispatchDiscard"/> took
+    /// (opcode-15 tile-click, list-widget SelectItem, opcode-7 slot-discard, or
+    /// the bail reasons). The discard dispatcher has three viable paths and the
+    /// uniform <c>DispatchResult.Ok</c> return value can't tell them apart —
+    /// every shipped path returns Ok even when the game silently no-ops the
+    /// click. AutoPlayLoop reads this to annotate <c>dispatch_attempted</c>
+    /// findings so the next stall is unambiguous in the corpus.
+    /// </summary>
+    public string LastDiscardPath { get; private set; } = "(none)";
+
+    /// <summary>
     /// Discard the tile at the given closed-hand slot (0..13). Slot 13 = last-drawn tile.
     ///
     /// <para>Three click paths cover the addon's discard UI shapes:</para>
@@ -63,26 +74,35 @@ public sealed class InputDispatcher
     public unsafe DispatchResult DispatchDiscard(int slotIndex)
     {
         if (slotIndex is < 0 or > 13)
+        {
+            LastDiscardPath = "invalid-slot";
             return DispatchResult.InvalidSlot;
+        }
 
         if (!addon.TryGet(out var unit, out _))
+        {
+            LastDiscardPath = "addon-not-found";
             return DispatchResult.AddonNotFound;
+        }
         if (!unit->IsVisible)
+        {
+            LastDiscardPath = "addon-not-visible";
             return DispatchResult.AddonNotVisible;
+        }
 
-        if (IsListWidgetPopupActive(unit) && TryDispatchListItemClick(unit, slotIndex))
-            return DispatchResult.Ok;
-
-        // State-6 (SelfDeclareList) without a visible call modal: the game
-        // is showing the closed hand as a clickable list surface (not the
-        // call popup), and the dispatch shape is opcode 15 with the tile's
-        // raw texture id rather than opcode 7 with the slot index. The
-        // 2026-05-19 stuck-session findings showed opcode 7 falling through
-        // to a silent no-op here — the cycle was decision → dispatch=Ok →
-        // suppressed-for-context, with the game stuck at state=6 hand=14
-        // for the entire session. Read the slot's raw int (texture-relative
-        // tile id, includes the akadora bit at 34/35/36) directly from the
-        // addon's hand array and fire [15, raw] instead.
+        // State-6 SelfDeclareList: opcode 15 (tile-texture click) is what
+        // manual user discards fire on the live addon — 226 corpus records
+        // across the 2026-05-18 inputs stream confirm the shape
+        // [15, textureBase + tile_id]. This path is the priority at state=6
+        // because the addon's main shell at this state IS a list widget
+        // (node 104 visible, node 3 type 1030), so IsListWidgetPopupActive
+        // would otherwise short-circuit to SelectItem, which silently no-ops
+        // when the list is the closed-hand-as-discard-surface rather than a
+        // dedicated post-call popup. v0.1.0.8 added the opcode-15 path but
+        // gated it AFTER the list-widget check, so it was unreachable —
+        // user reproduced the stall pattern with v0.1.0.8 on 2026-05-23
+        // (state=6 hand=14 flags=Discard, dispatch result=Ok every 3s, game
+        // state never advancing).
         if (ReadStateCode(unit) == StateCodeSelfDeclareList)
         {
             int raw = ReadHandSlotRaw(unit, slotIndex);
@@ -92,14 +112,27 @@ public sealed class InputDispatcher
                 v15[0].SetInt(15);
                 v15[1].SetInt(raw);
                 unit->FireCallback(2, v15, true);
+                LastDiscardPath = $"opcode-15(raw={raw})";
                 return DispatchResult.Ok;
             }
         }
 
+        // Non-state-6 list-widget popup paths (state-28 chi list, etc.).
+        // The list items here ARE the discardable surface and SelectItem
+        // commits cleanly (verified across post-chi/pon discard popups
+        // 2026-05-10..05-18).
+        if (IsListWidgetPopupActive(unit) && TryDispatchListItemClick(unit, slotIndex))
+        {
+            LastDiscardPath = $"list-widget(slot={slotIndex})";
+            return DispatchResult.Ok;
+        }
+
+        // Classic state-30 in-hand discard: slot-index callback opcode 7.
         var values = stackalloc AtkValue[2];
         values[0].SetInt(7);
         values[1].SetInt(slotIndex);
         bool ok = unit->FireCallback(2, values, true);
+        LastDiscardPath = $"opcode-7(slot={slotIndex},ok={ok})";
         return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
     }
 
