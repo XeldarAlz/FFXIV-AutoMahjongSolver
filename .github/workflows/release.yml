@@ -41,6 +41,7 @@ jobs:
             exit 1
           fi
           echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "version=${target#v}" >> "$GITHUB_OUTPUT"
           echo "Releasing $target"
 
       - name: Checkout
@@ -88,3 +89,91 @@ jobs:
           tag_name: ${{ steps.tag.outputs.target }}
           files: Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip
           generate_release_notes: true
+
+      - name: Fetch total download count
+        id: count
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          total=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq '[.[].assets[].download_count] | add // 0')
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "Total downloads across all releases: $total"
+
+      # Mirror this plugin's entry into the multi-plugin hub repo so users
+      # only need to add one Dalamud URL to get all of @XeldarAlz's plugins.
+      # The hub repo holds a JSON array; we upsert (update or append) the
+      # entry keyed by InternalName.
+      - name: Mirror entry into DalamudPlugins hub
+        if: ${{ env.HUB_REPO_PAT != '' }}
+        env:
+          HUB_REPO_PAT: ${{ secrets.HUB_REPO_PAT }}
+        shell: pwsh
+        run: |
+          $pat = $env:HUB_REPO_PAT
+          git clone --depth 1 "https://x-access-token:$pat@github.com/XeldarAlz/DalamudPlugins.git" hub
+          Push-Location hub
+
+          # This plugin's manifest is the source of truth for the static
+          # fields (Name, Description, Tags, etc.). Dynamic fields come from
+          # the release we just cut.
+          $manifest = Get-Content -Raw -Path '../Mahjong.Plugin.Dalamud/Mahjong.Plugin.Dalamud.json' | ConvertFrom-Json
+          $version = '${{ steps.tag.outputs.version }}'
+          $count = [int]'${{ steps.count.outputs.total }}'
+          $lastUpdate = [string][int][double]::Parse((Get-Date -UFormat %s))
+
+          $entry = [ordered]@{
+            Author              = $manifest.Author
+            Name                = $manifest.Name
+            InternalName        = 'Mahjong.Plugin.Dalamud'
+            AssemblyVersion     = $version
+            TestingAssemblyVersion = $version
+            Description         = $manifest.Description
+            Punchline           = $manifest.Punchline
+            RepoUrl             = $manifest.RepoUrl
+            ApplicableVersion   = $manifest.ApplicableVersion
+            Tags                = $manifest.Tags
+            CategoryTags        = @('utility')
+            DalamudApiLevel     = 15
+            IconUrl             = $manifest.IconUrl
+            DownloadLinkInstall = 'https://github.com/${{ github.repository }}/releases/latest/download/latest.zip'
+            DownloadLinkUpdate  = 'https://github.com/${{ github.repository }}/releases/latest/download/latest.zip'
+            DownloadLinkTesting = 'https://github.com/${{ github.repository }}/releases/latest/download/latest.zip'
+            IsTestingExclusive  = $false
+            AcceptsFeedback     = $true
+            DownloadCount       = $count
+            LastUpdate          = $lastUpdate
+          }
+
+          $hub = Get-Content -Raw -Path 'repo.json' | ConvertFrom-Json
+          $hub = @($hub)
+          $existing = $hub | Where-Object { $_.InternalName -eq $entry.InternalName } | Select-Object -First 1
+          if ($existing) {
+            $idx = [Array]::IndexOf($hub, $existing)
+            $hub[$idx] = [pscustomobject]$entry
+          } else {
+            $hub = $hub + [pscustomobject]$entry
+          }
+          ConvertTo-Json -InputObject $hub -Depth 10 -AsArray | Set-Content -Path 'repo.json' -Encoding utf8
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add repo.json
+          if (-not (git status --porcelain)) {
+            Write-Host 'Hub repo.json already up to date.'
+            Pop-Location
+            exit 0
+          }
+          git commit -m "Bump $($entry.InternalName) to $version"
+          for ($i = 1; $i -le 5; $i++) {
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+            if ($LASTEXITCODE -eq 0) { Pop-Location; exit 0 }
+            Write-Host "Hub push rejected (attempt $i); retrying after rebase..."
+            Start-Sleep -Seconds 2
+          }
+          Pop-Location
+          Write-Error 'Failed to push hub update after 5 attempts.'
+          exit 1
