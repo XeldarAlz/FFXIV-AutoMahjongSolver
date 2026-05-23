@@ -1,3 +1,7 @@
+# DownloadCount in repo.json is normally bumped by the release workflow once per
+# tagged release. This workflow refreshes it daily so the number stays current
+# between releases, and can also be triggered manually from the Actions tab.
+
 name: Update Download Count
 
 on:
@@ -14,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -29,17 +33,17 @@ jobs:
           echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "Total downloads across all releases: $total"
 
-      - name: Update repo/repo.json
+      - name: Update repo.json
         run: |
           jq --argjson c ${{ steps.count.outputs.total }} \
-             '(.[0].DownloadCount) = $c' repo/repo.json > repo/repo.json.tmp
-          mv repo/repo.json.tmp repo/repo.json
+             '(.[0].DownloadCount) = $c' repo.json > repo.json.tmp
+          mv repo.json.tmp repo.json
 
       - name: Commit if changed
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add repo/repo.json
+          git add repo.json
           if ! git diff --cached --quiet; then
             git commit -m "Update DownloadCount to ${{ steps.count.outputs.total }}"
             git push origin HEAD:main
