@@ -2,12 +2,37 @@
   "lifecycleRules": [
     {
       "fileNamePrefix": "memdumps/",
-      "daysFromUploadingToHiding": 30,
+      "daysFromUploadingToHiding": 14,
       "daysFromHidingToDeleting": 1
     },
     {
       "fileNamePrefix": "sigprobes/",
-      "daysFromUploadingToHiding": 60,
+      "daysFromUploadingToHiding": 30,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "games/",
+      "daysFromUploadingToHiding": 365,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "findings/",
+      "daysFromUploadingToHiding": 180,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "inputs/",
+      "daysFromUploadingToHiding": 180,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "errors/",
+      "daysFromUploadingToHiding": 90,
+      "daysFromHidingToDeleting": 1
+    },
+    {
+      "fileNamePrefix": "discards/",
+      "daysFromUploadingToHiding": 90,
       "daysFromHidingToDeleting": 1
     }
   ]
