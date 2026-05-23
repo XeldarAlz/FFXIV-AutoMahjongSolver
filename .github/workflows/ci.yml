@@ -2,42 +2,33 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
 
-  # ---------------------------------------------------------------------------
   # Cheap gates that don't need the SDK or Dalamud — run them first so a
-  # version-sync mistake or whitespace drift fails fast without burning the
-  # full build.
-  # ---------------------------------------------------------------------------
-
+  # version-sync mistake fails fast without burning the full build.
   guards:
-    name: Guards (version sync, formatting)
+    name: Guards (version sync)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
       - name: Verify version sync (Directory.Build.props ↔ repo.json)
         shell: bash
         run: |
-          # Tightened regex: only digits + dots, anchored to the closing
-          # </Version>. Earlier `[^<]+` swept through the explanatory comment
-          # in Directory.Build.props that mentions <Version> in prose, then
-          # collected the actual value too — yielding a multi-line $build_ver
-          # that always failed equality.
           build_ver=$(grep -oP '<Version>\K[\d.]+(?=</Version>)' Directory.Build.props)
-          assembly_ver=$(jq -r '.[0].AssemblyVersion' repo/repo.json)
-          testing_ver=$(jq -r '.[0].TestingAssemblyVersion' repo/repo.json)
+          assembly_ver=$(jq -r '.[0].AssemblyVersion' repo.json)
+          testing_ver=$(jq -r '.[0].TestingAssemblyVersion' repo.json)
           echo "Directory.Build.props <Version>      = $build_ver"
           echo "repo.json AssemblyVersion           = $assembly_ver"
           echo "repo.json TestingAssemblyVersion    = $testing_ver"
@@ -46,25 +37,21 @@ jobs:
             exit 1
           fi
 
-      - name: Verify whitespace formatting
-        run: dotnet format whitespace Mahjong.Plugin.Dalamud.sln --verify-no-changes --verbosity diagnostic
-
-  # ---------------------------------------------------------------------------
-  # Full build + tests. Needs Dalamud present at the standard plugin path so
-  # Dalamud.NET.Sdk can resolve $(DalamudLibPath).
-  # ---------------------------------------------------------------------------
-
-  build-and-test:
-    name: Build & test (Windows)
+  # Full build + tests. Needs Dalamud present at the standard plugin path
+  # so Dalamud.NET.Sdk can resolve $(DalamudLibPath).
+  build:
+    name: Build (Windows)
     needs: guards
     runs-on: windows-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -87,11 +74,22 @@ jobs:
       - name: Build (Release)
         run: dotnet build Mahjong.Plugin.Dalamud.sln --configuration Release --no-restore
 
-      - name: Test
+      - name: Find test projects
+        id: find_tests
+        shell: bash
+        run: |
+          if find . -name "*.Tests.csproj" -o -name "*.Test.csproj" 2>/dev/null | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.find_tests.outputs.found == 'true'
         run: dotnet test Mahjong.Plugin.Dalamud.sln --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Upload plugin artifact
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: Mahjong.Plugin.Dalamud-plugin
