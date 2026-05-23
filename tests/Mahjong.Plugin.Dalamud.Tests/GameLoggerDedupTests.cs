@@ -118,12 +118,16 @@ public class GameLoggerDedupTests
     }
 
     /// <summary>
-    /// Each closed hand file ends with a hand-end carrying the cumulative score
-    /// delta from that file's hand-start. Without this the corpus has decisions
-    /// but no reward signal; policy training has nothing to score against.
+    /// The new hand file opens with a hand-end carrying the previous hand's
+    /// cumulative score delta, followed by the new hand-start. Co-locating
+    /// the two events in the same (new) file means the hand-end survives the
+    /// TelemetryUploader scan tick — pre-fix, writes to the previous file's
+    /// path silently dropped when the uploader moved the file mid-session
+    /// (2 hand-end events across 609 hand-starts in the 2026-05-20..23
+    /// corpus traced to this).
     /// </summary>
     [Fact]
-    public void Hand_roll_emits_hand_end_with_score_delta_to_previous_file()
+    public void Hand_roll_emits_hand_end_with_score_delta_into_new_file()
     {
         using var tmp = new TempDir();
         var config = new DalamudConfigService(_ => { }, new Configuration());
@@ -138,18 +142,51 @@ public class GameLoggerDedupTests
         var files = Directory.GetFiles(logger.GamesDir, "game-*.ndjson").OrderBy(p => p).ToArray();
         Assert.Equal(2, files.Length);
 
+        // Hand 1 file: hand-start then state event(s). No hand-end here — the
+        // close-out for hand 1 lands in hand 2's file as its opening event.
         var hand1 = File.ReadAllLines(files[0]);
-        // The closing event of hand 1 is the hand-end we emitted.
-        Assert.Contains("\"e\":\"hand-end\"", hand1[^1]);
-        Assert.Contains("\"kind\":\"tsumo\"", hand1[^1]);
-        Assert.Contains("\"winner\":0", hand1[^1]);
-        Assert.Contains("\"deltas\":[8000,-2000,-4000,-2000]", hand1[^1]);
-        Assert.Contains("\"scores_after\":[33000,23000,21000,23000]", hand1[^1]);
+        Assert.Contains("\"e\":\"hand-start\"", hand1[0]);
+        Assert.DoesNotContain(hand1, l => l.Contains("\"e\":\"hand-end\""));
 
-        // Hand 2 file starts cleanly with hand-start; no leaked hand-end.
+        // Hand 2 file: hand-end for hand 1, THEN hand-start for hand 2.
         var hand2 = File.ReadAllLines(files[1]);
-        Assert.Contains("\"e\":\"hand-start\"", hand2[0]);
-        Assert.DoesNotContain(hand2, l => l.Contains("\"e\":\"hand-end\""));
+        Assert.Contains("\"e\":\"hand-end\"", hand2[0]);
+        Assert.Contains("\"kind\":\"tsumo\"", hand2[0]);
+        Assert.Contains("\"winner\":0", hand2[0]);
+        Assert.Contains("\"deltas\":[8000,-2000,-4000,-2000]", hand2[0]);
+        Assert.Contains("\"scores_after\":[33000,23000,21000,23000]", hand2[0]);
+        Assert.Contains("\"e\":\"hand-start\"", hand2[1]);
+    }
+
+    /// <summary>
+    /// When the wall jumps up but the closed hand isn't yet at a deal-shape
+    /// count (mid-deal animation, addon detach/reattach), the roll must
+    /// defer — and crucially, NOT consume the wall-jump signal. Pre-fix
+    /// `lastWall` was updated even on the deferred path, so a single
+    /// transient tick at mid-hand-count stole the roll for the entire
+    /// hand and the corpus shipped without a hand-end.
+    /// </summary>
+    [Fact]
+    public void Hand_roll_defers_when_wall_jumps_but_hand_is_mid_deal()
+    {
+        using var tmp = new TempDir();
+        var config = new DalamudConfigService(_ => { }, new Configuration());
+        using var logger = new GameLogger(config, new StubPluginLog(), tmp.Path);
+
+        // First hand established at 14 tiles.
+        logger.OnStateChanged(SampleSnap(70, handCount: 14));
+        // Wall ticks down naturally.
+        logger.OnStateChanged(SampleSnap(40, handCount: 14));
+        // New hand begins to deal: wall jumps to 70 but the closed-hand
+        // animation isn't done yet (hand reads 7). Pre-fix this consumed
+        // the wall-jump and the next tick at hand=14 saw no jump.
+        logger.OnStateChanged(SampleSnap(70, handCount: 7));
+        // Deal completes: hand at 14. The wall-jump must STILL be detected
+        // here, even though `lastWall` would have been 70 already pre-fix.
+        logger.OnStateChanged(SampleSnap(70, handCount: 14));
+
+        var files = Directory.GetFiles(logger.GamesDir, "game-*.ndjson");
+        Assert.Equal(2, files.Length);
     }
 
     [Theory]

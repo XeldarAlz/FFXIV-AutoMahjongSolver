@@ -49,27 +49,37 @@ public sealed class InputDispatcher
     /// <summary>
     /// Discard the tile at the given closed-hand slot (0..13). Slot 13 = last-drawn tile.
     ///
-    /// <para>Three click paths cover the addon's discard UI shapes:</para>
-    /// <list type="bullet">
-    ///   <item><b>List-widget click</b> (<see cref="TryDispatchListItemClick"/>):
-    ///     state-6 SelfDeclareList post-call popup (hand.Count != 14) and
-    ///     state-28 CallPromptList novice-table popup. The call modal at
-    ///     node 104 is visible AND its inner shell at node 3 is an
-    ///     AtkComponentList; SelectItem on the slot index commits.</item>
-    ///   <item><b>Opcode 15 tile-click</b>: state-6 SelfDeclareList with no
-    ///     call modal visible — the addon shows the closed hand as the
-    ///     primary clickable surface and expects a tile-texture click, not
-    ///     a slot-index callback. Corpus evidence (2026-05-18 inputs
-    ///     telemetry): 226 game-source FireCallback([15, textureBase +
-    ///     tile_id]) records from manual user discards, confirming this is
-    ///     the path the game receives when a player clicks a hand tile.
-    ///     Opcode 7 silently no-ops here (verified 2026-05-19: stuck
-    ///     session with dispatch_attempted result=Ok repeating every 3 s
-    ///     while game state stayed at state=6 hand=14).</item>
-    ///   <item><b>Opcode 7 slot-discard</b>: state-30 OurTurnDiscard — the
-    ///     classic in-hand discard surface where the slot index is what
-    ///     the addon's callback expects.</item>
-    /// </list>
+    /// <para><b>The discard protocol is a TWO-callback handshake</b> — verified by
+    /// capturing a real manual user discard via the FireCallback hook on
+    /// 2026-05-23:</para>
+    ///
+    /// <code>
+    ///   11:15:11.659  FireCallback [15, textureId]  ← select tile (highlights + dismisses popup)
+    ///   11:15:11.659  state transitions to 30 (if it wasn't already)
+    ///   11:15:11.972  FireCallback [7,  slotIndex]  ← commit (discards the selected tile)
+    ///   11:15:11.995  hand updates (tile gone)
+    ///   </code>
+    ///
+    /// <para>Either call alone does <i>nothing</i> committed: opcode-15 only
+    /// sets an internal "selected tile" marker and dismisses the self-declare
+    /// popup, while opcode-7 only commits whatever was previously selected.
+    /// The bot used to fire only one of them depending on state code, which
+    /// is why dispatches reported <c>Ok</c> for months but tiles never left
+    /// the user's hand — captured 2026-05-23 in the dev-build trial as 14:00
+    /// onwards: <c>[15, raw]</c> at state=6, <c>[7, slot]</c> at state=30,
+    /// neither committing because they were never paired.</para>
+    ///
+    /// <para>Both callbacks always fire — back-to-back, synchronously, no
+    /// inter-call delay. State-6→30 transition happens inside opcode-15's
+    /// internal handler, so opcode-7 sees the correct state by the time it
+    /// runs. The 313 ms gap in the manual capture is just mouse-down vs.
+    /// mouse-up timing, not a required interval.</para>
+    ///
+    /// <para><b>List-widget post-call branch</b> (<see cref="TryDispatchListItemClick"/>)
+    /// covers state-6 with hand != 14 (post-pon/chi discard popup) and
+    /// state-28 (CallPromptList novice-table popup). Those use the
+    /// AtkComponentList SelectItem vfunc instead of the two-callback
+    /// handshake — verified across post-chi/pon discard popups 2026-05-10..05-18.</para>
     /// </summary>
     public unsafe DispatchResult DispatchDiscard(int slotIndex)
     {
@@ -90,20 +100,27 @@ public sealed class InputDispatcher
             return DispatchResult.AddonNotVisible;
         }
 
-        // State-6 SelfDeclareList: opcode 15 (tile-texture click) is what
-        // manual user discards fire on the live addon — 226 corpus records
-        // across the 2026-05-18 inputs stream confirm the shape
-        // [15, textureBase + tile_id]. This path is the priority at state=6
-        // because the addon's main shell at this state IS a list widget
-        // (node 104 visible, node 3 type 1030), so IsListWidgetPopupActive
-        // would otherwise short-circuit to SelectItem, which silently no-ops
-        // when the list is the closed-hand-as-discard-surface rather than a
-        // dedicated post-call popup. v0.1.0.8 added the opcode-15 path but
-        // gated it AFTER the list-widget check, so it was unreachable —
-        // user reproduced the stall pattern with v0.1.0.8 on 2026-05-23
-        // (state=6 hand=14 flags=Discard, dispatch result=Ok every 3s, game
-        // state never advancing).
-        if (ReadStateCode(unit) == StateCodeSelfDeclareList)
+        int stateCode = ReadStateCode(unit);
+        int handCount = ReadCurrentHandCount(unit);
+
+        // Two-callback discard handshake — see method docstring for the
+        // capture-verified protocol. Fires for any deal-shape closed hand
+        // (count % 3 == 2 → 14, 11, 8, 5, 2 tiles depending on prior calls)
+        // at the two discard-eligible state codes:
+        //   - state-6 hand=14: self-declare-after-draw popup; opcode-15
+        //     dismisses popup AND selects, opcode-7 commits.
+        //   - state-6 hand=11/8/5: post-pon/chi discard popup; same handshake
+        //     against the (smaller) closed hand. The earlier list-widget
+        //     SelectItem path silently no-opped here — captured 2026-05-23
+        //     in the dev-build trial when accepting a pon left the bot
+        //     stuck at hand=11 with no commit.
+        //   - state-30 hand=14: classic ourTurnDiscard surface; opcode-15
+        //     selects, opcode-7 commits.
+        bool isTileClickDiscard = handCount > 0
+            && handCount % 3 == 2
+            && (stateCode == StateCodeSelfDeclareList
+                || stateCode == StateCodeOurTurnDiscard);
+        if (isTileClickDiscard)
         {
             int raw = ReadHandSlotRaw(unit, slotIndex);
             if (raw > 0)
@@ -112,36 +129,48 @@ public sealed class InputDispatcher
                 v15[0].SetInt(15);
                 v15[1].SetInt(raw);
                 unit->FireCallback(2, v15, true);
-                LastDiscardPath = $"opcode-15(raw={raw})";
+
+                var v7 = stackalloc AtkValue[2];
+                v7[0].SetInt(7);
+                v7[1].SetInt(slotIndex);
+                unit->FireCallback(2, v7, true);
+
+                LastDiscardPath = $"opcode-15+7(raw={raw},slot={slotIndex})";
                 return DispatchResult.Ok;
             }
         }
 
-        // Non-state-6 list-widget popup paths (state-28 chi list, etc.).
+        // Post-call list-widget paths (state-6 hand=11/8/5, state-28 chi list).
         // The list items here ARE the discardable surface and SelectItem
         // commits cleanly (verified across post-chi/pon discard popups
-        // 2026-05-10..05-18).
+        // 2026-05-10..05-18). SelectItem is void so we can't capture a
+        // game-side ack; report Ok and rely on the FSM context-suppression
+        // plus the snapshot-derived hand-shrink signal to gate retries.
         if (IsListWidgetPopupActive(unit) && TryDispatchListItemClick(unit, slotIndex))
         {
             LastDiscardPath = $"list-widget(slot={slotIndex})";
             return DispatchResult.Ok;
         }
 
-        // Classic state-30 in-hand discard: slot-index callback opcode 7.
+        // Last-resort fallback: fire just opcode-7 in case we landed on an
+        // un-mapped state where the tile-click handshake doesn't apply.
+        // Returns HookFailed honestly so the FSM clears context and we don't
+        // retry the same dead path for 3 seconds.
         var values = stackalloc AtkValue[2];
         values[0].SetInt(7);
         values[1].SetInt(slotIndex);
         bool ok = unit->FireCallback(2, values, true);
-        LastDiscardPath = $"opcode-7(slot={slotIndex},ok={ok})";
+        LastDiscardPath = $"opcode-7-fallback(slot={slotIndex},ok={ok})";
         return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
     }
 
-    // SelfDeclareList state code from the Emj/EmjL layout profiles. Hardcoded
+    // State code constants from the Emj/EmjL layout profiles. Hardcoded
     // here rather than threaded through from LayoutProfile because the
-    // dispatcher's only state-aware branch needs the value at exactly one
-    // point and the value has been stable across both shipping variants
-    // (data/layouts/{emj,emj_l}.json both set selfDeclareList=6).
+    // dispatcher's only state-aware branch needs the values at exactly two
+    // points and they've been stable across both shipping variants
+    // (data/layouts/{emj,emj_l}.json both set selfDeclareList=6, ourTurnDiscard=30).
     private const int StateCodeSelfDeclareList = 6;
+    private const int StateCodeOurTurnDiscard = 30;
 
     // Hand-array byte offset, identical across Emj and EmjL (verified
     // 2026-05-18). Each tile is a 4-byte texture-relative int.
@@ -161,6 +190,31 @@ public sealed class InputDispatcher
             return 0;
         byte* basePtr = (byte*)unit;
         return *(int*)(basePtr + HandArrayStartOffset + slotIndex * 4);
+    }
+
+    /// <summary>
+    /// Count non-zero slots in the closed-hand array starting at
+    /// <see cref="HandArrayStartOffset"/>. Stops at the first zero entry — the
+    /// addon zero-terminates the hand region, so empty slots past the live
+    /// tail are always 0. Returns 0..14.
+    ///
+    /// <para>Used to gate the state-6 opcode-15 path on the genuine
+    /// self-declare-after-draw shape (hand=14) and steer the post-call
+    /// shape (hand=11/8/5) to the list-widget click path. See the
+    /// <see cref="DispatchDiscard"/> docstring for the regression history.</para>
+    /// </summary>
+    private static unsafe int ReadCurrentHandCount(AtkUnitBase* unit)
+    {
+        byte* basePtr = (byte*)unit;
+        int count = 0;
+        for (int i = 0; i < 14; i++)
+        {
+            int raw = *(int*)(basePtr + HandArrayStartOffset + i * 4);
+            if (raw == 0)
+                break;
+            count++;
+        }
+        return count;
     }
 
     /// <summary>

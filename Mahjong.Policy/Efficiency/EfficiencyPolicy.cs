@@ -176,14 +176,23 @@ public sealed class EfficiencyPolicy : IPolicy
     /// UI won't draw an overlay (DiscardTile is null), the auto-play loop
     /// won't click, and the next state event whose count reconciles back to
     /// 14 unblocks normal hint flow.</para>
+    ///
+    /// <para>Total-tile arithmetic uses each meld's actual tile count
+    /// (<see cref="Meld.TileCount"/>) so kans contribute 4 — not 3 —
+    /// to the invariant. Pre-fix this used <c>melds.Count * 3</c> which
+    /// silently undercounted every kan by 1 and left every kan-bearing
+    /// hand stuck in fallback for the rest of the round.</para>
     /// </summary>
     private static ActionChoice? TsumogiriFallback(StateSnapshot state)
     {
-        int totalTiles = state.Hand.Count + state.OurMelds.Count * 3;
+        int meldTiles = 0;
+        for (int i = 0; i < state.OurMelds.Count; i++)
+            meldTiles += state.OurMelds[i].TileCount;
+        int totalTiles = state.Hand.Count + meldTiles;
         if (totalTiles == 14 || state.Hand.Count == 0)
             return null;
         return ActionChoice.Pass(
-            $"hand state out of sync — pausing hints (closed={state.Hand.Count}, melds={state.OurMelds.Count}; expected 14)");
+            $"hand state out of sync — pausing hints (closed={state.Hand.Count}, meld-tiles={meldTiles}; expected 14)");
     }
 
     private static string FormatDiscardSummary(ScoredDiscard best) =>

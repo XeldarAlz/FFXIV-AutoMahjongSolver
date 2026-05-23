@@ -283,19 +283,41 @@ public sealed class GameLogger : IDisposable
     {
         bool firstRoll = currentPath is null;
         bool wallJumpUp = !firstRoll && snap.WallRemaining > lastWall + 5;
-        lastWall = snap.WallRemaining;
         if (!firstRoll && !wallJumpUp)
+        {
+            lastWall = snap.WallRemaining;
             return;
+        }
+        // Wall jumped up but the closed hand isn't at a deal-shape count
+        // yet (could be mid-deal animation, addon detach/reattach, etc.).
+        // DON'T update lastWall — retain the pre-jump value so the next
+        // tick's check sees the same jump and retries. Pre-fix this updated
+        // lastWall unconditionally, so a single transient tick at hand=7
+        // during the deal would consume the wall-jump signal forever and
+        // we'd never roll the hand boundary. Field corpus shows 2 hand-end
+        // events across 609 hand-starts (~0.3%) — symptom of exactly this:
+        // every install's MaybeRollHand is finding the wall jump but the
+        // hand-shape guard rejects the roll and lastWall steals the signal.
         if (wallJumpUp && snap.Hand.Count != 0 && snap.Hand.Count != 13 && snap.Hand.Count != 14)
             return;
+        lastWall = snap.WallRemaining;
 
-        // Close out the previous file with a hand-end carrying the just-resolved
-        // hand's cumulative score delta. Emitted to currentPath BEFORE RollWriter
-        // advances it, so the event lands in the old file.
-        if (!firstRoll && lastHandStartScores is not null)
-            EmitHandEnd(lastHandStartScores, snap.Scores);
+        // Cache the previous hand's start-scores before RollWriter clears
+        // the path. We'll use them to write the hand-end event INTO THE NEW
+        // FILE as its first line (instead of the old file's last line). This
+        // dodges a silent-loss hazard where TelemetryUploader's scan tick
+        // can move/upload the old game-file between OnStateChanged ticks,
+        // making any post-upload write into the old path drop silently.
+        // Co-locating hand-end with hand-start in the new file is mildly
+        // unusual but loses zero events.
+        var previousStartScores = lastHandStartScores;
+        bool emitHandEnd = !firstRoll && previousStartScores is not null;
 
         RollWriter();
+
+        if (emitHandEnd)
+            EmitHandEnd(previousStartScores!, snap.Scores);
+
         var startScores = snap.Scores.ToArray();
         lastHandStartScores = startScores;
         var start = new HandStartEvent(

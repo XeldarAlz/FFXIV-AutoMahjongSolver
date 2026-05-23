@@ -109,7 +109,16 @@ public sealed class AutoPlayLoop : IDisposable
         var snap = plugin.AddonReader.TryBuildSnapshot();
         if (snap is null)
         {
-            fsm.ClearContext();
+            // Don't clear FSM context on transient snapshot misses (addon
+            // read jitter, lifecycle event mid-frame). Pre-fix this dropped
+            // lastContext on every blip, which broke the retry-cooldown
+            // debounce — a duplicate action could fire within 1.6 sec of
+            // the original because the context-suppression was reset by an
+            // intermediate null snapshot. Hand boundaries still clear via
+            // `ObserveWall`; HookFailed dispatch still clears explicitly.
+            // Field corpus (62808fc8 / 2026-05-21) shows two `action` events
+            // 1.6 sec apart on the same (state, hand) — that's the pattern
+            // this guard prevents.
             EmitSkipReason("snapshot unavailable", state: -1, hand: -1, flags: 0);
             return;
         }
@@ -141,7 +150,14 @@ public sealed class AutoPlayLoop : IDisposable
 
         if (!isCallPrompt && !isDiscardTurn)
         {
-            fsm.ClearContext();
+            // Don't clear FSM context on transient "not actionable" ticks.
+            // Discard-animation gaps briefly drop the Discard flag mid-commit
+            // while keeping (state, hand) effectively the same, and clearing
+            // here let a duplicate dispatch fire within the cooldown window
+            // once legal=Discard came back. The 3-second time bound inside
+            // ShouldSuppressForContext is the right gate; context mismatch
+            // on a genuinely new (state, hand) tuple still releases naturally,
+            // and ObserveWall clears on real hand boundaries.
             EmitSkipReason($"not actionable (state={state} hand={snap.Hand.Count} legal={snap.Legal.Flags})",
                 state: state, hand: snap.Hand.Count, flags: flags);
             return;
@@ -353,18 +369,24 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleAction("discard", context, plugin.Configuration.HumanizedDelayMs, () =>
         {
             var snap = plugin.AddonReader.TryBuildSnapshot();
+            int currentState = ReadStateCode();
             if (snap is null || !snap.Legal.Can(ActionFlags.Discard))
             {
-                LastActionDescription = $"discard aborted: not a discard state (hand={snap?.Hand.Count ?? -1})";
+                LastActionDescription = $"discard aborted: not a discard state (state={currentState} hand={snap?.Hand.Count ?? -1} flags={snap?.Legal.Flags.ToString() ?? "null"})";
                 log.Info($"[AutoPlayLoop] {LastActionDescription}");
                 return;
             }
 
             var choice = plugin.Policy.Choose(snap);
-            log.Info($"[AutoPlayLoop] discard body: state={context.State} hand={snap.Hand.Count} flags={snap.Legal.Flags} choice={choice.Kind} tile={choice.DiscardTile}");
+            log.Info(
+                $"[AutoPlayLoop] discard body: schedState={context.State} curState={currentState} " +
+                $"hand={snap.Hand.Count} melds={snap.OurMelds.Count} flags={snap.Legal.Flags} " +
+                $"choice={choice.Kind} tile={choice.DiscardTile}");
             EmitDecisionFinding("discard", snap, choice);
             DispatchPolicyChoice(snap, choice);
-            log.Info($"[AutoPlayLoop] discard body done: {LastActionDescription}");
+            log.Info(
+                $"[AutoPlayLoop] discard body done: {LastActionDescription} " +
+                $"path={plugin.Dispatcher.LastDiscardPath}");
         });
     }
 
@@ -389,16 +411,27 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleAction("call", context, CallDecisionDelayMs, () =>
         {
             var snap = plugin.AddonReader.TryBuildSnapshot();
+            int currentState = ReadStateCode();
             if (snap is null)
             {
-                LastActionDescription = "call: no snapshot";
+                LastActionDescription = $"call: no snapshot (state={currentState})";
                 log.Info($"[AutoPlayLoop] {LastActionDescription}");
                 return;
             }
             var choice = plugin.Policy.Choose(snap);
-            log.Info($"[AutoPlayLoop] call body: state={context.State} hand={snap.Hand.Count} flags={snap.Legal.Flags} choice={choice.Kind} tile={choice.DiscardTile}");
+            log.Info(
+                $"[AutoPlayLoop] call body: schedState={context.State} curState={currentState} " +
+                $"hand={snap.Hand.Count} melds={snap.OurMelds.Count} flags={snap.Legal.Flags} " +
+                $"choice={choice.Kind} tile={choice.DiscardTile}");
             EmitDecisionFinding("call", snap, choice);
             DispatchCallChoice(snap, choice);
+            // Note: LastDiscardPath belongs to DispatchDiscard, so we
+            // explicitly DON'T print it here — it'd be stale from the
+            // previous tile-click dispatch and mislead during triage.
+            log.Info(
+                $"[AutoPlayLoop] call body done: {LastActionDescription} " +
+                $"pon={snap.Legal.PonCandidates.Count} chi={snap.Legal.ChiCandidates.Count} " +
+                $"kan={snap.Legal.KanCandidates.Count}");
         });
     }
 
@@ -477,6 +510,16 @@ public sealed class AutoPlayLoop : IDisposable
         plugin.GameLogger.RecordAction(ActionKind.AnKan, kanTile, slot, result.ToString(), choice.Reasoning);
         EmitDispatchFinding("ankan", result, tile: kanTile, slot: slot);
         ClearRetryDebounceIfHookFailed(result);
+
+        // Self-declared kans never produce an opp-discard signal, so the
+        // snapshot-delta inference in MeldTracker.ObserveSnapshot can't
+        // catch them — it only fires on hand shrinks paired with an opp
+        // increment. Record the meld here on a successful dispatch so the
+        // 14-tile invariant stays satisfied (closed=10 + ankan=4 = 14).
+        // Without this, every self-ankan trips TsumogiriFallback and
+        // suggestions pause for the rest of the round.
+        if (result == InputDispatcher.DispatchResult.Ok)
+            plugin.MeldTracker.Record(Meld.AnKan(kanTile));
     }
 
     private void DispatchDiscardOrRiichi(StateSnapshot snap, ActionChoice choice)

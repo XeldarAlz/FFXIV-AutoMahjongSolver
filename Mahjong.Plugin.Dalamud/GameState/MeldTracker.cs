@@ -33,6 +33,16 @@ public sealed class MeldTracker
     /// <summary>Same ±5 read-glitch tolerance GameLogger.MaybeRollHand uses.</summary>
     private const int WallJumpThreshold = 5;
 
+    /// <summary>
+    /// Max consecutive ticks the tracker will hold <see cref="lastHand"/> at
+    /// a pre-shrink baseline waiting for the opp's discard-count signal to
+    /// propagate. ~500 ms at 60 Hz — long enough to outlast realistic
+    /// addon-memory write-ordering races (observed range: 1–10 ticks in the
+    /// 2026-05-20..23 corpus), short enough that a permanently-stuck deferral
+    /// can't strand the tracker between hands.
+    /// </summary>
+    private const int MaxDeferralTicks = 30;
+
     private readonly List<Meld> melds = new();
     private readonly int[] lastDiscardCounts = new int[4];
     private int lastObservedWall = -1;
@@ -53,6 +63,12 @@ public sealed class MeldTracker
     // the most recent opp discarder, hold it through the call-prompt
     // window, and consume it when the closed-hand shrink fires.
     private int pendingOppDiscardSeat = -1;
+    // Number of consecutive ticks we've been holding lastHand at a
+    // pre-shrink baseline because a chi/pon/minkan-shaped shrink landed
+    // before the opp's discard count propagated through addon memory.
+    // Zero means "not currently deferring". See <see cref="ObserveSnapshot"/>
+    // for the rationale and field-corpus evidence.
+    private int deferredTicks;
 
     public IReadOnlyList<Meld> Melds => melds;
 
@@ -88,6 +104,7 @@ public sealed class MeldTracker
         lastAkadora = null;
         meldAkadora = 0;
         pendingOppDiscardSeat = -1;
+        deferredTicks = 0;
         Array.Clear(lastDiscardCounts);
     }
 
@@ -105,6 +122,7 @@ public sealed class MeldTracker
             lastAkadora = null;
             meldAkadora = 0;
             pendingOppDiscardSeat = -1;
+            deferredTicks = 0;
             Array.Clear(lastDiscardCounts);
         }
         lastObservedWall = wallRemaining;
@@ -117,9 +135,26 @@ public sealed class MeldTracker
     /// incremented), synthesize the corresponding meld and append it to
     /// <see cref="Melds"/>.
     ///
+    /// <para>When the closed hand shrinks in a chi/pon/minkan shape but no
+    /// opp seat has been latched yet — the addon writes the closed-hand
+    /// region and the per-seat discard-count bytes to separate cache lines,
+    /// and a tick can catch the former before the latter — this method
+    /// defers the state-snapshot update for up to <see cref="MaxDeferralTicks"/>
+    /// ticks, holding <see cref="lastHand"/> at the pre-shrink baseline. The
+    /// next tick after the discard count finally propagates retries the
+    /// inference from the same baseline and records the meld. Without this
+    /// deferral the missed-once-missed-forever pattern fires (62 % of all
+    /// <c>Pass</c> decisions in the 2026-05-20..23 corpus had reasoning
+    /// "hand state out of sync — pausing hints (closed=11, melds=0;
+    /// expected 14)" — the exact signature of a chi/pon whose tracker
+    /// inference was skipped because the opp's discard count hadn't yet
+    /// landed).</para>
+    ///
     /// <para>Returns the inferred meld, or null if nothing was inferred this
     /// tick (no prior snapshot yet, no closed-hand shrink, no opponent
-    /// discard increment, or removed tiles don't form a valid run/triplet).</para>
+    /// discard increment, the removed tiles don't form a valid run/triplet,
+    /// or this tick is a deferred state update awaiting the discard-count
+    /// signal).</para>
     /// </summary>
     /// <param name="currentHand">Closed hand from the current snapshot.</param>
     /// <param name="discardCounts">Per-seat discard counts, length 4, indexed by seat.</param>
@@ -154,7 +189,19 @@ public sealed class MeldTracker
             lastHand = new List<Tile>(currentHand);
             lastAkadora = currentAkadora;
             Array.Copy(discardCounts, lastDiscardCounts, 4);
+            deferredTicks = 0;
             return null;
+        }
+
+        // If we discarded ourselves since the previous observation, any
+        // active deferral is stale — the pre-shrink baseline we were holding
+        // no longer represents the closed hand a future tick would diff
+        // against. Drop the deferral now so the rest of this method updates
+        // state normally and the next tick re-baselines.
+        if (deferredTicks > 0 && lastHand is not null
+            && discardCounts[ourSeat] > lastDiscardCounts[ourSeat])
+        {
+            deferredTicks = 0;
         }
 
         // Latch the most-recent opp discarder. This runs every tick so that
@@ -164,7 +211,7 @@ public sealed class MeldTracker
         UpdatePendingOppDiscarder(discardCounts, ourSeat);
 
         Meld? inferred = null;
-        if (lastHand is not null && pendingOppDiscardSeat >= 0)
+        if (lastHand is not null)
         {
             int delta = lastHand.Count - currentHand.Count;
             if (delta is 2 or 3)
@@ -172,24 +219,52 @@ public sealed class MeldTracker
                 var removed = DiffRemoved(lastHand, currentHand);
                 if (removed.Count == delta)
                 {
-                    inferred = delta == 2
-                        ? InferChiOrPon(removed, pendingOppDiscardSeat)
-                        : InferMinKan(removed, pendingOppDiscardSeat);
-                    if (inferred is { } m)
+                    if (pendingOppDiscardSeat >= 0)
                     {
-                        melds.Add(m);
-                        // Akadora delta: if the closed-hand red count dropped
-                        // by N this tick, N reds moved into the new meld.
-                        // Clamp to 0 to avoid negative deltas if the caller's
-                        // count is non-monotonic for unrelated reasons.
-                        if (lastAkadora is int prev)
-                            meldAkadora += Math.Max(0, prev - currentAkadora);
-                        // The pending discarder is consumed by this call —
-                        // a subsequent chi/pon needs its own fresh opp
-                        // discard to fire.
-                        pendingOppDiscardSeat = -1;
+                        inferred = delta == 2
+                            ? InferChiOrPon(removed, pendingOppDiscardSeat)
+                            : InferMinKan(removed, pendingOppDiscardSeat);
+                        if (inferred is { } m)
+                        {
+                            melds.Add(m);
+                            // Akadora delta: if the closed-hand red count dropped
+                            // by N this tick, N reds moved into the new meld.
+                            // Clamp to 0 to avoid negative deltas if the caller's
+                            // count is non-monotonic for unrelated reasons.
+                            if (lastAkadora is int prev)
+                                meldAkadora += Math.Max(0, prev - currentAkadora);
+                            // The pending discarder is consumed by this call —
+                            // a subsequent chi/pon needs its own fresh opp
+                            // discard to fire.
+                            pendingOppDiscardSeat = -1;
+                            deferredTicks = 0;
+                        }
                     }
+                    else if (deferredTicks < MaxDeferralTicks)
+                    {
+                        // Defer: closed-hand shrunk in a chi/pon/minkan shape
+                        // but the opp's discard-count byte hasn't propagated
+                        // through addon memory yet. Skip the state snapshot
+                        // so the next tick can retry from the same baseline
+                        // once the count update lands. See the docstring for
+                        // the field-corpus evidence motivating this branch.
+                        deferredTicks++;
+                        return null;
+                    }
+                    // else: cap exceeded — fall through to state update
+                    // without recording a meld (same outcome as pre-fix, but
+                    // bounded). The hand boundary's ObserveWall reset will
+                    // pick the tracker back up on the next round.
                 }
+            }
+            else
+            {
+                // Shape isn't a chi/pon/minkan candidate this tick — drop
+                // any in-progress deferral. Without this reset a normal
+                // discard-from-14 that arrives during a stale deferral
+                // window would never re-enter the deferral path because
+                // deferredTicks would never roll back to 0.
+                deferredTicks = 0;
             }
         }
 

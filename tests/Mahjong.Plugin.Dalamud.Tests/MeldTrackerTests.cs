@@ -272,6 +272,159 @@ public class MeldTrackerTests
     }
 
     [Fact]
+    public void ObserveSnapshot_defers_inference_when_shrink_lands_before_discard_count_updates()
+    {
+        // The race: closed-hand byte and per-seat discard-count byte live on
+        // separate cache lines in addon memory, and a single tick can catch
+        // the closed-hand shrink before the opp's discard count propagates.
+        // Pre-fix this drop happens silently — `lastHand` advances to the
+        // post-call shape and the next tick (where the discard count finally
+        // lands) sees delta=0 and never re-attempts inference. Field corpus
+        // 2026-05-20..23: 356 of 575 Pass decisions traced to exactly this
+        // pattern (closed=11, melds=0; expected 14).
+        //
+        // The fix: when the shrink shape matches but no opp seat has latched,
+        // hold lastHand at the pre-shrink baseline so a subsequent tick can
+        // retry inference once the discard-count signal lands.
+        var tracker = new MeldTracker();
+
+        // T-1: baseline 13 tiles, no opp activity.
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+
+        // T0: we click pon. Closed hand jumps to 11 BEFORE opp's discard
+        // count propagates — pendingOppDiscardSeat stays -1.
+        var t0 = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(t0); // deferred — no inference yet, but state held
+
+        // T1: opp seat 2's count finally lands. Same closed hand. The
+        // tracker retries inference from the held baseline.
+        var t1 = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0);
+        Assert.NotNull(t1);
+        Assert.Equal(MeldKind.Pon, t1!.Value.Kind);
+        Assert.Equal(4, t1.Value.ClaimedTile!.Value.Id); // 5m id 4
+        Assert.Equal(2, t1.Value.ClaimedFromSeat);
+        Assert.Single(tracker.Melds);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_deferral_resolves_with_minkan_shape()
+    {
+        var tracker = new MeldTracker();
+        // 14 tiles incl. triplet of 7p (id 15).
+        tracker.ObserveSnapshot(Hand("123m777p123s1234z"), [0, 0, 0, 0], ourSeat: 0);
+        // T0: we call minkan. Closed hand 14 → 10. Opp count not propagated.
+        var t0 = tracker.ObserveSnapshot(Hand("123m123s1234z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(t0); // deferred
+
+        // T1: opp seat 1's count lands. Same closed hand. Inference retries.
+        var t1 = tracker.ObserveSnapshot(Hand("123m123s1234z"), [0, 1, 0, 0], ourSeat: 0);
+        Assert.NotNull(t1);
+        Assert.Equal(MeldKind.MinKan, t1!.Value.Kind);
+        Assert.Equal(1, t1.Value.ClaimedFromSeat);
+        Assert.Equal(4, t1.Value.TileCount);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_deferral_abandoned_when_we_discard_during_window()
+    {
+        // Race + our own discard. The deferred baseline is stale once we
+        // discard — without abandonment, the next tick's diff against the
+        // pre-shrink 13-tile baseline would see delta=3 (11→10 closed + 1
+        // we discarded vs. the 13-tile baseline) and synthesize a phantom
+        // minkan. Verify the deferral abandons on our discard-count increment.
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+
+        // T0: closed hand 13 → 11 (we ponned). Opp count not propagated.
+        var t0 = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(t0); // deferred
+
+        // T1: we discard from the post-call shape. Hand 11 → 10. Our own
+        // discard count incremented. Deferral must abandon — a future opp
+        // discard must NOT trigger a stale-baseline inference.
+        var t1 = tracker.ObserveSnapshot(Hand("23m789p1234567z"), [1, 0, 0, 0], ourSeat: 0);
+        Assert.Null(t1);
+
+        // T2: opp seat 2 finally discards (post-our-discard). The tracker
+        // must NOT use the original 13-tile baseline now — that would
+        // synthesize a phantom minkan with the wrong tiles. lastHand is now
+        // 10 (or whatever T1 wrote), delta against 10 is 0.
+        var t2 = tracker.ObserveSnapshot(Hand("23m789p1234567z"), [1, 0, 1, 0], ourSeat: 0);
+        Assert.Null(t2);
+        // The pon was missed — same outcome as pre-fix when we discard
+        // mid-race, but we have NOT recorded a phantom meld.
+        Assert.Empty(tracker.Melds);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_deferral_capped_at_max_ticks()
+    {
+        // Pathological race that never resolves (opp count never propagates).
+        // Deferral must cap at MaxDeferralTicks (30) so a permanently-stuck
+        // race can't strand the tracker between hands. After the cap, state
+        // updates normally — same outcome as pre-fix code at that point.
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+
+        // 30 ticks of the same shrink shape with no opp discard signal.
+        for (int i = 0; i < 30; i++)
+        {
+            var r = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+            Assert.Null(r);
+        }
+        // 31st tick: cap exceeded, state updates. Still no meld recorded
+        // (we never got the opp signal), but tracker is no longer deferring.
+        var capped = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(capped);
+        Assert.Empty(tracker.Melds);
+
+        // 32nd tick: even if opp discard now lands, the baseline has advanced
+        // to 11 tiles. delta=0, no inference. (Confirms the cap was crossed.)
+        var afterCap = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 1, 0], ourSeat: 0);
+        Assert.Null(afterCap);
+        Assert.Empty(tracker.Melds);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_deferral_does_not_block_first_observation()
+    {
+        // The first observation is always a baseline establishment — there's
+        // no prior lastHand to diff against, so the shrink-shape branch
+        // never runs and the deferral counter must stay at 0.
+        var tracker = new MeldTracker();
+        var r = tracker.ObserveSnapshot(Hand("123m45p67s11z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(r);
+
+        // Subsequent observation with a normal shape (no shrink) should
+        // continue uninterrupted.
+        var r2 = tracker.ObserveSnapshot(Hand("123m45p67s11z4m"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(r2);
+    }
+
+    [Fact]
+    public void ObserveSnapshot_deferral_clears_on_hand_boundary()
+    {
+        // If a hand ends mid-deferral, ObserveWall must reset the deferred-
+        // tick counter so the next hand starts from a clean state. Without
+        // this reset, a stale baseline would survive the hand reset and
+        // misfire on the first observation of the new hand.
+        var tracker = new MeldTracker();
+        tracker.ObserveSnapshot(Hand("123m55m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+        var t0 = tracker.ObserveSnapshot(Hand("123m789p1234567z"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(t0); // entering deferral
+
+        // Hand boundary fires. State resets.
+        tracker.ObserveWall(40);
+        tracker.ObserveWall(70);
+
+        // New hand: a normal first observation (no prior shape) should
+        // baseline cleanly without triggering inference.
+        var fresh = tracker.ObserveSnapshot(Hand("123m45p67s11z123m"), [0, 0, 0, 0], ourSeat: 0);
+        Assert.Null(fresh);
+        Assert.Empty(tracker.Melds);
+    }
+
+    [Fact]
     public void ObserveSnapshot_consumes_pending_discarder_so_second_call_needs_fresh_discard()
     {
         // After a meld lands, the pending opp-discard is consumed. A second

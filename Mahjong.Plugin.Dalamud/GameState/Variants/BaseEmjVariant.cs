@@ -548,11 +548,23 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
     private void AppendKanCandidate(List<Tile> hand, int[] counts, List<MeldCandidate> kans)
     {
-        if (TryFindUniqueRunOrTriplet(counts, minCount: 3) is not int tripId)
-            return;
-        var claimed = Tile.FromId(tripId);
-        var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
-        kans.AddRange(derived.Kan);
+        // Emit one MinKan candidate per triplet we hold. The unique-triplet
+        // gate that lived here pre-fix returned no candidate at all when the
+        // hand had two-or-more triplets, leading to "no call candidates
+        // offered" declines on legitimate kan prompts. Field corpus shows
+        // 24 such declines across 4 days (2026-05-20..23). Match the
+        // existing AppendPonCandidate pattern: enumerate every triplet,
+        // let the policy pick the best by shanten/yaku, and trust the
+        // opcode-11 / accept-button-index path to commit whichever
+        // candidate the game is actually offering.
+        for (int id = 0; id < Tile.Count34; id++)
+        {
+            if (counts[id] < 3)
+                continue;
+            var claimed = Tile.FromId(id);
+            var derived = CallCandidateDeriver.Derive(hand, claimed, fromSeat: 1);
+            kans.AddRange(derived.Kan);
+        }
     }
 
     /// <summary>
@@ -579,15 +591,33 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (atkValues == null)
             return;
 
+        // The game's chi prompt is always for the ONE tile the opponent just
+        // discarded. We need to find that tile id in the AtkValues array, NOT
+        // enumerate every chi shape our hand could form against any tile.
+        //
+        // An earlier brute-force fallback iterated all 27 suited tiles and
+        // emitted candidates for every shape the hand could form — this
+        // catastrophically inflated <c>ChiCandidates.Count</c>, which
+        // <c>AutoPlayLoop.ComputePassIndex</c> uses to compute the Pass-button
+        // index. A 7-candidate emission for a 2-button [Chi][Pass] prompt sent
+        // <c>FireCallback([11, 7])</c> as Pass, which hits no button at all and
+        // the prompt sits open forever. Live-confirmed 2026-05-23T14:39 — bot
+        // looped <c>auto-pass[opt=7] → Ok</c> every 3 s without dismissing the
+        // popup.
+        //
+        // Strategy: try the configured slot first; if that doesn't yield a
+        // valid chi, scan a bounded window of int-typed slots and stop at the
+        // FIRST match. At most one claim tile is in play per prompt.
         int configuredIdx = profile.AtkValues.ChiClaimedTile;
         if (TryDeriveChiFromSlot(hand, atkValues, atkCount, configuredIdx, chis))
             return;
 
         // Configured slot didn't yield a chi. Scan the [0..ChiFallbackScanLimit]
         // window for any suited tile whose claim derives ≥1 chi against the
-        // current hand. Bounded scan because beyond the limit the array tends
-        // to carry unrelated payloads (seat scores, discard piles further
-        // upstream) that would produce false-positive candidates.
+        // current hand, and STOP AT THE FIRST MATCH. Bounded scan because
+        // beyond the limit the array tends to carry unrelated payloads (seat
+        // scores, discard piles further upstream) that would produce false-
+        // positive candidates.
         int scanLimit = Math.Min(atkCount, profile.AtkValues.ChiFallbackScanLimit);
         for (int i = 0; i < scanLimit; i++)
         {
