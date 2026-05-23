@@ -104,7 +104,7 @@ dotnet test  Mahjong.Plugin.Dalamud.sln
 - **Mahjong.Engine** (116) — decomposition, shanten, ukeire, fu, scoring (via `Scorer + RiichiRuleSet`), yaku detection.
 - **Mahjong.Replay** (17) — Tenhou parser + golden-file regression suite.
 - **Mahjong.Plugin.Dalamud** (214) — config service, discard capture strategies, MeldTracker (incl. chi/pon race deferral), AutoPlayLoop accept-index computation, GameLogger dedup + hand-end, findings log, telemetry adapters.
-- **Mahjong.Policy** (86) — every sub-policy in isolation, MCTS pool semantics, weight bundle defaults, JSON weight provider, structured `Decision<T>` rationale.
+- **Mahjong.Policy** (86) — every sub-policy in isolation, weight bundle defaults, JSON weight provider, structured `Decision<T>` rationale.
 
 Every project except `Mahjong.Plugin.Dalamud` itself is Dalamud-free and portable. See [`docs/architecture.md`](docs/architecture.md) for the layered overview and extension points, and [`docs/dispatch-protocol.md`](docs/dispatch-protocol.md) for the source-of-truth inventory of every Doman Mahjong popup/state and its dispatch shape (verified ✅ / awaiting verification 🟡 / broken 🔴 / unknown ⚫).
 
@@ -118,7 +118,7 @@ FFXIV-DomanMahjongSolver/
 ├── Mahjong.Plugin.Game/         plugin contracts + LayoutProfile + ActionStateMachine
 ├── Mahjong.Replay/              Tenhou parser + golden-file regression harness
 ├── Mahjong.Engine/              decomposition · shanten · ukeire · Scorer
-├── Mahjong.Policy/              heuristic + ISMCTS implementations · weight tuner
+├── Mahjong.Policy/              heuristic policy implementations · weight tuner
 ├── Mahjong.Tuner/               offline weight optimization (console exe)
 ├── Mahjong.Plugin.Dalamud/      the Dalamud plugin (thin shell)
 │
@@ -172,7 +172,7 @@ The end goal is full intelligent automation across **all clients** (EU, NA, JP, 
 - EfficiencyPolicy defensive guard catches DiscardScorer invariant exceptions on shanten-invalid mid-transition states
 - Per-dispatch chat-log annotation (`schedState`/`curState`/`path`) so regressions are one log line away
 - Engine: shanten · ukeire · yaku · fu · scoring (116 tests)
-- Policy: efficiency · ISMCTS w/ progressive widening · Bayesian opponent model · evolutionary weight tuner · Tenhou log parser (86 tests)
+- Policy: efficiency · Bayesian opponent model · evolutionary weight tuner · Tenhou log parser (86 tests)
 
 #### In progress
 

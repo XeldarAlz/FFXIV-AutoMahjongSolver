@@ -152,7 +152,6 @@ The dispatcher is only half the protocol — the policy needs an accurate snapsh
 | Heuristic discard policy | ✅ baseline; tuning may want novice-table-specific weights |
 | Heuristic call policy | ✅; current accept rate ~12% in corpus (mostly correct passes) |
 | Heuristic push/fold | ✅ but conservative — calibrated against expert opponents |
-| MCTS (IsmctsPolicy) | ✅ for close discards |
 | TsumogiriFallback (out-of-sync handler) | ✅ kan-aware after 2026-05-23 fix |
 | Opponent model | 🔴 runs on partial view (no opp riichi, no opp melds, no opp discards-as-tedashi) |
 

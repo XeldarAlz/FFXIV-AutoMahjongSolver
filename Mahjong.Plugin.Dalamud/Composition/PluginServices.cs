@@ -7,7 +7,6 @@ using Mahjong.Plugin.Game;
 using Mahjong.Policy.Abstractions.Random;
 using Mahjong.Policy.Abstractions.Weights;
 using Mahjong.Policy.Efficiency;
-using Mahjong.Policy.Mcts;
 using Mahjong.Policy.Opponents;
 using Mahjong.Policy.Placement;
 using Mahjong.Rules;
@@ -23,7 +22,7 @@ namespace Mahjong.Plugin.Dalamud.Composition;
 ///   * Dalamud service adapters (<see cref="DalamudEventLog"/>, <see cref="DalamudFrameworkScheduler"/>)
 ///   * <see cref="IRuleSet"/> + scoring/dora/fu rules
 ///   * <see cref="IWeightProvider"/> + policy sub-policies
-///   * Top-level <see cref="IPolicy"/> chosen by <c>Configuration.PolicyTier</c>
+///   * Top-level <see cref="IPolicy"/> bound to <see cref="EfficiencyPolicy"/>
 ///
 /// Plugin.cs builds the container once at startup and disposes it on plugin
 /// unload — Dalamud's <see cref="System.Runtime.Loader.AssemblyLoadContext"/>
@@ -49,7 +48,7 @@ public static class PluginServices
         RegisterRules(services);
         RegisterWeights(services);
         RegisterRandomness(services);
-        RegisterPolicies(services, configuration);
+        RegisterPolicies(services);
 
         return services.BuildServiceProvider(validateScopes: false);
     }
@@ -126,7 +125,7 @@ public static class PluginServices
         services.AddSingleton<IRandomSource>(_ => new SeededRandomSource());
     }
 
-    private static void RegisterPolicies(IServiceCollection services, Configuration configuration)
+    private static void RegisterPolicies(IServiceCollection services)
     {
         services.AddSingleton<IOpponentModel>(sp =>
             new OpponentModel(sp.GetRequiredService<IWeightProvider>().Current.Opponent));
@@ -138,10 +137,6 @@ public static class PluginServices
         services.AddSingleton<ICallPolicy, HeuristicCallPolicy>();
         services.AddSingleton<IRiichiPolicy, HeuristicRiichiPolicy>();
         services.AddSingleton<IPushFoldPolicy, HeuristicPushFoldPolicy>();
-
-        services.AddSingleton<IRolloutPolicy>(sp =>
-            new Rollout(sp.GetRequiredService<IRandomSource>(),
-                        sp.GetRequiredService<IWeightProvider>().Current.Rollout));
 
         // Explicit factory pins the 5-arg DI constructor — `EfficiencyPolicy`
         // also exposes an `IWeightProvider?`-only convenience ctor, and
@@ -155,15 +150,7 @@ public static class PluginServices
                 sp.GetRequiredService<ICallPolicy>(),
                 sp.GetRequiredService<IRiichiPolicy>(),
                 sp.GetRequiredService<IPushFoldPolicy>()));
-        services.AddSingleton<IsmctsPolicy>(sp =>
-            new IsmctsPolicy(rng: sp.GetRequiredService<IRandomSource>()));
 
-        // Top-level policy chosen by user configuration. Singleton so every
-        // tick sees the same instance — switching tiers happens through
-        // Plugin.SetPolicy which rebuilds the top-level binding.
-        services.AddSingleton<IPolicy>(sp =>
-            configuration.PolicyTier == "mcts"
-                ? sp.GetRequiredService<IsmctsPolicy>()
-                : sp.GetRequiredService<EfficiencyPolicy>());
+        services.AddSingleton<IPolicy>(sp => sp.GetRequiredService<EfficiencyPolicy>());
     }
 }

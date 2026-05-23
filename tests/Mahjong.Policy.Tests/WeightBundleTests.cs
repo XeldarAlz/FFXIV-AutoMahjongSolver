@@ -9,7 +9,6 @@ public class WeightBundleTests
         Assert.Same(DiscardWeights.Default, b.Discard);
         Assert.Same(OpponentWeights.Default, b.Opponent);
         Assert.Same(PlacementWeights.Default, b.Placement);
-        Assert.Same(RolloutWeights.Default, b.Rollout);
     }
 
     [Fact]
@@ -50,14 +49,6 @@ public class WeightBundleTests
         var p = PlacementWeights.Default;
         Assert.Equal(PlacementMultipliers.Neutral, p.Rank2Or3);
         Assert.Equal(8000, p.Rank1HugeLeadGap);
-    }
-
-    [Fact]
-    public void Rollout_defaults_carry_pre_phase3_baked_values()
-    {
-        var r = RolloutWeights.Default;
-        Assert.Equal(-100.0, r.ShantenPenalty);
-        Assert.Equal(1.0, r.UkeireBonus);
     }
 
     [Fact]

@@ -21,9 +21,9 @@ How the codebase is laid out, what each project owns, and how to extend it.
    ┌────▼─────────────┐  ┌──────────────▼────┐  ┌────────────────────▼──┐
    │ Mahjong.Plugin   │  │ Policy            │  │ Mahjong.Replay        │
    │ .Game            │  │ - Heuristic*Policy│  │ - TenhouLog           │
-   │ - LayoutProfile  │  │ - Mcts            │  │ - TenhouReplay        │
-   │ - Result<T,E>    │  │ - Tuning          │  │ - GoldenFileHarness   │
-   │ - 8 contracts    │  │ - Simulator       │  │                       │
+   │ - LayoutProfile  │  │ - Tuning          │  │ - TenhouReplay        │
+   │ - Result<T,E>    │  │ - Simulator       │  │ - GoldenFileHarness   │
+   │ - 8 contracts    │  │                   │  │                       │
    │ - ActionStateM/c │  │                   │  │                       │
    └─────────────┬────┘  └─────────┬─────────┘  └──────────┬────────────┘
                  │                  │                       │
@@ -75,7 +75,7 @@ it.
 | Mahjong.Plugin.Game | 33 | Plugin-layer contracts + variant data |
 | Mahjong.Replay | 17 | Tenhou parsing + golden-file regression |
 | Engine | 113 | Decomposition, shanten, ukeire, scoring orchestration |
-| Policy | 77 | Heuristic + MCTS decision implementations |
+| Policy | 77 | Heuristic decision implementations |
 | Tuner | — | Console exe for offline weight optimization |
 | Mahjong.Plugin.Dalamud | — | The Dalamud plugin (thin shell) |
 
@@ -110,7 +110,7 @@ imperative branching to update.
 
 1. Implement `IPolicy` (top-level) or one of the sub-policy interfaces
    (`IDiscardPolicy`, `ICallPolicy`, `IRiichiPolicy`, `IPushFoldPolicy`,
-   `IPlacementPolicy`, `IRolloutPolicy`) under `Policy/`.
+   `IPlacementPolicy`) under `Policy/`.
 2. Register the new implementation in
    `Mahjong.Plugin.Dalamud/Composition/PluginServices.cs`.
 3. Add a unit test under `tests/Policy.Tests/` — every sub-policy is

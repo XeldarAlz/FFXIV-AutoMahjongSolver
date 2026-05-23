@@ -5,7 +5,7 @@ namespace Mahjong.Policy.Abstractions;
 /// concrete action. Consumers swap implementations via DI — the live plugin
 /// injects an <see cref="IPolicy"/>, never a concrete class.
 ///
-/// Composing policies (efficiency, MCTS) decompose into sub-policy evaluators
+/// Composing policies decompose into sub-policy evaluators
 /// (<see cref="IDiscardPolicy"/>, <see cref="ICallPolicy"/>,
 /// <see cref="IRiichiPolicy"/>, ...) — Phase 4 wires that decomposition.
 /// </summary>

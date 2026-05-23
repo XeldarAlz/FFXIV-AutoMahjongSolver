@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Description>Autonomous AI for FFXIV Doman Mahjong — heuristic + ISMCTS policy with Bayesian opponent modeling.</Description>
+    <Description>Autonomous AI for FFXIV Doman Mahjong — heuristic policy with Bayesian opponent modeling.</Description>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

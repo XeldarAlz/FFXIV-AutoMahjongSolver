@@ -47,7 +47,6 @@ const handStatePausedByInstall = new Map(); // install -> { reasons: Map, ticks:
 const stalledStates = new Map(); // "state=X hand=Y flags=Z" -> count
 const passReasons = new Map(); // raw reason text -> count (for "policy returned Pass — not dispatching")
 const installsSeen = new Set();
-const installPolicyTier = new Map(); // install -> tier (from games stream decisions)
 
 // Games-level signals
 const handsStartedByInstall = new Map();
@@ -128,9 +127,6 @@ for (const date of dates) {
         else if (ev === "hand-end") handEndCount++;
         else if (ev === "action") actionCount++;
         else if (ev === "call-prompt") callPromptCount++;
-        if (ev === "decision" && e.policy) {
-          installPolicyTier.set(install, e.policy);
-        }
       }
       handsStartedByInstall.set(install, (handsStartedByInstall.get(install) ?? 0) + handStartCount);
       handsEndedByInstall.set(install, (handsEndedByInstall.get(install) ?? 0) + handEndCount);

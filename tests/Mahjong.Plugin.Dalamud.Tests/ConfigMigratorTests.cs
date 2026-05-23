@@ -14,7 +14,6 @@ public class ConfigMigratorTests
 
         Assert.Equal(1, output.Version);
         Assert.True(output.TosAccepted);
-        Assert.Equal(input.PolicyTier, output.PolicyTier);
     }
 
     [Fact]
@@ -71,7 +70,6 @@ public class ConfigMigratorTests
         {
             Version = 0,
             TosAccepted = true,
-            PolicyTier = "mcts",
             HumanizedDelayMs = 800,
         };
 
@@ -86,7 +84,6 @@ public class ConfigMigratorTests
 
         Assert.Equal(2, output.Version);
         Assert.True(output.TosAccepted);
-        Assert.Equal("mcts", output.PolicyTier);
         Assert.Equal(800, output.HumanizedDelayMs);
         Assert.NotEqual(Guid.Empty, output.InstallId);
     }

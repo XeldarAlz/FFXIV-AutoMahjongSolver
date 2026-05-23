@@ -13,14 +13,12 @@ public sealed record WeightBundle(
     DiscardWeights Discard,
     OpponentWeights Opponent,
     PlacementWeights Placement,
-    RolloutWeights Rollout,
     int SchemaVersion = WeightBundle.CurrentSchemaVersion)
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public static WeightBundle Default { get; } = new(
         Discard: DiscardWeights.Default,
         Opponent: OpponentWeights.Default,
-        Placement: PlacementWeights.Default,
-        Rollout: RolloutWeights.Default);
+        Placement: PlacementWeights.Default);
 }

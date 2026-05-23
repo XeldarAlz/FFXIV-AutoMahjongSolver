@@ -105,10 +105,6 @@ public sealed class MjAutoCommand : IDisposable
                 plugin.ToggleDebugOverlay();
                 break;
 
-            case "policy":
-                HandlePolicy(rest);
-                break;
-
             case "dump":
                 chatGui.Print("[MjAuto] State dump not yet implemented.");
                 break;
@@ -230,7 +226,6 @@ public sealed class MjAutoCommand : IDisposable
 
         chatGui.Print("Developer console:");
         chatGui.Print("  /mjauto debug — toggle the developer console");
-        chatGui.Print("  /mjauto policy <eff|mcts> — switch AI strength from chat");
 
         chatGui.Print("Manual override:");
         chatGui.Print("  /mjauto autodiscard — run the policy once and discard");
@@ -2065,16 +2060,4 @@ public sealed class MjAutoCommand : IDisposable
         chatGui.Print($"[MjAuto] {count} addon(s) {(string.IsNullOrEmpty(filterLower) ? "total" : $"matching \"{filter}\"")}.");
     }
 
-    private void HandlePolicy(string arg)
-    {
-        var tier = arg.Trim().ToLowerInvariant();
-        if (tier != "eff" && tier != "mcts")
-        {
-            chatGui.PrintError("[MjAuto] Usage: /mjauto policy <eff|mcts>");
-            return;
-        }
-
-        plugin.SetPolicy(tier == "eff" ? "efficiency" : "mcts");
-        chatGui.Print($"[MjAuto] Policy tier: {plugin.Configuration.PolicyTier}");
-    }
 }

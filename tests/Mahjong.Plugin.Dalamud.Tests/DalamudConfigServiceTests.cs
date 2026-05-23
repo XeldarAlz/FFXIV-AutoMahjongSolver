@@ -99,10 +99,10 @@ public class DalamudConfigServiceTests
         Configuration? observed = null;
         svc.Changed += c => observed = c;
 
-        svc.Update(c => c with { PolicyTier = "mcts" });
+        svc.Update(c => c with { HumanizedDelayMs = 999 });
 
         Assert.NotNull(observed);
-        Assert.Equal("mcts", observed!.PolicyTier);
+        Assert.Equal(999, observed!.HumanizedDelayMs);
     }
 
     [Fact]

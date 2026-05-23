@@ -45,7 +45,6 @@ public class ConfigurationMigrationIntegrationTests
             TosAccepted = true,
             AutomationArmed = true,
             SuggestionOnly = false,
-            PolicyTier = "mcts",
             DevMode = true,
             HumanizedDelayMs = 2000,
             ShowInGameHighlight = false,
@@ -57,7 +56,6 @@ public class ConfigurationMigrationIntegrationTests
         Assert.True(v2.TosAccepted);
         Assert.True(v2.AutomationArmed);
         Assert.False(v2.SuggestionOnly);
-        Assert.Equal("mcts", v2.PolicyTier);
         Assert.True(v2.DevMode);
         Assert.Equal(2000, v2.HumanizedDelayMs);
         Assert.False(v2.ShowInGameHighlight);

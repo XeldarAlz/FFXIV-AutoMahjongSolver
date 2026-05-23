@@ -225,10 +225,10 @@ public sealed class MainWindow : Window, IDisposable
                 return;
             }
 
-            // Compute policy pick + scored discards once per frame — the MCTS
-            // tier can be expensive, and both the hand-row highlight and the
-            // suggestion panel below need the result. Previously each renderer
-            // called Policy.Choose independently, doubling the work at 60Hz.
+            // Compute policy pick + scored discards once per frame. Both the
+            // hand-row highlight and the suggestion panel below need the
+            // result. Previously each renderer called Policy.Choose
+            // independently, doubling the work at 60Hz.
             ScoredDiscard[]? scored = null;
             ActionChoice? choice = null;
             string? scorerError = null;
@@ -465,18 +465,10 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.Dummy(new Vector2(0, 4));
 
-        // ---- Play style ----
+        // ---- Auto-play ----
         using (Theme.BeginCard("settings-play", alt: true))
         {
-            Theme.SectionHeader("Play style");
-
-            int tierIdx = cfg.PolicyTier == "mcts" ? 1 : 0;
-            string[] tiers = { "Standard (fast)", "Stronger (slower to think)" };
-            ImGui.SetNextItemWidth(300);
-            if (ImGui.Combo("Strength", ref tierIdx, tiers, tiers.Length))
-                plugin.SetPolicy(tierIdx == 0 ? "efficiency" : "mcts");
-
-            ImGui.Dummy(new Vector2(0, 4));
+            Theme.SectionHeader("Auto-play");
 
             int delay = cfg.HumanizedDelayMs;
             ImGui.SetNextItemWidth(300);

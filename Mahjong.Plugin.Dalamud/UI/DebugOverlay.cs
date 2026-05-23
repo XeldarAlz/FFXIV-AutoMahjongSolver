@@ -140,9 +140,6 @@ public sealed class DebugOverlay : Window, IDisposable
             var suggestion = cfg.SuggestionOnly;
             if (ImGui.Checkbox("Suggestion-only mode", ref suggestion))
                 plugin.ConfigService.Update(c => c with { SuggestionOnly = suggestion });
-
-            ImGui.Dummy(new Vector2(0, 4));
-            KeyValueRow("Policy tier", cfg.PolicyTier);
         }
 
         ImGui.Dummy(new Vector2(0, 4));

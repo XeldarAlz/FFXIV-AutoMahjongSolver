@@ -35,8 +35,6 @@ public sealed record Configuration : IPluginConfiguration
 
     public bool SuggestionOnly { get; init; } = true;
 
-    public string PolicyTier { get; init; } = "efficiency";
-
     public bool TosAccepted { get; init; } = false;
 
     /// <summary>

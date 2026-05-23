@@ -35,8 +35,8 @@ runtime, hot-swappable, and version-stamped via `WeightBundle.SchemaVersion`.
 
 Tuning runs are deterministic under a fixed seed. `Settings.Seed` propagates
 into a single `SeededRandomSource(seed)` used by every stochastic component
-(Determinizer, Rollout, HandSimulator, SelfPlayRunner). Re-running with the
-same seed produces bit-identical output.
+(HandSimulator, SelfPlayRunner). Re-running with the same seed produces
+bit-identical output.
 
 ## Riichi rules
 

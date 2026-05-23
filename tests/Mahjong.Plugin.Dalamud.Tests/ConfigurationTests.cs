@@ -15,7 +15,6 @@ public class ConfigurationTests
         var c = new Configuration();
         Assert.False(c.AutomationArmed);
         Assert.True(c.SuggestionOnly);
-        Assert.Equal("efficiency", c.PolicyTier);
         Assert.False(c.TosAccepted);
         Assert.False(c.DevMode);
         Assert.Equal(1200, c.HumanizedDelayMs);
@@ -32,13 +31,11 @@ public class ConfigurationTests
             Version = 0,
             AutomationArmed = true,
             SuggestionOnly = false,
-            PolicyTier = "mcts",
             TosAccepted = true,
         };
         Assert.Equal(0, c.Version);
         Assert.True(c.AutomationArmed);
         Assert.False(c.SuggestionOnly);
-        Assert.Equal("mcts", c.PolicyTier);
         Assert.True(c.TosAccepted);
     }
 
@@ -50,7 +47,7 @@ public class ConfigurationTests
         Assert.NotSame(a, b);
         Assert.False(a.TosAccepted);
         Assert.True(b.TosAccepted);
-        Assert.Equal(a.PolicyTier, b.PolicyTier);
+        Assert.Equal(a.HumanizedDelayMs, b.HumanizedDelayMs);
     }
 
     [Fact]
@@ -61,11 +58,11 @@ public class ConfigurationTests
         {
             AutomationArmed = true,
             SuggestionOnly = false,
-            PolicyTier = "mcts",
+            TosAccepted = true,
         };
         Assert.True(b.AutomationArmed);
         Assert.False(b.SuggestionOnly);
-        Assert.Equal("mcts", b.PolicyTier);
+        Assert.True(b.TosAccepted);
     }
 
     [Fact]

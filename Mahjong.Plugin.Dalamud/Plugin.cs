@@ -17,7 +17,6 @@ using Mahjong.Plugin.Dalamud.UI;
 using Mahjong.Plugin.Game;
 using Mahjong.Policy;
 using Mahjong.Policy.Efficiency;
-using Mahjong.Policy.Mcts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mahjong.Plugin.Dalamud;
@@ -73,9 +72,7 @@ public sealed class Plugin : IDalamudPlugin
     public AddonEmjReader AddonReader { get; }
     public MeldTracker MeldTracker { get; } = new();
     public StateAggregator Aggregator { get; }
-    public IPolicy Policy { get; private set; }
-    public IPolicy EfficiencyPolicyInstance { get; }
-    public IPolicy IsmctsPolicyInstance { get; }
+    public IPolicy Policy { get; }
     public InputEventLogger EventLogger { get; }
     public InputDispatcher Dispatcher { get; }
     public GameLogger GameLogger { get; }
@@ -164,11 +161,6 @@ public sealed class Plugin : IDalamudPlugin
         Services = PluginServices.Build(dalamud, migrated);
         ConfigService = Services.GetRequiredService<IConfigService<Configuration>>();
 
-        // Policies resolve through the container. The two concrete instances
-        // are still surfaced as properties for back-compat with code that
-        // hasn't migrated to constructor injection yet (Phase 7.B work).
-        EfficiencyPolicyInstance = Services.GetRequiredService<EfficiencyPolicy>();
-        IsmctsPolicyInstance = Services.GetRequiredService<IsmctsPolicy>();
         Policy = Services.GetRequiredService<IPolicy>();
 
         // Telemetry sinks first — AddonEmjReader / VariantSelector emit
@@ -205,9 +197,6 @@ public sealed class Plugin : IDalamudPlugin
             AddonReader, AddonLifecycle, GameInterop, Log, mahjongAddon, configDir);
         AddonReader.EventLogger = EventLogger;
         InputRecorder = new InputRecorder(EventLogger, configDir);
-        // `() => Policy` so the logger always sees the user's currently-active
-        // tier (efficiency vs. mcts), even after a SetPolicy switch — Plugin.Policy
-        // is mutable and replaced wholesale on tier change.
         GameLogger = new GameLogger(
             Aggregator, ConfigService, Log, configDir,
             policyAccessor: () => Policy,
@@ -345,12 +334,4 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleAboutWindow() => AboutWindow.Toggle();
 
     public void ToggleDebugOverlay() => DebugOverlay.Toggle();
-
-    public void SetPolicy(string tier)
-    {
-        var t = tier.ToLowerInvariant();
-        var resolved = t == "mcts" ? "mcts" : "efficiency";
-        Policy = resolved == "mcts" ? IsmctsPolicyInstance : EfficiencyPolicyInstance;
-        ConfigService.Update(c => c with { PolicyTier = resolved });
-    }
 }

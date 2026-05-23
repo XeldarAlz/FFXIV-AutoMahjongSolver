@@ -18,7 +18,7 @@ You need .NET 10 SDK. The plugin itself requires Dalamud at runtime; CI pulls a 
 
 - `Mahjong.Plugin.Dalamud/` — Dalamud plugin: UI, dispatch, game reader. The only part that depends on Dalamud.
 - `Engine/` — Core mahjong primitives (tiles, shanten, ukeire, yaku, fu, scoring). Dalamud-free and portable.
-- `Policy/` — Decision logic: efficiency policy, riichi / call / push-fold evaluators, Bayesian opponent model, ISMCTS, hand simulator, evolutionary tuner, Tenhou log parser. Also Dalamud-free.
+- `Policy/` — Decision logic: efficiency policy, riichi / call / push-fold evaluators, Bayesian opponent model, hand simulator, evolutionary tuner, Tenhou log parser. Also Dalamud-free.
 - `tests/` — xUnit tests for Engine and Policy. Anything in those two libraries should be covered.
 - `repo/repo.json` — Custom Dalamud repo manifest.
 

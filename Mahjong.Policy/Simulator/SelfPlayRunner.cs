@@ -4,8 +4,7 @@ namespace Mahjong.Policy.Simulator;
 
 /// <summary>
 /// Play N hands with the given 4 policies, collect aggregate metrics. Useful for
-/// comparing EfficiencyPolicy vs IsmctsPolicy, or self-play tournaments for weight
-/// tuning (M9).
+/// self-play tournaments and weight tuning.
 /// </summary>
 public sealed class SelfPlayRunner
 {

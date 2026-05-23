@@ -30,7 +30,7 @@ Mahjong.Plugin.Dalamud (this)
        ├─→ Mahjong.Core
        │
        ├─→ Engine                   (decomposition, shanten, scoring)
-       ├─→ Policy                   (heuristic + MCTS decision making)
+       ├─→ Policy                   (heuristic decision making)
        └─→ Mahjong.Rules            (DomanRuleSet for live play)
 ```
 

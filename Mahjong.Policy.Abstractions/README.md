@@ -11,17 +11,16 @@ Consumed by `Mahjong.Policy` (concrete decision logic), `Mahjong.Replay`,
 |---|---|
 | Decision types | `ActionChoice`, `ActionKind`, `Decision<T>`, `Reason`, `ScoredDiscard` |
 | Top-level | `IPolicy` |
-| Sub-policies (Phase 4 chain) | `IDiscardPolicy`, `ICallPolicy`, `IRiichiPolicy`, `IPushFoldPolicy`, `IPlacementPolicy`, `IRolloutPolicy` |
+| Sub-policies (Phase 4 chain) | `IDiscardPolicy`, `ICallPolicy`, `IRiichiPolicy`, `IPushFoldPolicy`, `IPlacementPolicy` |
 | Opponent modeling | `IOpponentModel` |
 | RNG | `IRandomSource`, `SeededRandomSource`, `RandomSourceExtensions` |
-| Weights | `IWeightProvider`, `DefaultWeightProvider`, `WeightBundle` + `Discard/Opponent/Placement/Rollout` weight records |
-| MCTS pooling | `INodePool<T>` |
+| Weights | `IWeightProvider`, `DefaultWeightProvider`, `WeightBundle` + `Discard/Opponent/Placement` weight records |
 
 ## Why a separate abstractions project?
 
 Plugin and Tuner depend on **contracts**, not implementations. This separation
 means swapping a learned policy for the heuristic policy is a one-line DI
-binding change; testing the plugin doesn't require pulling in MCTS internals.
+binding change.
 
 ## Consumers
 
