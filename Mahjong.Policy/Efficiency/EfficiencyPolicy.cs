@@ -96,7 +96,27 @@ public sealed class EfficiencyPolicy : IPolicy
         if (TsumogiriFallback(state) is { } fallback)
             return fallback;
 
-        var scored = discard.Score(state);
+        ScoredDiscard[] scored;
+        try
+        {
+            scored = discard.Score(state);
+        }
+        catch (ArgumentException ex)
+        {
+            // DiscardScorer requires a shanten-valid 14-tile hand
+            // (closed + 3*melds.Count == 14). Mid-transition states the
+            // variant occasionally surfaces with Discard legal — e.g.
+            // post-minkan before the rinshan replacement tile lands in
+            // the hand array — fail that check. Pre-fix, the exception
+            // bubbled to AutoPlayLoop and re-fired every 3 seconds for
+            // minutes (live: 2026-05-23T15:29..32, state=6 hand=10
+            // melds=1 minkan, ~50+ throws in 3 minutes). Now we return
+            // Pass with a clear reason — the next tick's snapshot may
+            // have stabilized (rinshan tile arrived, MeldTracker caught
+            // up, etc.) and we'll re-enter the normal flow.
+            return ActionChoice.Pass(
+                $"scorer invariant: {ex.Message} (likely mid-transition state)");
+        }
         if (scored.Length == 0)
             return ActionChoice.Pass("no legal discards found");
 

@@ -532,13 +532,34 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
-        var result = choice.Kind == ActionKind.Riichi
-            ? plugin.Dispatcher.DispatchRiichi(slot)
-            : plugin.Dispatcher.DispatchDiscard(slot);
-        string actionName = choice.Kind == ActionKind.Riichi ? "riichi" : "discard";
-        LastActionDescription = $"auto-{actionName} {tile} slot={slot} → {result}";
-        plugin.GameLogger.RecordAction(choice.Kind, tile, slot, result.ToString(), choice.Reasoning);
-        EmitDispatchFinding(actionName, result, tile: tile, slot: slot);
+        // Riichi declaration at state-6 self-declare popup: accept via the
+        // call-prompt opcode-11 path (riichi as a popup button), latch the
+        // FSM, and let the next-tick ScheduleRiichiTsumogiri commit the
+        // tile. The `DispatchRiichi` opcode-8 path it used to take is dead
+        // code on the shipping addon — confirmed by zero corpus records
+        // of opcode-8 FireCallbacks across all installs through 2026-05-21.
+        // Note: this path tsumogiris the LAST-DRAWN tile (slot 13) rather
+        // than the policy's chosen tile. In practice these are usually the
+        // same — the policy chooses to riichi precisely because the just-
+        // drawn tile put the hand into tenpai. If a future RE of the
+        // game-side click handler reveals a path that honors the specific
+        // tile, swap this branch back out.
+        if (choice.Kind == ActionKind.Riichi && snap.Legal.Can(ActionFlags.Riichi))
+        {
+            int riichiIdx = ComputeAcceptIndex(ActionKind.Riichi, snap.Legal, null);
+            var rResult = plugin.Dispatcher.DispatchCallOption(riichiIdx);
+            LastActionDescription = $"auto-riichi[opt={riichiIdx}] (tile preview={tile}) → {rResult}";
+            plugin.GameLogger.RecordAction(ActionKind.Riichi, tile, riichiIdx, rResult.ToString(), choice.Reasoning);
+            EmitDispatchFinding("riichi", rResult, option: riichiIdx, tile: tile);
+            fsm.LatchRiichiConfirm();
+            ClearRetryDebounceIfHookFailed(rResult);
+            return;
+        }
+
+        var result = plugin.Dispatcher.DispatchDiscard(slot);
+        LastActionDescription = $"auto-discard {tile} slot={slot} → {result}";
+        plugin.GameLogger.RecordAction(ActionKind.Discard, tile, slot, result.ToString(), choice.Reasoning);
+        EmitDispatchFinding("discard", result, tile: tile, slot: slot);
         ClearRetryDebounceIfHookFailed(result);
     }
 
@@ -634,6 +655,34 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchAccept(ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, string riichiReason)
     {
+        // Tsumo and Ron have dedicated opcodes (9 and 10) — NOT the call-prompt
+        // opcode-11 button index. Tsumo opcode-9 is corpus-confirmed (14 installs,
+        // 16 records over 2026-05-10..05-18); Ron opcode-10 is still speculative
+        // but the right shape is a standalone callback, not a button-row click.
+        // Live freeze 2026-05-23T15:37: bot detected Tsumo, fired
+        // `auto-tsumo[opt=0]` via DispatchCallOption (opcode-11, opt=0), returned
+        // Ok, popup never closed, winning hand never committed. The pre-fix path
+        // tried to map Tsumo through the button-row dispatcher even though the
+        // addon expects its dedicated agari callback.
+        if (!acceptRiichiPopup && choice.Kind == ActionKind.Tsumo)
+        {
+            var result = plugin.Dispatcher.DispatchTsumo();
+            LastActionDescription = $"auto-tsumo → {result}";
+            plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
+            EmitDispatchFinding("tsumo", result);
+            ClearRetryDebounceIfHookFailed(result);
+            return;
+        }
+        if (!acceptRiichiPopup && choice.Kind == ActionKind.Ron)
+        {
+            var result = plugin.Dispatcher.DispatchRon();
+            LastActionDescription = $"auto-ron → {result}";
+            plugin.GameLogger.RecordAction(ActionKind.Ron, null, null, result.ToString(), choice.Reasoning);
+            EmitDispatchFinding("ron", result);
+            ClearRetryDebounceIfHookFailed(result);
+            return;
+        }
+
         // Compute the correct accept-button index for the chosen action kind.
         // Pre-fix, this always called DispatchCall() (opt=0), which works only
         // when the chosen kind is the leftmost button — i.e. when Pon is offered,
@@ -646,13 +695,13 @@ public sealed class AutoPlayLoop : IDisposable
         int acceptIndex = acceptRiichiPopup
             ? ComputeAcceptIndex(ActionKind.Riichi, legal, choice.Call)
             : ComputeAcceptIndex(choice.Kind, legal, choice.Call);
-        var result = plugin.Dispatcher.DispatchCallOption(acceptIndex);
+        var result2 = plugin.Dispatcher.DispatchCallOption(acceptIndex);
         string label = acceptRiichiPopup ? "riichi-confirm" : choice.Kind.ToString().ToLowerInvariant();
-        LastActionDescription = $"auto-{label}[opt={acceptIndex}] → {result}";
+        LastActionDescription = $"auto-{label}[opt={acceptIndex}] → {result2}";
         plugin.GameLogger.RecordAction(
-            loggedKind, null, acceptIndex, result.ToString(),
+            loggedKind, null, acceptIndex, result2.ToString(),
             acceptRiichiPopup ? riichiReason : choice.Reasoning);
-        EmitDispatchFinding(label, result, option: acceptIndex);
+        EmitDispatchFinding(label, result2, option: acceptIndex);
 
         // Latch on for the post-riichi-confirm popup: the yaku-preview confirm
         // popup shares the Riichi-flag signature of the initial popup, so

@@ -377,17 +377,52 @@ internal sealed class BaseEmjVariant : IEmjVariant
                 ActionFlags.Pon | ActionFlags.Chi |
                 ActionFlags.MinKan | ActionFlags.ShouMinKan |
                 ActionFlags.Ron | ActionFlags.Riichi | ActionFlags.Tsumo;
+            LegalActions scanned;
             if (atkValues != null)
             {
-                var scanned = BuildCallPromptLegal(hand, atkValues, atkCount);
-                if ((scanned.Flags & acceptMask) != 0)
-                    return scanned;
+                scanned = BuildCallPromptLegal(hand, atkValues, atkCount);
+                if ((scanned.Flags & acceptMask) == 0)
+                    scanned = BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
             }
-            return BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
+            else
+            {
+                scanned = BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
+            }
+
+            // State-6 hand=14 popup is dual-purpose: it offers Riichi/Tsumo/AnKan
+            // AND the closed hand stays clickable as a regular discard surface.
+            // If the policy declines the call (chooses Pass), the right behavior
+            // is to discard a tile — clicking the addon's "Pass" via opcode-11
+            // doesn't dismiss this popup (it expects a tile click to advance).
+            // Live-confirmed 2026-05-23T15:03 on a Riichi/Pass popup: the bot
+            // looped `auto-pass[opt=1] → Ok` every 3 s without the popup ever
+            // closing because that path isn't how the addon advances state-6.
+            //
+            // The fix: at state-6 hand=14 we always ALSO surface Discard as a
+            // legal action, so EfficiencyPolicy.Choose can pick a tile through
+            // its normal discard pipeline (which evaluates Riichi via the
+            // RiichiPolicy + the existing dispatcher route in
+            // AutoPlayLoop.DispatchCallChoice that re-routes Discard/Riichi
+            // through the tile-click handshake). Other call-prompt states
+            // (CallPrompt=15 after opp discard, CallPromptList=28) keep their
+            // current behavior — the closed hand isn't clickable there.
+            bool isSelfDeclarePopup =
+                stateCode == states.SelfDeclareList && hand.Count == 14;
+            if (isSelfDeclarePopup)
+            {
+                scanned = scanned with { Flags = scanned.Flags | ActionFlags.Discard };
+            }
+            return scanned;
         }
 
         // "Our turn to discard" = 14 tiles with 0 melds, 11 with 1 meld, 8 with 2, etc. —
-        // all satisfy hand % 3 == 2.
+        // all satisfy hand % 3 == 2. (Equivalent for shanten purposes to
+        // closed + 3*melds.Count == 14.) Mid-transition states like post-
+        // minkan-pre-rinshan-draw (closed=10 with 1 minkan, shanten total
+        // == 13) are intentionally NOT discard-eligible here — DiscardScorer
+        // can't score them and waiting for the rinshan tile is the right
+        // behavior. EfficiencyPolicy's exception guard handles any residual
+        // bad-state slip-through gracefully without crashing the dispatch.
         if (hand.Count > 0 && hand.Count % 3 == 2)
             return new LegalActions(ActionFlags.Discard, [], [], [], []);
 
