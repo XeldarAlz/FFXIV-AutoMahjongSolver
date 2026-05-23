@@ -50,13 +50,17 @@ Both have capture commands documented in [`docs/dispatch-protocol.md`](docs/disp
 
 ## Install
 
+Doman Mahjong Solver is distributed through XeldarAlz's custom Dalamud plugin repository — one URL, all plugins.
+
 In-game: `/xlsettings` → **Experimental** → paste into **Custom Plugin Repositories**:
 
 ```
-https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/repo/repo.json
+https://raw.githubusercontent.com/XeldarAlz/DalamudPlugins/main/repo.json
 ```
 
 Tick the checkbox, save. Then `/xlplugins` → search **Doman Mahjong Solver** → Install. Open with `/mjauto` and accept the short notice.
+
+Any future plugins published under [@XeldarAlz](https://github.com/XeldarAlz) also appear here without needing a new URL.
 
 ## Using it
 
