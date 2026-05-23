@@ -102,6 +102,23 @@ try {
   }
 } catch { /* skip */ }
 
+// 4. Legacy pre-by-date pulls (.local/memdumps/, .local/b2-all/, .local/memdumps_*).
+//    These predate the by-date/<date>/ structure and were created by earlier
+//    versions of the b2-pull-*.mjs scripts. Always old; never refreshed.
+//    Always re-pullable from B2 within the lifecycle window. Use directory
+//    mtime as the age signal — the contained files are typically immutable.
+const legacyDirs = ["memdumps", "b2-all"];
+for (const name of legacyDirs) {
+  const p = join(localRoot, name);
+  try {
+    const s = await stat(p);
+    if (s.mtime >= cutoffDate) continue;
+    const bytes = await dirSize(p);
+    toDelete.push({ kind: "legacy-pull", path: p, bytes, age: s.mtime.toISOString().slice(0, 10) });
+    totalBytesToDelete += bytes;
+  } catch { /* not present, skip */ }
+}
+
 if (toDelete.length === 0) {
   console.log("Nothing to clean up.");
   process.exit(0);
