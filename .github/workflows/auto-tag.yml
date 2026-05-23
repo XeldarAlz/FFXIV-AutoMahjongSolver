@@ -6,8 +6,8 @@ name: Auto-tag on version bump
 #
 # Bump <Version> in Directory.Build.props before (or inside) your PR and
 # you get a release automatically once it merges. Commit without a version
-# bump and nothing happens. CI also asserts repo/repo.json's
-# AssemblyVersion / TestingAssemblyVersion match this value.
+# bump and nothing happens. CI also asserts repo.json's AssemblyVersion /
+# TestingAssemblyVersion match this value.
 
 on:
   push:
@@ -24,33 +24,24 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    # Skip re-running on commits from this workflow itself (defensive — we
-    # push tags, not commits, but guard anyway in case that ever changes).
     if: "!contains(toJson(github.event.commits.*.message), '[skip auto-tag]')"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          # Use the default GITHUB_TOKEN; pushing a tag back is allowed by
-          # contents:write above. Tag pushes don't re-trigger `push` on
-          # branches, so no recursion.
 
       - name: Read plugin version from Directory.Build.props
         id: version
         run: |
-          # Match digits + dots only, anchored to the closing </Version>.
-          # The looser `[^<]+` was matching the prose comment that mentions
-          # <Version> first, producing a multi-line $version GitHub Actions
-          # rejected with "Invalid format" when written to GITHUB_OUTPUT.
           version=$(grep -oP '<Version>\K[\d.]+(?=</Version>)' Directory.Build.props)
           if [ -z "$version" ]; then
             echo "::error::Could not parse <Version> from Directory.Build.props"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version"    >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "Plugin version: $version"
 
       - name: Check whether tag already exists
