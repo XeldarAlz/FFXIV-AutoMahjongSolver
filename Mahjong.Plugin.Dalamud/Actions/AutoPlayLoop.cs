@@ -867,7 +867,7 @@ public sealed class AutoPlayLoop : IDisposable
         EmitDispatchFinding("pass", result, option: passIndex, snap: snap);
     }
 
-    /// <summary>Addon button order: Pon, one slot per Chi variant, AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, Pass.</summary>
+    /// <summary>Call-row button order Pon, Chi, AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, Pass; Chi is one slot regardless of ChiCandidates.Count (variant picked in state-25 sub-popup).</summary>
     internal static int ComputeAcceptIndex(ActionKind kind, LegalActions legal, MeldCandidate? chosenCall)
     {
         int idx = 0;
@@ -878,12 +878,9 @@ public sealed class AutoPlayLoop : IDisposable
             idx++;
 
         if (kind == ActionKind.Chi)
-        {
-            int variant = ResolveChiVariantIndex(legal, chosenCall);
-            return idx + variant;
-        }
+            return idx;
         if (legal.Can(ActionFlags.Chi))
-            idx += Math.Max(1, legal.ChiCandidates.Count);
+            idx++;
 
         if (kind == ActionKind.AnKan)
             return idx;
@@ -916,44 +913,14 @@ public sealed class AutoPlayLoop : IDisposable
         return 0;
     }
 
-    private static int ResolveChiVariantIndex(LegalActions legal, MeldCandidate? chosenCall)
-    {
-        if (chosenCall is not { } call)
-            return 0;
-        var chi = legal.ChiCandidates;
-        for (int i = 0; i < chi.Count; i++)
-            if (ChiCandidateMatches(chi[i], call))
-                return i;
-        return 0;
-    }
-
-    private static bool ChiCandidateMatches(MeldCandidate a, MeldCandidate b)
-    {
-        if (a.Kind != b.Kind)
-            return false;
-        if (a.ClaimedTile.Id != b.ClaimedTile.Id)
-            return false;
-        if (a.HandTiles.Length != b.HandTiles.Length)
-            return false;
-        for (int i = 0; i < a.HandTiles.Length; i++)
-            if (a.HandTiles[i].Id != b.HandTiles[i].Id)
-                return false;
-        return true;
-    }
-
-    /// <summary>
-    /// Index of the Pass button on a call-prompt row: every offered accept
-    /// action contributes one slot (Chi contributes <c>ChiCandidates.Count</c>
-    /// variants), Pass closes the row. Exposed for the developer console so
-    /// it can render the same numbers <see cref="DispatchPass"/> would emit.
-    /// </summary>
+    /// <summary>Index of the Pass button on a call-prompt row: one slot per offered accept action (see <see cref="ComputeAcceptIndex"/>), Pass closes the row.</summary>
     internal static int ComputePassIndex(LegalActions legal)
     {
         int idx = 0;
         if (legal.Can(ActionFlags.Pon))
             idx++;
         if (legal.Can(ActionFlags.Chi))
-            idx += Math.Max(1, legal.ChiCandidates.Count);
+            idx++;
         if (legal.Can(ActionFlags.AnKan))
             idx++;
         if (legal.Can(ActionFlags.MinKan))

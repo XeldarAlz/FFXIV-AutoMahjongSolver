@@ -64,7 +64,7 @@ FireCallback even on success — game accepts via side effect, not return.
 
 | Surface | State | Protocol | Status | Evidence |
 |---|---|---|---|---|
-| Classic button-row prompt | 15 | `[11, optionIndex]` where optionIndex is the button position (Pon=0, Chi=1+chiVariant, Kan, Ron, Riichi, Tsumo, then Pass) | ✅ for pon + chi/pass; kan/ron/riichi/tsumo accept unobserved | Pon: live confirmed 2026-05-23T14:24 (game formed meld); chi-with-pass: live confirmed 2026-05-23T14:43 after reverting brute-force candidate inflation; rest: existing test coverage in `AutoPlayLoopAcceptIndexTests` |
+| Classic button-row prompt | 15 | `[11, optionIndex]` where optionIndex is the button position. Order: Pon, Chi, AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, then Pass — **Chi is exactly one slot** regardless of variant count; the variant is chosen in the state-25 sub-popup that opens once the Chi button fires. | ✅ for pon + chi/pass; kan/ron/riichi/tsumo accept unobserved | Pon: live confirmed 2026-05-23T14:24 (game formed meld); chi-with-pass: live confirmed 2026-05-23T14:43; chi-button-is-one-slot: snap evidence `snap-stuck-20260525-202755-591.txt` (chi=2 ChiCandidates rendered as single `"Chi"` AtkValue, fixed 2026-05-25 after live stuck-loop); rest: existing test coverage in `AutoPlayLoopAcceptIndexTests` |
 | Novice-table list prompt | 28 | `AtkComponentList::SelectItem(optionIndex, dispatchEvent: true)` — visual top-to-bottom order | 🟡 | No live capture; older corpus suggests this path |
 | Chi variant select sub-popup | 25 | `[11, 0]` to pick first variant; user reports work-around exists for non-default | 🟡 | Implemented in `AutoPlayLoop.HandleChiVariantSelect` |
 

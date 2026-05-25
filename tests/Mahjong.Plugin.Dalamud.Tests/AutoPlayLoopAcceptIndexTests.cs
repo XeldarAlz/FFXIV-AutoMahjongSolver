@@ -69,7 +69,7 @@ public class AutoPlayLoopAcceptIndexTests
     }
 
     [Fact]
-    public void Multi_chi_second_variant_picks_index_1()
+    public void Multi_chi_accept_picks_single_chi_button_regardless_of_variant()
     {
         var chi123 = MakeChi(claimedId: 1, low: 0, high: 2);
         var chi234 = MakeChi(claimedId: 1, low: 1, high: 3);
@@ -78,11 +78,11 @@ public class AutoPlayLoopAcceptIndexTests
             [], [], [chi123, chi234], []);
 
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Chi, legal, chi234);
-        Assert.Equal(1, idx);
+        Assert.Equal(0, idx);
     }
 
     [Fact]
-    public void Multi_chi_with_pon_third_variant_picks_index_3()
+    public void Multi_chi_with_pon_chi_button_sits_after_pon_regardless_of_variant_count()
     {
         var chi0 = MakeChi(claimedId: 1, low: 0, high: 2);
         var chi1 = MakeChi(claimedId: 1, low: 1, high: 3);
@@ -92,7 +92,20 @@ public class AutoPlayLoopAcceptIndexTests
             [], [MakePon(5)], [chi0, chi1, chi2], []);
 
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Chi, legal, chi2);
-        Assert.Equal(3, idx);
+        Assert.Equal(1, idx);
+    }
+
+    [Fact]
+    public void Multi_chi_pass_index_does_not_inflate_with_variant_count()
+    {
+        // Regression: chi=2 used to compute Pass=opt 2; addon has no slot 2 so the popup never closed.
+        var chi123 = MakeChi(claimedId: 1, low: 0, high: 2);
+        var chi234 = MakeChi(claimedId: 1, low: 1, high: 3);
+        var legal = new LegalActions(
+            ActionFlags.Chi | ActionFlags.Pass,
+            [], [], [chi123, chi234], []);
+
+        Assert.Equal(1, AutoPlayLoop.ComputePassIndex(legal));
     }
 
     [Fact]
