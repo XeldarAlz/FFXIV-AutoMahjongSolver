@@ -2,16 +2,7 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Efficiency;
 
-/// <summary>
-/// Heuristic <see cref="ICallPolicy"/>. Accepts a pon/chi/kan call when:
-/// <list type="bullet">
-///   <item>Shanten strictly improves after taking the meld.</item>
-///   <item>The post-call hand still has a reachable yaku path
-///         (yakuhai pair, tanyao, honitsu/chinitsu suit dominance, or toitoi).</item>
-/// </list>
-/// Conservative: false-negatives lean toward not calling. Opponent-model-aware
-/// deal-in weighting is a follow-up that lands when push/fold drives calls too.
-/// </summary>
+/// <summary>Conservative: requires strict shanten gain AND a reachable yaku path post-call.</summary>
 public sealed class HeuristicCallPolicy : ICallPolicy
 {
     public Decision<MeldCandidate?> Evaluate(StateSnapshot state)
@@ -20,7 +11,6 @@ public sealed class HeuristicCallPolicy : ICallPolicy
         if (candidates.Count == 0)
             return Decline("no call candidates offered");
 
-        // Counts of our 13-tile pre-call closed hand.
         var counts = new int[Tile.Count34];
         foreach (var t in state.Hand)
             counts[t.Id]++;
@@ -41,7 +31,6 @@ public sealed class HeuristicCallPolicy : ICallPolicy
             if (delta <= 0)
                 continue;
 
-            // Apply call to counts to evaluate yaku reachability, then revert.
             foreach (var t in c.HandTiles)
                 counts[t.Id]--;
             int meldsAfter = state.OurMelds.Count + 1;
@@ -118,10 +107,6 @@ public sealed class HeuristicCallPolicy : ICallPolicy
         return Math.Min(std, Math.Min(ci, ko));
     }
 
-    /// <summary>
-    /// Cheap yaku-reachability check: yakuhai, tanyao, honitsu/chinitsu, or toitoi.
-    /// Conservative — false-negatives lean toward not calling.
-    /// </summary>
     private static bool HasReachableYaku(int[] counts, int meldsAfter, StateSnapshot state, MeldCandidate thisCall)
     {
         if (HasReachableYakuhai(counts, state, thisCall))
@@ -131,6 +116,10 @@ public sealed class HeuristicCallPolicy : ICallPolicy
         if (HasReachableSuitFlush(counts))
             return true;
         if (HasReachableToitoi(counts, state, thisCall))
+            return true;
+        if (HasReachableSanshokuDoujun(counts, state, thisCall))
+            return true;
+        if (HasReachableIttsu(counts, state, thisCall))
             return true;
         return false;
     }
@@ -195,6 +184,113 @@ public sealed class HeuristicCallPolicy : ICallPolicy
             if (counts[id] >= 3)
                 triplets++;
         return triplets >= 2;
+    }
+
+    private static bool HasReachableSanshokuDoujun(int[] counts, StateSnapshot state, MeldCandidate thisCall)
+    {
+        Span<bool> chiAt = stackalloc bool[21];
+        RecordChiOffset(state.OurMelds, chiAt, ittsuOnly: false);
+        if (thisCall.Kind == MeldKind.Chi)
+        {
+            int firstId = ChiStartId(thisCall);
+            int suit = firstId / TileIds.SuitSize;
+            int offset = firstId % TileIds.SuitSize;
+            if (suit < 3 && offset <= TileIds.SuitSize - 3)
+                chiAt[offset * 3 + suit] = true;
+        }
+
+        for (int n = 0; n <= TileIds.SuitSize - 3; n++)
+        {
+            bool allThree = true;
+            for (int suit = 0; suit < 3; suit++)
+            {
+                if (chiAt[n * 3 + suit])
+                    continue;
+                int suitBase = suit * TileIds.SuitSize;
+                int present = 0;
+                if (counts[suitBase + n] > 0) present++;
+                if (counts[suitBase + n + 1] > 0) present++;
+                if (counts[suitBase + n + 2] > 0) present++;
+                if (present < 2)
+                {
+                    allThree = false;
+                    break;
+                }
+            }
+            if (allThree)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool HasReachableIttsu(int[] counts, StateSnapshot state, MeldCandidate thisCall)
+    {
+        Span<bool> chiAt = stackalloc bool[9];
+        RecordChiOffset(state.OurMelds, chiAt, ittsuOnly: true);
+        if (thisCall.Kind == MeldKind.Chi)
+        {
+            int firstId = ChiStartId(thisCall);
+            int suit = firstId / TileIds.SuitSize;
+            int offset = firstId % TileIds.SuitSize;
+            if (suit < 3 && (offset == 0 || offset == 3 || offset == 6))
+                chiAt[(offset / 3) * 3 + suit] = true;
+        }
+
+        for (int suit = 0; suit < 3; suit++)
+        {
+            int suitBase = suit * TileIds.SuitSize;
+            bool allThree = true;
+            for (int subrun = 0; subrun < 3; subrun++)
+            {
+                if (chiAt[subrun * 3 + suit])
+                    continue;
+                int start = subrun * 3;
+                int present = 0;
+                if (counts[suitBase + start]     > 0) present++;
+                if (counts[suitBase + start + 1] > 0) present++;
+                if (counts[suitBase + start + 2] > 0) present++;
+                if (present < 2)
+                {
+                    allThree = false;
+                    break;
+                }
+            }
+            if (allThree)
+                return true;
+        }
+        return false;
+    }
+
+    private static void RecordChiOffset(IReadOnlyList<Meld> melds, Span<bool> chiAt, bool ittsuOnly)
+    {
+        foreach (var m in melds)
+        {
+            if (m.Kind != MeldKind.Chi)
+                continue;
+            int firstId = m.Tiles[0].Id;
+            int suit = firstId / TileIds.SuitSize;
+            int offset = firstId % TileIds.SuitSize;
+            if (suit >= 3)
+                continue;
+            if (ittsuOnly)
+            {
+                if (offset == 0 || offset == 3 || offset == 6)
+                    chiAt[(offset / 3) * 3 + suit] = true;
+            }
+            else if (offset <= TileIds.SuitSize - 3)
+            {
+                chiAt[offset * 3 + suit] = true;
+            }
+        }
+    }
+
+    private static int ChiStartId(MeldCandidate c)
+    {
+        int lowId = c.ClaimedTile.Id;
+        foreach (var t in c.HandTiles)
+            if (t.Id < lowId)
+                lowId = t.Id;
+        return lowId;
     }
 
     private static bool IsYakuhaiTile(Tile t, StateSnapshot state)

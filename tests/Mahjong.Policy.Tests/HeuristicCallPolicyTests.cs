@@ -25,8 +25,6 @@ public class HeuristicCallPolicyTests
     [Fact]
     public void Accepts_pon_that_advances_shanten_with_yakuhai()
     {
-        // Hand has 11z (haku pair). Offered pon of 11z → forms triplet, advances shanten,
-        // yakuhai reachable. Hand needs to be 13 tiles for the call evaluation (pre-pon).
         var seats = new SeatView[]
         {
             new([], [], [], false, -1, false, false),
@@ -36,7 +34,7 @@ public class HeuristicCallPolicyTests
         };
         var s = StateSnapshot.Empty with
         {
-            Hand = Tiles.Parse("234m456p789s234s11z"),   // 13 tiles, tenpai on 1z
+            Hand = Tiles.Parse("234m456p789s234s11z"),
             Seats = seats,
             Legal = new LegalActions(
                 Flags: ActionFlags.Pon | ActionFlags.Pass,
@@ -47,9 +45,6 @@ public class HeuristicCallPolicyTests
         };
 
         var d = Policy.Evaluate(s);
-        // Calling 11z + claimed 1z gives the player 3 of haku → not winning yet but shanten-improving
-        // and yakuhai reachable. We don't strictly assert accept here because yaku reachability is conservative;
-        // we assert the decision ran with a typed reason.
         Assert.NotNull(d.Reason);
         if (d.Accept)
         {
@@ -61,8 +56,6 @@ public class HeuristicCallPolicyTests
     [Fact]
     public void Declines_when_no_call_advances_shanten()
     {
-        // Hand: 123m 456p 789s 234s 5z6z (14 tiles for snapshot). Wait pre-call we need 13.
-        // Use a complete 13-tile state; offered Chi that wouldn't improve shanten.
         var seats = new SeatView[]
         {
             new([], [], [], false, -1, false, false),
@@ -72,7 +65,7 @@ public class HeuristicCallPolicyTests
         };
         var s = StateSnapshot.Empty with
         {
-            Hand = Tiles.Parse("234m456p789s234s5z"),   // 13 tiles
+            Hand = Tiles.Parse("234m456p789s234s5z"),
             Seats = seats,
             Legal = new LegalActions(
                 Flags: ActionFlags.Chi | ActionFlags.Pass,
@@ -86,5 +79,72 @@ public class HeuristicCallPolicyTests
         var d = Policy.Evaluate(s);
         Assert.False(d.Accept);
         Assert.Equal("no-shanten-gain-with-yaku", d.Reason.Code);
+    }
+
+    [Fact]
+    public void Accepts_chi_that_unlocks_sanshoku_doujun()
+    {
+        // chi(234m claiming 4m) + closed 234p + 234s → post-call sanshoku-doujun at
+        // offset 1 is reachable across all three suits. No other yaku route fires
+        // (terminals/honors block tanyao, multi-suit blocks honitsu, chi blocks toitoi,
+        // no dragons/seat-winds for yakuhai). Pre-fix the call would be declined.
+        var seats = new SeatView[]
+        {
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+        };
+        var s = StateSnapshot.Empty with
+        {
+            Hand = Tiles.Parse("23m234p234s1p9s1z2z4z"),
+            Seats = seats,
+            Legal = new LegalActions(
+                Flags: ActionFlags.Chi | ActionFlags.Pass,
+                DiscardableTiles: [],
+                PonCandidates: [],
+                ChiCandidates: [new MeldCandidate(MeldKind.Chi, Tile.FromId(3),
+                    [Tile.FromId(1), Tile.FromId(2)], FromSeat: 3)],
+                KanCandidates: []),
+        };
+
+        var d = Policy.Evaluate(s);
+        Assert.True(d.Accept,
+            $"expected chi(234m) accepted via sanshoku-doujun (reason={d.Reason.Code}: {d.Reason.Display})");
+        Assert.Equal(MeldKind.Chi, d.Value!.Value.Kind);
+    }
+
+    [Fact]
+    public void Accepts_chi_that_unlocks_ittsu()
+    {
+        // chi(123m claiming 1m) + closed 456m + 789m → post-call ittsu in m-suit is
+        // reachable: subrun 0 chi-locked, subruns 1 and 2 fully present in closed.
+        // No other yaku route fires (chi-meld terminal blocks tanyao, multi-suit
+        // closed blocks honitsu, chi blocks toitoi, sanshoku needs all-three-suits
+        // and p/s have only singletons at offset 0).
+        var seats = new SeatView[]
+        {
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+            new([], [], [], false, -1, false, false),
+        };
+        var s = StateSnapshot.Empty with
+        {
+            Hand = Tiles.Parse("23m456m789m1p9s1z2z4z"),
+            Seats = seats,
+            Legal = new LegalActions(
+                Flags: ActionFlags.Chi | ActionFlags.Pass,
+                DiscardableTiles: [],
+                PonCandidates: [],
+                ChiCandidates: [new MeldCandidate(MeldKind.Chi, Tile.FromId(0),
+                    [Tile.FromId(1), Tile.FromId(2)], FromSeat: 3)],
+                KanCandidates: []),
+        };
+
+        var d = Policy.Evaluate(s);
+        Assert.True(d.Accept,
+            $"expected chi(123m) accepted via ittsu (reason={d.Reason.Code}: {d.Reason.Display})");
+        Assert.Equal(MeldKind.Chi, d.Value!.Value.Kind);
     }
 }

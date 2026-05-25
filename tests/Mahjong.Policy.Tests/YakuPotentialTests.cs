@@ -19,18 +19,15 @@ public class YakuPotentialTests
     [Fact]
     public void All_simples_hand_scores_at_least_half_han()
     {
-        // 13 tiles, no terminals / honors → tanyao locked (1 han) → score ≈ 0.5
-        // (chiitoitsu doesn't fire — triplets aren't pairs).
-        var hand = Hand.FromNotation("222m555p888s2345p");
+        var hand = Hand.FromNotation("234m567m234p567p8m");
+        Assert.Equal(13, hand.ClosedTileCount);
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
-        Assert.InRange(score, 0.5, 0.55);
+        Assert.True(score >= 0.5, $"expected score >= 0.5 (got {score:F3})");
     }
 
     [Fact]
     public void Dragon_triplet_locks_yakuhai()
     {
-        // 13 tiles, three haku → yakuhai certainty 1.0 → 1 han / 2 = 0.5.
-        // Three honors block tanyao (3 t/h tiles → tanyao cert 0).
         var hand = Hand.FromNotation("555z123m456p789s2p");
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
         Assert.InRange(score, 0.5, 0.55);
@@ -39,12 +36,9 @@ public class YakuPotentialTests
     [Fact]
     public void Seat_wind_pair_only_counts_when_seat_info_known()
     {
-        // Two East tiles. East wind = id 27. With seat info unknown the policy
-        // can't tell if East is our seat wind, so it shouldn't bias toward the
-        // pair (the snapshot's default OurSeat=0 would otherwise leak).
         var hand = Hand.FromNotation("11z123m456p789s5p2p");
-        var unknown = StateSnapshot.Empty;                       // SeatInfoKnown = false
-        var known = SeatKnownState(seat: 0, round: 0);           // East seat, East round
+        var unknown = StateSnapshot.Empty;
+        var known = SeatKnownState(seat: 0, round: 0);
 
         double withoutInfo = YakuPotential.Score(hand, null, unknown);
         double withInfo = YakuPotential.Score(hand, null, known);
@@ -55,8 +49,6 @@ public class YakuPotentialTests
     [Fact]
     public void Pure_one_suit_hand_scores_high_for_honitsu()
     {
-        // 13 manzu, no off-suit, fully concealed → closed honitsu (3 han) at full
-        // certainty saturates the 0..1 score.
         var hand = Hand.FromNotation("1234567899m11m9m");
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
         Assert.Equal(1.0, score);
@@ -65,8 +57,6 @@ public class YakuPotentialTests
     [Fact]
     public void Six_pairs_close_to_chiitoitsu()
     {
-        // 6 distinct pairs + 1 single. Closed chiitoitsu cert = pairs / 6 = 1.0
-        // → 2 han / 2 = full score.
         var hand = Hand.FromNotation("11m22m33p44p55s66s7z");
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
         Assert.Equal(1.0, score);
@@ -75,8 +65,6 @@ public class YakuPotentialTests
     [Fact]
     public void Removed_tile_arg_simulates_post_discard_view()
     {
-        // 14-tile hand with 6 pairs + 1 random + 1 random. Discarding the
-        // off-suit single should leave the chiitoitsu route saturated.
         var hand = Hand.FromNotation("11m22m33p44p55s66s7z3m");
         double withoutRemoval = YakuPotential.Score(hand, null, StateSnapshot.Empty);
         double afterDiscard3m = YakuPotential.Score(hand, Tile.FromId(2), StateSnapshot.Empty);
@@ -86,8 +74,6 @@ public class YakuPotentialTests
     [Fact]
     public void Score_is_clamped_to_one()
     {
-        // Closed honitsu (3 han weighted) + yakuhai dragon triplet (1 han
-        // weighted) would over-saturate without the cap. Cap pegs to 1.0.
         var hand = Hand.FromNotation("111z2345m6m7m8m99m");
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
         Assert.Equal(1.0, score);
@@ -96,12 +82,136 @@ public class YakuPotentialTests
     [Fact]
     public void Discard_scorer_surfaces_yaku_potential_field()
     {
-        // Sanity: yaku potential should be exposed on ScoredDiscard so the
-        // overlay can render it. Using a non-trivial hand so at least one
-        // candidate has nonzero potential.
         var s = Snapshots.Closed14("222m555p888s23456p");
         var scored = DiscardScorer.Score(s);
         Assert.NotEmpty(scored);
         Assert.Contains(scored, sd => sd.YakuPotential > 0);
+    }
+
+    [Fact]
+    public void Open_pons_lift_score_via_toitoi_route()
+    {
+        int[] closed = Hand.FromNotation("147m369p5s").CloneCounts();
+        var pon2m = Meld.Pon(Tile.FromId(1), Tile.FromId(1), fromSeat: 1);
+        var pon5p = Meld.Pon(Tile.FromId(13), Tile.FromId(13), fromSeat: 2);
+
+        double withoutPons = YakuPotential.Score(new Hand(closed), null, StateSnapshot.Empty);
+        double withPons = YakuPotential.Score(
+            new Hand(closed, [pon2m, pon5p]), null, StateSnapshot.Empty);
+
+        Assert.True(withPons > withoutPons + 0.2,
+            $"two open pons should add toitoi-route value (without={withoutPons:F3}, with={withPons:F3})");
+    }
+
+    [Fact]
+    public void Open_chi_zeroes_the_toitoi_route()
+    {
+        int[] closed = Hand.FromNotation("147m369p5s").CloneCounts();
+        var pon2m = Meld.Pon(Tile.FromId(1), Tile.FromId(1), fromSeat: 1);
+        var pon5p = Meld.Pon(Tile.FromId(13), Tile.FromId(13), fromSeat: 2);
+        var chi234p = Meld.Chi(Tile.FromId(10), Tile.FromId(12), fromSeat: 3);
+
+        double withTwoPons = YakuPotential.Score(
+            new Hand(closed, [pon2m, pon5p]), null, StateSnapshot.Empty);
+        double withPonAndChi = YakuPotential.Score(
+            new Hand(closed, [pon2m, chi234p]), null, StateSnapshot.Empty);
+
+        Assert.True(withTwoPons > withPonAndChi,
+            $"replacing a pon with a chi should kill toitoi (pons={withTwoPons:F3}, mixed={withPonAndChi:F3})");
+    }
+
+    [Fact]
+    public void Three_closed_triplets_drive_toitoi_above_half()
+    {
+        var hand = Hand.FromNotation("111m9m333p1p555s7s7z");
+        Assert.Equal(13, hand.ClosedTileCount);
+        double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
+        Assert.True(score >= 0.7,
+            $"three closed triplets should drive toitoi to >=0.7 final score (got {score:F3})");
+    }
+
+    [Fact]
+    public void Two_closed_pairs_alone_do_not_signal_toitoi()
+    {
+        // Pins the toitoi gate (needs >=1 locked or >=3 pairs); without it, two pairs would falsely lift score.
+        var hand = Hand.FromNotation("11m99p23456m78s1z3z");
+        Assert.Equal(13, hand.ClosedTileCount);
+        double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
+        Assert.InRange(score, 0.3, 0.4);
+    }
+
+    [Fact]
+    public void Three_suit_parallel_runs_saturate_sanshoku()
+    {
+        var hand = Hand.FromNotation("123m5m7p123p123s5s8s");
+        Assert.Equal(13, hand.ClosedTileCount);
+        double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void Breaking_third_suit_drops_sanshoku_contribution()
+    {
+        var full = Hand.FromNotation("123m5m7p123p123s5s8s");
+        var broken = Hand.FromNotation("123m5m7p123p23s5s8s4z");
+
+        double scoreFull = YakuPotential.Score(full, null, StateSnapshot.Empty);
+        double scoreBroken = YakuPotential.Score(broken, null, StateSnapshot.Empty);
+        Assert.True(scoreFull > scoreBroken + 0.25,
+            $"breaking the third suit should drop sanshoku materially " +
+            $"(full={scoreFull:F3}, broken={scoreBroken:F3})");
+    }
+
+    [Fact]
+    public void Open_chi_locks_its_suit_in_sanshoku_readiness()
+    {
+        var chi234m = Meld.Chi(Tile.FromId(1), Tile.FromId(3), fromSeat: 3);
+        int[] withParallel = Hand.FromNotation("234p234s1m9m9p9s").CloneCounts();
+        int[] noSouAtAll = Hand.FromNotation("2p3p5p7p9p1z3z5z6z7z").CloneCounts();
+
+        double scoreWithParallel = YakuPotential.Score(
+            new Hand(withParallel, [chi234m]), null, StateSnapshot.Empty);
+        double scoreControl = YakuPotential.Score(
+            new Hand(noSouAtAll, [chi234m]), null, StateSnapshot.Empty);
+
+        Assert.True(scoreWithParallel > scoreControl + 0.15,
+            $"chi locking a fully-supported sanshoku offset should lift score " +
+            $"(parallel={scoreWithParallel:F3}, control={scoreControl:F3})");
+    }
+
+    [Fact]
+    public void Full_ittsu_in_one_suit_saturates_score()
+    {
+        var hand = Hand.FromNotation("123456789m1p5p1s9s");
+        Assert.Equal(13, hand.ClosedTileCount);
+        double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void Breaking_a_middle_subrun_drops_ittsu_contribution()
+    {
+        var chi234s = Meld.Chi(Tile.FromId(19), Tile.FromId(21), fromSeat: 3);
+        int[] withFull = Hand.FromNotation("123456789m5p").CloneCounts();
+        int[] broken = Hand.FromNotation("12346789m5p7p").CloneCounts();
+
+        double sFull = YakuPotential.Score(new Hand(withFull, [chi234s]), null, StateSnapshot.Empty);
+        double sBroken = YakuPotential.Score(new Hand(broken, [chi234s]), null, StateSnapshot.Empty);
+        Assert.True(sFull > sBroken,
+            $"breaking ittsu subrun should drop score (full={sFull:F3}, broken={sBroken:F3})");
+    }
+
+    [Fact]
+    public void Open_chi_at_ittsu_subrun_locks_its_position()
+    {
+        var chi789m = Meld.Chi(Tile.FromId(6), Tile.FromId(8), fromSeat: 3);
+        int[] withRest = Hand.FromNotation("123456m1p5p1s9s").CloneCounts();
+        int[] noManMaterial = Hand.FromNotation("123456p1s9s1z2z").CloneCounts();
+
+        double sWith = YakuPotential.Score(new Hand(withRest, [chi789m]), null, StateSnapshot.Empty);
+        double sControl = YakuPotential.Score(new Hand(noManMaterial, [chi789m]), null, StateSnapshot.Empty);
+        Assert.True(sWith > sControl + 0.3,
+            $"chi locking a subrun with closed support for the rest should fire ittsu " +
+            $"(with={sWith:F3}, control={sControl:F3})");
     }
 }

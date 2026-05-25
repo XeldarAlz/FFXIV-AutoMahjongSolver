@@ -3,39 +3,14 @@ using Mahjong.Engine;
 namespace Mahjong.Policy.Efficiency;
 
 /// <summary>
-/// Estimates the "yaku potential" of a 13-tile hand state for use as a discard
-/// feature. Returns a continuous [0, 1] score reflecting how plausibly the hand
-/// can complete with Doman's 2-han minimum.
-///
-/// <para>Each detected route is multiplied by approximate han value and the
-/// total is normalised to <see cref="TargetHan"/> = 2 (Doman <c>MinHan</c>).
-/// Two soft routes at 0.5 cert beat one route at 1.0 cert: that nudges the
-/// scorer toward yaku-stacked hands rather than betting everything on one
-/// yaku that may evaporate.</para>
-///
-/// <para>Routes covered (V1):
-/// <list type="bullet">
-///   <item><b>Tanyao</b> — 1 han. Decays with terminal/honor count.</item>
-///   <item><b>Yakuhai</b> — 1 han per triplet. Honors-only count, with
-///         seat/round winds gated on <see cref="StateSnapshot.SeatInfoKnown"/>.</item>
-///   <item><b>Honitsu</b> — 3 han closed / 2 open. Decays with off-suit
-///         non-honor count past the dominant suit.</item>
-///   <item><b>Chiitoitsu</b> — 2 han closed-only. Scales with pair count.</item>
-/// </list>
-/// Toitoi/Sanshoku/Ittsu are deferred — partial-hand detection is noisier than
-/// the discard term they'd add, and the four routes above already cover the
-/// common yakuless-tenpai trap that motivated this feature.</para>
+/// Continuous [0, 1] yaku-completion estimate normalised to Doman's 2-han minimum. Two soft
+/// 0.5-cert routes beat one 1.0-cert route — biases toward yaku-stacked hands.
 /// </summary>
 public static class YakuPotential
 {
     private const double TargetHan = 2.0;
 
-    /// <summary>
-    /// Score the 13-tile hand resulting from discarding <paramref name="removed"/>
-    /// out of <paramref name="hand"/>. Pass <c>null</c> for <paramref name="removed"/>
-    /// to score the hand as-is (e.g. when the closed counts already represent
-    /// the post-discard state, or for unit tests on a 13-tile hand).
-    /// </summary>
+    /// <summary>Pass null for <paramref name="removed"/> to score the hand as-is.</summary>
     public static double Score(Hand hand, Tile? removed, StateSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(hand);
@@ -52,12 +27,18 @@ public static class YakuPotential
         double yakuhaiCert = ScoreYakuhai(adjusted, hand.OpenMelds, state);
         double honitsuCert = ScoreHonitsu(adjusted, hand.OpenMelds);
         double chiitoitsuCert = hand.OpenMelds.Count == 0 ? ScoreChiitoitsu(adjusted) : 0;
+        double toitoiCert = ScoreToitoi(adjusted, hand.OpenMelds);
+        double sanshokuDoujunCert = ScoreSanshokuDoujun(adjusted, hand.OpenMelds);
+        double ittsuCert = ScoreIttsu(adjusted, hand.OpenMelds);
 
         double han =
             1.0 * tanyaoCert +
             1.0 * yakuhaiCert +
             (isClosed ? 3.0 : 2.0) * honitsuCert +
-            2.0 * chiitoitsuCert;
+            2.0 * chiitoitsuCert +
+            2.0 * toitoiCert +
+            (isClosed ? 2.0 : 1.0) * sanshokuDoujunCert +
+            (isClosed ? 2.0 : 1.0) * ittsuCert;
 
         return Math.Min(1.0, han / TargetHan);
     }
@@ -70,13 +51,6 @@ public static class YakuPotential
         return true;
     }
 
-    /// <summary>
-    /// Tanyao closeness: 1.0 with zero terminals/honors and a non-empty body
-    /// of simples; degrades linearly to 0 at 3+ such tiles. Counts open-meld
-    /// tiles too — even one terminal in a called meld locks tanyao out
-    /// forever. Empty / honors-only hands return 0; tanyao requires simples
-    /// to actually exist as the target shape.
-    /// </summary>
     private static double ScoreTanyao(IReadOnlyList<int> closed, IReadOnlyList<Meld> melds)
     {
         int nonSimple = 0;
@@ -123,8 +97,6 @@ public static class YakuPotential
                     if (t.Id == id)
                         total++;
 
-            // 3+ = locked triplet; 2 = needs one more (1/3 of remaining tiles
-            // out there, weighted higher because shanten-cheap); 1 = remote.
             double cert = total switch
             {
                 >= 3 => 1.0,
@@ -138,12 +110,6 @@ public static class YakuPotential
         return best;
     }
 
-    /// <summary>
-    /// Honitsu closeness: pick the suit with the most tiles (ignoring honors,
-    /// which are universally legal in honitsu) and decay with off-suit count.
-    /// 0 off-suit = 1.0; 4+ off-suit = 0. Honors-only hands return 0 (would be
-    /// tsuuiisou yakuman territory; not in this feature's scope).
-    /// </summary>
     private static double ScoreHonitsu(IReadOnlyList<int> closed, IReadOnlyList<Meld> melds)
     {
         Span<int> suitCounts = stackalloc int[3];
@@ -170,13 +136,7 @@ public static class YakuPotential
         return (4 - offSuit) / 4.0;
     }
 
-    /// <summary>
-    /// Chiitoitsu closeness: count of tiles held at exactly 2 copies. Triplets
-    /// and quads don't contribute — chiitoitsu wants 7 *distinct* pairs and
-    /// holding three of a kind directs the hand toward toitoi/standard shape,
-    /// not seven-pairs. Six pairs reads as 1.0 (one pair away). Caller should
-    /// only invoke this for fully-concealed hands.
-    /// </summary>
+    /// <summary>Caller must gate on closed-only. Triplets/quads don't contribute — needs distinct pairs.</summary>
     private static double ScoreChiitoitsu(IReadOnlyList<int> closed)
     {
         int pairs = 0;
@@ -184,5 +144,130 @@ public static class YakuPotential
             if (closed[i] == 2)
                 pairs++;
         return Math.Min(1.0, pairs / 6.0);
+    }
+
+    /// <summary>
+    /// Closed-only hands need ≥2 locked sources or ≥3 pairs — a single closed triplet alone
+    /// reads as yakuhai, and 1–2 pairs is just incidental 1-shanten noise.
+    /// </summary>
+    private static double ScoreToitoi(IReadOnlyList<int> closed, IReadOnlyList<Meld> melds)
+    {
+        int openLocked = 0;
+        foreach (var m in melds)
+        {
+            if (m.Kind == MeldKind.Chi)
+                return 0;
+            if (m.Kind is MeldKind.Pon or MeldKind.MinKan
+                       or MeldKind.AnKan or MeldKind.ShouMinKan)
+                openLocked++;
+        }
+
+        int closedLocked = 0;
+        int pairs = 0;
+        for (int id = 0; id < Tile.Count34; id++)
+        {
+            int c = closed[id];
+            if (c >= 3)
+                closedLocked++;
+            else if (c == 2)
+                pairs++;
+        }
+
+        int locked = openLocked + closedLocked;
+        if (openLocked == 0 && locked < 2 && pairs < 3)
+            return 0;
+
+        double progress = locked + 0.5 * pairs;
+        return Math.Min(1.0, progress / 4.0);
+    }
+
+    /// <summary>
+    /// Product-of-readinesses across 3 suits: any fully-absent suit zeroes the offset,
+    /// preventing the scorer from chasing partial 2-suit coverage that can never complete.
+    /// </summary>
+    private static double ScoreSanshokuDoujun(IReadOnlyList<int> closed, IReadOnlyList<Meld> melds)
+    {
+        Span<bool> chiAt = stackalloc bool[21];
+        foreach (var m in melds)
+        {
+            if (m.Kind != MeldKind.Chi)
+                continue;
+            int firstId = m.Tiles[0].Id;
+            int suit = firstId / TileIds.SuitSize;
+            int offset = firstId % TileIds.SuitSize;
+            if (suit < 3 && offset <= TileIds.SuitSize - 3)
+                chiAt[offset * 3 + suit] = true;
+        }
+
+        double best = 0;
+        for (int n = 0; n <= TileIds.SuitSize - 3; n++)
+        {
+            double product = 1.0;
+            for (int suit = 0; suit < 3; suit++)
+            {
+                double ready;
+                if (chiAt[n * 3 + suit])
+                {
+                    ready = 1.0;
+                }
+                else
+                {
+                    int suitBase = suit * TileIds.SuitSize;
+                    int present = 0;
+                    if (closed[suitBase + n]     > 0) present++;
+                    if (closed[suitBase + n + 1] > 0) present++;
+                    if (closed[suitBase + n + 2] > 0) present++;
+                    ready = present / 3.0;
+                }
+                product *= ready;
+            }
+            if (product > best)
+                best = product;
+        }
+        return best;
+    }
+
+    /// <summary>Same product-of-readinesses shape as sanshoku, but within a single suit at offsets {0, 3, 6}.</summary>
+    private static double ScoreIttsu(IReadOnlyList<int> closed, IReadOnlyList<Meld> melds)
+    {
+        Span<bool> chiAt = stackalloc bool[9];
+        foreach (var m in melds)
+        {
+            if (m.Kind != MeldKind.Chi)
+                continue;
+            int firstId = m.Tiles[0].Id;
+            int suit = firstId / TileIds.SuitSize;
+            int offset = firstId % TileIds.SuitSize;
+            if (suit < 3 && (offset == 0 || offset == 3 || offset == 6))
+                chiAt[(offset / 3) * 3 + suit] = true;
+        }
+
+        double best = 0;
+        for (int suit = 0; suit < 3; suit++)
+        {
+            int suitBase = suit * TileIds.SuitSize;
+            double product = 1.0;
+            for (int subrun = 0; subrun < 3; subrun++)
+            {
+                double ready;
+                if (chiAt[subrun * 3 + suit])
+                {
+                    ready = 1.0;
+                }
+                else
+                {
+                    int start = subrun * 3;
+                    int present = 0;
+                    if (closed[suitBase + start]     > 0) present++;
+                    if (closed[suitBase + start + 1] > 0) present++;
+                    if (closed[suitBase + start + 2] > 0) present++;
+                    ready = present / 3.0;
+                }
+                product *= ready;
+            }
+            if (product > best)
+                best = product;
+        }
+        return best;
     }
 }
