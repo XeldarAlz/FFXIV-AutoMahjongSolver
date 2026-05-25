@@ -2,13 +2,14 @@ name: Bug report
 description: Something's broken or behaving unexpectedly.
 title: "[Bug] "
 labels: ["bug"]
+assignees: ["XeldarAlz"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time to file a bug. Please fill out as much as you can — it makes a huge difference.
 
-        **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/mjauto` → click the bug icon → **Bug report** tab. It produces every attachment this template asks for (Snap, Autosnap, Capture, Variant dump) and has an *Open plugin config dir* button so you can drag the files straight into this issue.
+        **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/mjauto` → click the bug icon → **Bug report** tab. Every attachment this template asks for has a button right there (Snap, Autosnap, Capture, Variant dump), plus an *Open plugin config dir* button so you can drag the files straight into this issue.
 
         If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/new?category=help-troubleshooting) — triage is faster there.
 
@@ -35,20 +36,35 @@ body:
     validations:
       required: true
 
-  - type: input
+  - type: dropdown
     id: plugin-version
     attributes:
       label: Plugin version
       description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
-      placeholder: "v0.1.1.0"
+      options:
+        - v0.1.1.0
+        - v0.1.0.12
+        - v0.1.0.11
+        - v0.1.0.10
+        - v0.1.0.9
+        - Older / not sure
     validations:
       required: true
 
-  - type: input
+  - type: dropdown
     id: game-version
     attributes:
-      label: Game version (optional)
-      description: Patch number if you know it (e.g. 7.21). Helps me match the report to a binary.
+      label: Game version
+      description: Patch you were on when it happened. Helps me match the report to a binary.
+      options:
+        - "7.55"
+        - "7.5"
+        - "7.45"
+        - "7.4"
+        - Older
+        - Not sure
+    validations:
+      required: true
 
   - type: dropdown
     id: region
@@ -72,7 +88,7 @@ body:
       options:
         - Hints
         - Auto-play
-        - Off
+        - "Off"
         - Switching modes when it happened
         - Not applicable
     validations:
@@ -83,30 +99,17 @@ body:
     attributes:
       label: Attachments
       description: |
-        Drag and drop files into this box — GitHub will attach them and replace the drop with a link. Files live in `pluginConfigs/Mahjong.Plugin.Dalamud/` (open it from the dev console's **Bug report** → *Open plugin config dir* button). Attach whichever apply:
+        **If you can provide any of these, it's hugely appreciated — they turn guesswork into a fix.**
 
-        - `snap-<label>-<ts>.txt` — one-shot dump (dev console → **Snap**, or `/mjauto snap <label>`)
-        - `snap-auto-NNN-<ts>.txt` — continuous dump for intermittent bugs (**Autosnap**, or `/mjauto autosnap on`)
-        - `emj-captures.log` / `emjl-captures.log` (NA) — single-click capture for stuck popups (**Capture**, or `/mjauto capture <label>`)
-        - `emj-events.log` — every UI callback the addon received (**Diagnostics** → *Event logger*, or `/mjauto log on`)
-        - `emj-discards.log` — discard-hook log (always on while in a match)
-        - `emj-variant-dump.txt` — only if the bug looks like a new-client / post-patch read failure (**Variant dump**)
+        Easiest path: open `/mjauto` → bug icon → **Bug report** tab. Every file below has a button there, and *Open plugin config dir* opens the folder so you can drag files straight into this box. GitHub will attach them and replace the drop with a link.
+
+        - `snap-<label>-<ts>.txt` — one-shot dump → press **Snap**
+        - `snap-auto-NNN-<ts>.txt` — continuous dump for intermittent bugs → press **Start autosnap** (stop it once you've reproduced the bug)
+        - `emj-captures.log` / `emjl-captures.log` (NA) — single-click capture for stuck popups → press **Arm** under *Capture*, then click the in-game button
+        - `emj-events.log` — every UI callback the addon received → tick **Record clicks to emj-events.log** under the *Diagnostics* tab
+        - `emj-discards.log` — discard-hook log (always on while in a match — just attach it)
+        - `emj-variant-dump.txt` — only if the bug looks like a new-client / post-patch read failure → press **Dump variant**
         - `findings-YYYYMMDD.ndjson` — opt-in telemetry findings if you have logging enabled
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Inline log excerpt (optional)
-      description: |
-        Short snippets (chat-log tail, Dalamud error text, the last few `schedState` / `curState` / `path` dispatch lines) belong here. For full log files, use **Attachments** above — don't paste them inline.
-      render: text
-
-  - type: textarea
-    id: other-plugins
-    attributes:
-      label: Other Dalamud plugins / overrides
-      description: Plugins that touch input, the addon system, or the mahjong window are most likely to interact. Custom UI scale or DPI overrides matter too.
-      placeholder: "SimpleTweaks, NoClickthrough, custom UI scale 1.25..."
 
   - type: textarea
     id: extra
