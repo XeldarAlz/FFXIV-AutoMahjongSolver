@@ -13,6 +13,8 @@ to find offsets, AtkValue indices, and node IDs.
 | `diff_nodes.py` | Diff two `/mjauto walknodes` captures to spot visibility / id changes between states | Two `emj-walknodes-*.txt` files |
 | `gen_icon.ps1` | Generate the plugin's `Images/Icon.png` from a source SVG | `Images/Icon.svg` |
 | `sync-corpus.ps1` | Mirror the R2 telemetry corpus to local `corpus/`, gunzipping as it arrives | `wrangler` + Cloudflare credentials |
+| `extract-fixture.mjs` | Convert one memdump record into a Track 0 replay fixture | A memdumps `.ndjson(.gz)` + a `seq` number |
+| `test-extract-fixture.mjs` | Smoke test the above against a synthetic memdump | None |
 
 ## Workflow for a new variant
 
@@ -51,6 +53,23 @@ and the gunzipped NDJSON sit side by side. The script is incremental: a
 local file existing means "already synced", so re-runs only fetch what's
 new. Pass `-Force` to redownload everything if a sync was interrupted
 mid-decompress.
+
+### Extracting a replay fixture from a memdump
+
+Once you have a local memdumps NDJSON and the `seq` of the frame you want to lock down:
+
+```powershell
+node tools/extract-fixture.mjs corpus/memdumps/<install>/<date>/memdumps-*.ndjson 1234 --name state15_chi_pon_simultaneous
+```
+
+The fixture lands in `tests/Mahjong.Plugin.Dalamud.Tests/Replay/fixtures/`. The
+tool decodes `atk_b64` into typed slots (Int/UInt/Bool); strings get null since
+telemetry captures the pointer only, not the bytes it dereferences to. Open the
+generated file, fill in `expected.*` fields, commit. The
+`ReplayFixtureTests.Fixture_matches_expected_snapshot` theory picks it up
+automatically on next test run.
+
+### Telemetry workflow
 
 After syncing, run Claude Code from the corpus directory for analysis:
 
