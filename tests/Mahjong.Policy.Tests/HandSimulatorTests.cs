@@ -96,6 +96,32 @@ public class HandSimulatorTests
     }
 
     [Fact]
+    public void Furiten_detector_flags_when_a_wait_is_in_own_discards()
+    {
+        // 13-tile hand: 123m 456m 123p 456p 9p — tanki on 9p.
+        var counts = new int[Tile.Count34];
+        foreach (var id in new[] { 0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 17 })
+            counts[id]++;
+
+        var emptyDiscards = Array.Empty<Tile>();
+        var withWait = new[] { Tile.FromId(17) };
+        var unrelated = new[] { Tile.FromId(20) };
+
+        Assert.False(FuritenDetector.IsFuriten(counts, meldCount: 0, emptyDiscards));
+        Assert.True(FuritenDetector.IsFuriten(counts, meldCount: 0, withWait));
+        Assert.False(FuritenDetector.IsFuriten(counts, meldCount: 0, unrelated));
+    }
+
+    [Fact]
+    public void Furiten_detector_returns_false_when_not_tenpai()
+    {
+        var counts = new int[Tile.Count34];
+        foreach (var id in new[] { 0, 1, 9, 10, 17, 18, 19, 20, 25, 26, 27, 30, 33 })
+            counts[id]++;
+        Assert.False(FuritenDetector.IsFuriten(counts, meldCount: 0, new[] { Tile.FromId(0) }));
+    }
+
+    [Fact]
     public void Ron_detection_fires_when_policy_discards_a_winning_tile()
     {
         var policies = new IPolicy[]

@@ -192,11 +192,13 @@ public sealed class HandSimulator
             state.Wall.Enqueue(t);
     }
 
-    /// <summary>Furiten is not modeled.</summary>
     private bool IsRonWin(SimulationHand state, int seat, Tile discardedTile)
     {
         int handSize = state.HandTileCount(seat);
         if (handSize != 13)
+            return false;
+
+        if (FuritenDetector.IsFuriten(state.ClosedCounts[seat], state.Melds[seat].Count, state.Discards[seat]))
             return false;
 
         state.ClosedCounts[seat][discardedTile.Id]++;
