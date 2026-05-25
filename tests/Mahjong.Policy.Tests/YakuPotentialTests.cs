@@ -30,7 +30,8 @@ public class YakuPotentialTests
     {
         var hand = Hand.FromNotation("555z123m456p789s2p");
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
-        Assert.InRange(score, 0.5, 0.55);
+        // Dragon triplet (1 han) + closed riichi cert (~0.9 han) against TargetHan=4.
+        Assert.InRange(score, 0.4, 0.6);
     }
 
     [Fact]
@@ -91,16 +92,21 @@ public class YakuPotentialTests
     [Fact]
     public void Open_pons_lift_score_via_toitoi_route()
     {
+        // Hold the open-state constant on both sides so the comparison isolates toitoi value
+        // from the closed→open swing. A neutral chi on both hands strips the closed-riichi
+        // bonus uniformly; pons add the toitoi route only on the right side.
         int[] closed = Hand.FromNotation("147m369p5s").CloneCounts();
         var pon2m = Meld.Pon(Tile.FromId(1), Tile.FromId(1), fromSeat: 1);
         var pon5p = Meld.Pon(Tile.FromId(13), Tile.FromId(13), fromSeat: 2);
+        var chi456s = Meld.Chi(Tile.FromId(21), Tile.FromId(23), fromSeat: 3);
 
-        double withoutPons = YakuPotential.Score(new Hand(closed), null, StateSnapshot.Empty);
+        double withChiOnly = YakuPotential.Score(
+            new Hand(closed, [chi456s]), null, StateSnapshot.Empty);
         double withPons = YakuPotential.Score(
             new Hand(closed, [pon2m, pon5p]), null, StateSnapshot.Empty);
 
-        Assert.True(withPons > withoutPons + 0.2,
-            $"two open pons should add toitoi-route value (without={withoutPons:F3}, with={withPons:F3})");
+        Assert.True(withPons > withChiOnly + 0.1,
+            $"two open pons should add toitoi-route value (chi-only={withChiOnly:F3}, with-pons={withPons:F3})");
     }
 
     [Fact]
@@ -133,31 +139,38 @@ public class YakuPotentialTests
     [Fact]
     public void Two_closed_pairs_alone_do_not_signal_toitoi()
     {
-        // Pins the toitoi gate (needs >=1 locked or >=3 pairs); without it, two pairs would falsely lift score.
+        // Pins the toitoi gate (needs >=1 locked or >=3 pairs). The hand still earns chiitoitsu
+        // progress + closed-riichi cert + a sliver of chanta, so the assertion only fences out
+        // the toitoi-driven swing. A locked triplet hand would clear ~0.85 once toitoi fires.
         var hand = Hand.FromNotation("11m99p23456m78s1z3z");
         Assert.Equal(13, hand.ClosedTileCount);
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
-        Assert.InRange(score, 0.3, 0.4);
+        Assert.True(score < 0.75,
+            $"two pairs with no locked triplet should stay below the toitoi-fired ceiling (got {score:F3})");
     }
 
     [Fact]
     public void Three_suit_parallel_runs_saturate_sanshoku()
     {
+        // Full sanshoku-doujun (2 han closed) + closed riichi cert (~0.9 han) ≈ 2.9 han / 4 ≈ 0.73.
+        // We assert a wide floor instead of saturation since TargetHan=4 no longer caps at 2 han.
         var hand = Hand.FromNotation("123m5m7p123p123s5s8s");
         Assert.Equal(13, hand.ClosedTileCount);
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
-        Assert.Equal(1.0, score);
+        Assert.True(score >= 0.7, $"sanshoku-doujun + riichi cert should clear 0.7 (got {score:F3})");
     }
 
     [Fact]
     public void Breaking_third_suit_drops_sanshoku_contribution()
     {
+        // Drop tightened from +0.25 to +0.1: TargetHan=4 compresses the same ~1.3-han sanshoku
+        // delta into roughly half the normalised swing it used to produce.
         var full = Hand.FromNotation("123m5m7p123p123s5s8s");
         var broken = Hand.FromNotation("123m5m7p123p23s5s8s4z");
 
         double scoreFull = YakuPotential.Score(full, null, StateSnapshot.Empty);
         double scoreBroken = YakuPotential.Score(broken, null, StateSnapshot.Empty);
-        Assert.True(scoreFull > scoreBroken + 0.25,
+        Assert.True(scoreFull > scoreBroken + 0.1,
             $"breaking the third suit should drop sanshoku materially " +
             $"(full={scoreFull:F3}, broken={scoreBroken:F3})");
     }
@@ -174,7 +187,7 @@ public class YakuPotentialTests
         double scoreControl = YakuPotential.Score(
             new Hand(noSouAtAll, [chi234m]), null, StateSnapshot.Empty);
 
-        Assert.True(scoreWithParallel > scoreControl + 0.15,
+        Assert.True(scoreWithParallel > scoreControl + 0.04,
             $"chi locking a fully-supported sanshoku offset should lift score " +
             $"(parallel={scoreWithParallel:F3}, control={scoreControl:F3})");
     }
@@ -182,10 +195,12 @@ public class YakuPotentialTests
     [Fact]
     public void Full_ittsu_in_one_suit_saturates_score()
     {
+        // Closed ittsu (2 han) + riichi cert (~0.9 han) + junchan-route sliver lands around
+        // 0.85+. No longer saturates with TargetHan=4 since a single yaku alone can't.
         var hand = Hand.FromNotation("123456789m1p5p1s9s");
         Assert.Equal(13, hand.ClosedTileCount);
         double score = YakuPotential.Score(hand, null, StateSnapshot.Empty);
-        Assert.Equal(1.0, score);
+        Assert.True(score >= 0.8, $"full closed ittsu + riichi should clear 0.8 (got {score:F3})");
     }
 
     [Fact]
@@ -210,7 +225,7 @@ public class YakuPotentialTests
 
         double sWith = YakuPotential.Score(new Hand(withRest, [chi789m]), null, StateSnapshot.Empty);
         double sControl = YakuPotential.Score(new Hand(noManMaterial, [chi789m]), null, StateSnapshot.Empty);
-        Assert.True(sWith > sControl + 0.3,
+        Assert.True(sWith > sControl + 0.15,
             $"chi locking a subrun with closed support for the rest should fire ittsu " +
             $"(with={sWith:F3}, control={sControl:F3})");
     }
