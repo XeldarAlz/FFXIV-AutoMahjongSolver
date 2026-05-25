@@ -72,6 +72,7 @@ public sealed class Plugin : IDalamudPlugin
     public MemoryDumpRecorder MemoryDumpRecorder { get; }
     public TelemetryUploader TelemetryUploader { get; }
     public DiscardTracker DiscardTracker { get; }
+    public StrategyDiagnostics StrategyDiagnostics { get; }
     public InputRecorder InputRecorder { get; }
 
     private readonly System.Net.Http.HttpClient telemetryHttp;
@@ -162,6 +163,7 @@ public sealed class Plugin : IDalamudPlugin
         DiscardCaptureLogger = new DiscardCaptureLogger(
             DiscardCapture, PluginInterface.GetPluginConfigDirectory());
         DiscardTracker = new DiscardTracker(DiscardCapture, configDir);
+        StrategyDiagnostics = new StrategyDiagnostics(Aggregator, DiscardCapture, FindingsLog);
 
         var envelope = TelemetryEnvelope.Build(migrated.InstallId, ClientState.ClientLanguage);
         telemetryHttp = new System.Net.Http.HttpClient
@@ -236,6 +238,7 @@ public sealed class Plugin : IDalamudPlugin
         AutoPlay.Dispose();
         DiscardCaptureLogger.Dispose();
         DiscardTracker.Dispose();
+        StrategyDiagnostics.Dispose();
         DiscardCapture.Dispose();
         GameLogger.Dispose();
         InputRecorder.Dispose();
