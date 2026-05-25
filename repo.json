@@ -25,7 +25,7 @@
     "Punchline": "Doman Mahjong helper — hints or auto-play.",
     "Description": "A helper for Doman Mahjong. Shows you hints or plays it for you.",
     "Changelog": "v0.1.1.1 — Two stuck-state fixes that should clear the most common Auto-play freezes. (1) After a pon/chi the addon parks the claimed tile at slot 13 with slots [10..12] zeroed; the prior reader stopped at the first zero, reported a 10-tile hand instead of 11, and the discard gate refused to fire. The hand-array scan now walks the full array and the post-call discard goes through. (2) The chi-variant-select sub-popup needs FireCallback opcode 12, not the opcode-11 button-row path the rest of the call prompts use — the previous build dispatched [11, 0] three times into silent no-ops and froze at state-30. Also: multi-chi variant selection now scores each tile-triple by post-call shanten and picks the lowest, instead of always taking the leftmost button. Doman akadora aliases handled correctly across the migration. AboutWindow redesigned (centered icon, shimmer greeting). New compatibility-report issue template to grow the JP / OC / NA client matrix.",
-    "DownloadCount": 854,
+    "DownloadCount": 866,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
@@ -35,6 +35,6 @@
     "LoadPriority": 0,
     "ImageUrls": [],
     "AcceptsFeedback": true,
-    "LastUpdate": "1779712207"
+    "LastUpdate": "1779712480"
   }
 ]
