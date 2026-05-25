@@ -12,20 +12,7 @@ using Mahjong.Plugin.Dalamud.Logging;
 
 namespace Mahjong.Plugin.Dalamud.GameState;
 
-/// <summary>
-/// Finds the Mahjong addon in the running client, subscribes to its lifecycle
-/// events, and exposes:
-///   - a raw <see cref="AddonEmjObservation"/> (for diagnostics and the debug overlay)
-///   - a <see cref="StateSnapshot"/> builder that delegates to the selected
-///     <see cref="IEmjVariant"/> for layout-specific reads.
-///
-/// This component owns the addon-lifecycle wiring and the observation record
-/// (both framework-level and variant-agnostic). Every offset / node ID /
-/// AtkValue slot lives in a <see cref="LayoutProfile"/> loaded from
-/// <c>layouts/*.json</c> next to the plugin assembly.
-///
-/// Must be created on (and disposed from) the framework thread.
-/// </summary>
+/// <summary>Must be created on and disposed from the framework thread.</summary>
 public sealed class AddonEmjReader : IDisposable
 {
     private readonly IAddonLifecycle addonLifecycle;
@@ -35,53 +22,21 @@ public sealed class AddonEmjReader : IDisposable
     private readonly VariantSelector selector;
     private readonly IFindingsLog? findings;
     private bool disposed;
-    // Reset on every PreFinalize so each attach/unload cycle (≈ one match)
-    // produces a paired addon_lifecycle / addon_unload pair in the corpus.
     private bool emittedFirstLifecycle;
-    // Per-session one-shots — these only need to fire once per plugin load
-    // since the underlying anomaly is usually a stable schema/build issue,
-    // not a transient state. Emitting more than once would just bloat the
-    // corpus with dupes.
     private bool emittedDimensionsZero;
     private bool emittedAtkValuesAnomaly;
-    // Tracks Poll()'s last reported presence so we can emit only on
-    // transitions, not every tick. Null = never polled.
     private bool? lastPollPresent;
-    // Track build-failure streaks so we emit one finding per failure window
-    // (and one per recovery), not one per tick. Most failures recur every
-    // frame for several seconds — flooding the corpus would be wasteful and
-    // bury more useful signals.
     private bool inSnapshotFailureStreak;
 
-    /// <summary>
-    /// Set by Plugin.cs after both AddonReader and InputEventLogger are
-    /// constructed (they would otherwise be a constructor-order cycle —
-    /// EventLogger needs the reader, the reader's snapshot path needs the
-    /// logger). Null until the wire-up completes; <c>TryBuildSnapshot</c>
-    /// guards on it.
-    /// </summary>
+    /// <summary>Set by Plugin.cs after construction to break the AddonReader/EventLogger ctor cycle; TryBuildSnapshot guards on null.</summary>
     public InputEventLogger? EventLogger { get; set; }
 
-    /// <summary>
-    /// The variant selector in use. Exposed for diagnostic surfaces
-    /// (<c>/mjauto variant dump</c>) that need to enumerate registered
-    /// variants and re-probe them on demand.
-    /// </summary>
     internal VariantSelector Selector => selector;
 
     public AddonEmjObservation LastObservation { get; private set; } = AddonEmjObservation.Empty;
 
-    /// <summary>
-    /// The most recently-resolved variant's layout profile, or null if no
-    /// variant has resolved this session. Set inside <see cref="TryBuildSnapshot"/>
-    /// the first time a variant successfully matches the live addon, and updated
-    /// on every subsequent successful resolution. Read by the memory-dump
-    /// recorder so each snapshot can travel with the seat-offset map that
-    /// describes how to slice <c>addon_b64</c>.
-    /// </summary>
     public LayoutProfile? ActiveLayout { get; private set; }
 
-    /// <summary>Fired whenever any lifecycle event updates the observation.</summary>
     public event Action<AddonEmjObservation>? ObservationChanged;
 
     public AddonEmjReader(
@@ -107,9 +62,7 @@ public sealed class AddonEmjReader : IDisposable
 
         selector = new VariantSelector(LoadRegisteredVariants(log, pluginConfigDir, layoutsDir, findings), log, findings);
 
-        // Register against every known Mahjong addon name (issue #13): some clients
-        // expose "Emj", others "EmjL". Whichever one exists locally will fire — the
-        // other is a silent no-op. The injected MahjongAddon resolves the live pointer.
+        // Some clients expose "Emj", others "EmjL" — register against every candidate name.
         var names = MahjongAddon.CandidateNames;
         addonLifecycle.RegisterListener(AddonEvent.PostSetup, names, OnPostSetup);
         addonLifecycle.RegisterListener(AddonEvent.PreFinalize, names, OnPreFinalize);
@@ -117,15 +70,6 @@ public sealed class AddonEmjReader : IDisposable
         addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, names, OnPostReceiveEvent);
     }
 
-    /// <summary>
-    /// Discover and load every <c>layouts/*.json</c> next to the plugin
-    /// assembly, and return one <see cref="BaseEmjVariant"/> per profile.
-    /// Order is deterministic (filename ascending) so the variant selector's
-    /// arbitrary tiebreaker is stable across runs.
-    ///
-    /// On any IO / parse error, logs and returns an empty list — the selector
-    /// then reports "No Emj variant matched" loudly via its existing path.
-    /// </summary>
     private static IReadOnlyList<IEmjVariant> LoadRegisteredVariants(
         IPluginLog log, string pluginConfigDir, string layoutsDir, IFindingsLog? findings)
     {
@@ -177,11 +121,6 @@ public sealed class AddonEmjReader : IDisposable
 
     private void OnPreFinalize(AddonEvent type, AddonArgs args)
     {
-        // Emit unload paired with the most recent addon_lifecycle finding.
-        // Carries through visibility-at-teardown (sometimes the addon goes
-        // invisible just before unloading; sometimes it's still drawing).
-        // Then reset emittedFirstLifecycle so the next attach emits a fresh
-        // paired event for the next match.
         if (LastObservation.Present)
         {
             findings?.Record("addon_unload", new Dictionary<string, object?>
@@ -222,20 +161,7 @@ public sealed class AddonEmjReader : IDisposable
         ObservationChanged?.Invoke(obs);
     }
 
-    /// <summary>
-    /// One-shot per-attach findings emission. Called from both
-    /// <see cref="Observe"/> (Dalamud lifecycle events) and <see cref="Poll"/>
-    /// (GameGui-driven discovery). Without the Poll path firing this, ~70% of
-    /// installs in the 2026-05-11 corpus shipped zero gameplay logs — those
-    /// installs loaded the plugin with the addon already open, so no
-    /// PostSetup event ever fired and the lifecycle/anomaly findings (which
-    /// downstream analyzers use as session-start markers) never landed.
-    ///
-    /// <para>Each emit is gated on a per-session bool, so repeat calls (Poll
-    /// fires every tick) only land the first event for the current attach.
-    /// The PreFinalize handler resets <c>emittedFirstLifecycle</c> so the
-    /// NEXT match emits a fresh lifecycle pair.</para>
-    /// </summary>
+    /// <summary>Called from both Observe and Poll — Poll catches plugin loads where the addon is already open and no PostSetup event will fire.</summary>
     private unsafe void EmitFirstAttachFindings(
         string eventName, string addonName, AtkUnitBase* unit, nint addr, AddonEmjObservation obs)
     {
@@ -254,11 +180,6 @@ public sealed class AddonEmjReader : IDisposable
             });
         }
 
-        // Schema/timing oddity: addon address is live but RootNode is
-        // null. Width and Height fall through to 0 in the observation,
-        // and any ImGui-driven highlight code that does math on those
-        // dimensions will crash. Emit once per plugin load — same
-        // anomaly recurring every tick is the same datapoint.
         if (unit->RootNode == null && !emittedDimensionsZero)
         {
             emittedDimensionsZero = true;
@@ -271,10 +192,6 @@ public sealed class AddonEmjReader : IDisposable
             });
         }
 
-        // AtkValues anomaly: empty (count=0) or absurdly large
-        // (>1024). The former usually means we're inspecting the
-        // wrong addon (something else bound to a Mahjong name); the
-        // latter suggests memory corruption or a bad read.
         int atkCount = (int)unit->AtkValuesCount;
         if ((atkCount == 0 || atkCount > 1024) && !emittedAtkValuesAnomaly)
         {
@@ -289,11 +206,7 @@ public sealed class AddonEmjReader : IDisposable
         }
     }
 
-    /// <summary>
-    /// Poll the current addon state via GameGui (fallback path when lifecycle events
-    /// are not firing, or when the plugin starts with the addon already visible).
-    /// Safe to call from the framework thread every tick.
-    /// </summary>
+    /// <summary>Fallback for plugin loads after the addon is already open — Dalamud only fires lifecycle events that happen after listener registration. Framework-thread only.</summary>
     public unsafe AddonEmjObservation Poll()
     {
         if (!addon.TryGet(out var unit, out var resolvedName))
@@ -318,13 +231,6 @@ public sealed class AddonEmjReader : IDisposable
             LastSeenUtcTicks: DateTime.UtcNow.Ticks,
             LastLifecycleEvent: LastObservation.LastLifecycleEvent ?? "(poll)");
 
-        // When the addon is already open at plugin load no PostSetup event
-        // fires — Dalamud only signals lifecycle events that happen AFTER
-        // the listener registers. ~70% of installs in the 2026-05-11 corpus
-        // (17/25) shipped zero gameplay logs for this exact reason. Route
-        // the Poll-discovered attach through the same finding-emission path
-        // Observe uses; the per-session bool gates prevent double-emit on
-        // sessions where Observe fired first.
         EmitFirstAttachFindings("poll", resolvedName, unit, addr, obs);
 
         EmitPollPresentChange(true, resolvedName, addr);
@@ -332,13 +238,6 @@ public sealed class AddonEmjReader : IDisposable
         return obs;
     }
 
-    /// <summary>
-    /// Emit a finding when Poll()'s reported presence flips. Catches the
-    /// scenarios where the addon appears/disappears without a matching
-    /// lifecycle event — usually a Dalamud lifecycle-listener bug or a
-    /// race during plugin load that left us with a stale observation.
-    /// First-ever poll isn't a "change" so it's silently absorbed.
-    /// </summary>
     private void EmitPollPresentChange(bool present, string? addonName, nint address)
     {
         if (lastPollPresent == present)
@@ -357,12 +256,24 @@ public sealed class AddonEmjReader : IDisposable
         });
     }
 
-    /// <summary>
-    /// Build a <see cref="StateSnapshot"/> from the current addon state by
-    /// delegating to the selected <see cref="IEmjVariant"/>. Returns null when
-    /// the addon is absent, not visible, or no registered variant's probe
-    /// matches the live layout.
-    /// </summary>
+    /// <summary>Raw addon ints at HandArrayStart+i*4 — bypasses zero-termination that hides tiles parked past a gap.</summary>
+    public unsafe int[]? DumpHandArrayRaw()
+    {
+        if (ActiveLayout is null)
+            return null;
+        if (!addon.TryGet(out var unit, out _))
+            return null;
+        if (!unit->IsVisible)
+            return null;
+
+        int len = ActiveLayout.Limits.HandSize;
+        var slots = new int[len];
+        byte* basePtr = (byte*)unit;
+        for (int i = 0; i < len; i++)
+            slots[i] = *(int*)(basePtr + ActiveLayout.Offsets.HandArrayStart + i * 4);
+        return slots;
+    }
+
     public unsafe StateSnapshot? TryBuildSnapshot()
     {
         if (!addon.TryGet(out var unit, out var resolvedName))
@@ -374,9 +285,6 @@ public sealed class AddonEmjReader : IDisposable
         if (variant is null)
             return null;
 
-        // Variant resolved → the layout is now known for this addon. Record
-        // it so the memory-dump recorder can include the seat-offset map in
-        // each snapshot, even if the snapshot build below fails.
         ActiveLayout = variant.Profile;
 
         if (EventLogger is null)
@@ -386,11 +294,7 @@ public sealed class AddonEmjReader : IDisposable
             unit,
             new VariantReadContext(meldTracker, EventLogger));
 
-        // A null here means the variant's probe matched but field reads
-        // failed somewhere — the most useful RE signal we can capture,
-        // since it says "this client has the right shape but wrong
-        // offsets". Emit once per failure streak (and again on recovery)
-        // to avoid flooding the corpus on a hard-stuck client.
+        // Null after a successful probe means right shape, wrong offsets — emit one finding per failure streak.
         if (snap is null && !inSnapshotFailureStreak)
         {
             inSnapshotFailureStreak = true;

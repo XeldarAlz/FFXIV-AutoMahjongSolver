@@ -9,24 +9,6 @@ using Mahjong.Policy;
 
 namespace Mahjong.Plugin.Dalamud.Actions;
 
-/// <summary>
-/// Continuous auto-play loop. Drives the Emj addon through its state machine via
-/// <see cref="InputDispatcher"/>:
-/// <list type="bullet">
-///   <item>Discard turn (Legal.Can(Discard)) → policy picks → discard/riichi</item>
-///   <item>Call prompt (pon/chi/kan/ron/riichi/tsumo modal visible) → policy picks → accept or pass</item>
-///   <item>State 25 (chi-variant selection, the follow-up after accepting chi with
-///       multiple possible sequences) → dispatch opt=0 to pick the first variant</item>
-/// </list>
-/// All other states (opponent turn, animations, hand-end) are ignored.
-///
-/// Gated by configuration: requires <c>AutomationArmed</c> true,
-/// <c>SuggestionOnly</c> false, and <c>TosAccepted</c> true.
-///
-/// State management lives in <see cref="ActionStateMachine"/> — every
-/// in-flight flag, retry-debounce timestamp, and the riichi-confirm latch are
-/// transitions on that explicit FSM rather than ad-hoc booleans.
-/// </summary>
 public sealed class AutoPlayLoop : IDisposable
 {
     private const int ChiVariantSelectStateCode = 25;
@@ -48,21 +30,12 @@ public sealed class AutoPlayLoop : IDisposable
     private readonly MahjongAddon addon;
     private readonly ActionStateMachine fsm = new(DispatchTimeout, RetryCooldown);
     private bool disposed;
-    // One-shot diagnostic: when the tick decides to skip dispatch, log the
-    // reason exactly once per transition (not 60×/sec). Lets dalamud.log
-    // answer "why didn't auto-play fire" without manual repro on the
-    // developer's machine — observed twice now (2026-05-18 22:30, 23:03)
-    // where the plugin shows hints but auto-play stays silent and there's
-    // zero signal in the log to triage.
     private string? lastSkipReason;
 
-    /// <summary>Short human-readable description of the most recent auto action. For the overlay.</summary>
     public string LastActionDescription { get; private set; } = "(none)";
 
-    /// <summary>State code snapshot from the last tick. For the overlay.</summary>
     public int LastObservedState { get; private set; } = -1;
 
-    /// <summary>Hand count snapshot from the last tick. For the overlay.</summary>
     public int LastObservedHandCount { get; private set; } = -1;
 
     public AutoPlayLoop(Plugin plugin, IFramework framework, IPluginLog log, MahjongAddon addon)
@@ -108,32 +81,14 @@ public sealed class AutoPlayLoop : IDisposable
 
         var snap = plugin.AddonReader.TryBuildSnapshot();
 
-        // Verify the most recent dispatch's outcome each tick. This emits
-        // the dispatch_outcome finding (commit=true/false) so the corpus
-        // can detect addon-silent-no-op dispatches automatically. Runs
-        // BEFORE the snapshot-null guard so a transient null snapshot
-        // doesn't drop the verification window — windowExpired path
-        // tolerates a null snap and still emits commit=false.
+        // Runs before the snapshot-null guard so the windowExpired path still emits commit=false on transient nulls.
         CheckPendingDispatchOutcome(snap);
 
-        // Detect long stalls at the same (state, hand) — the post-MinKan
-        // and post-2nd-pon freezes show up as exactly this pattern. Fires
-        // once per stuck-window so the corpus can flag these without
-        // needing chat-log analysis.
         CheckStuckStateAndEmit(snap);
 
         if (snap is null)
         {
-            // Don't clear FSM context on transient snapshot misses (addon
-            // read jitter, lifecycle event mid-frame). Pre-fix this dropped
-            // lastContext on every blip, which broke the retry-cooldown
-            // debounce — a duplicate action could fire within 1.6 sec of
-            // the original because the context-suppression was reset by an
-            // intermediate null snapshot. Hand boundaries still clear via
-            // `ObserveWall`; HookFailed dispatch still clears explicitly.
-            // Field corpus (62808fc8 / 2026-05-21) shows two `action` events
-            // 1.6 sec apart on the same (state, hand) — that's the pattern
-            // this guard prevents.
+            // Do not clear FSM context on transient snapshot misses — that would break the retry-cooldown debounce.
             EmitSkipReason("snapshot unavailable", state: -1, hand: -1, flags: 0);
             return;
         }
@@ -154,25 +109,12 @@ public sealed class AutoPlayLoop : IDisposable
         bool isDiscardTurn = snap.Legal.Can(ActionFlags.Discard);
         int flags = (int)snap.Legal.Flags;
 
-        // Hand-scope the riichi-confirm latch. Earlier we cleared it on every
-        // tick where the popup signature dropped, but popup signature DOES drop
-        // briefly between adjacent ticks of the same hand (state code transitions
-        // through neutral codes 19/22 etc), and that let the policy re-evaluate
-        // riichi every time the popup re-appeared and stack 20+ "Riichi-confirm"
-        // clicks in the same hand. ObserveWall clears the latch on the next
-        // hand instead — within a hand once we declared, never re-prompt.
+        // Riichi-confirm latch is hand-scoped via ObserveWall — popup signature drops mid-hand and clearing per-tick would let the loop redeclare riichi 20+ times in one hand.
         fsm.ObserveWall(snap.WallRemaining);
 
         if (!isCallPrompt && !isDiscardTurn)
         {
-            // Don't clear FSM context on transient "not actionable" ticks.
-            // Discard-animation gaps briefly drop the Discard flag mid-commit
-            // while keeping (state, hand) effectively the same, and clearing
-            // here let a duplicate dispatch fire within the cooldown window
-            // once legal=Discard came back. The 3-second time bound inside
-            // ShouldSuppressForContext is the right gate; context mismatch
-            // on a genuinely new (state, hand) tuple still releases naturally,
-            // and ObserveWall clears on real hand boundaries.
+            // Do not clear FSM context on transient "not actionable" ticks — discard-animation gaps drop the Discard flag mid-commit and clearing here permits a duplicate dispatch.
             EmitSkipReason($"not actionable (state={state} hand={snap.Hand.Count} legal={snap.Legal.Flags})",
                 state: state, hand: snap.Hand.Count, flags: flags);
             return;
@@ -198,13 +140,7 @@ public sealed class AutoPlayLoop : IDisposable
             ScheduleDiscard(context);
     }
 
-    /// <summary>
-    /// Log one Plugin.Log.Info line per skip-reason transition AND emit a
-    /// hand_state_paused finding for telemetry triage. The auto-play loop
-    /// ticks 60×/sec, so emitting every skip would flood; this dedups by
-    /// exact reason string so a steady "gate: tos=True armed=True
-    /// suggest_only=True" lands as one entry, not 3600 per minute.
-    /// </summary>
+    /// <summary>Dedup by exact reason string — loop ticks 60x/sec, so emit only on transitions.</summary>
     private void EmitSkipReason(string reason, int state, int hand, int flags)
     {
         if (lastSkipReason == reason)
@@ -220,10 +156,6 @@ public sealed class AutoPlayLoop : IDisposable
         });
     }
 
-    /// <summary>
-    /// Clear the dedup latch when the loop is actively dispatching. The next
-    /// skip — whatever its reason — will log as a fresh transition.
-    /// </summary>
     private void EmitProgressing()
     {
         if (lastSkipReason is null)
@@ -232,12 +164,6 @@ public sealed class AutoPlayLoop : IDisposable
         lastSkipReason = null;
     }
 
-    /// <summary>
-    /// Record a structured `decision` finding for a single policy choice. Includes
-    /// the chosen action kind, the picked tile (if any), and the legal context
-    /// the policy was evaluating. Used by offline triage to spot policies that
-    /// pick the wrong action shape for a given prompt.
-    /// </summary>
     private void EmitDecisionFinding(string source, StateSnapshot snap, ActionChoice choice)
     {
         plugin.FindingsLog?.Record("decision", new Dictionary<string, object?>
@@ -255,27 +181,6 @@ public sealed class AutoPlayLoop : IDisposable
         });
     }
 
-    /// <summary>
-    /// Record a structured `dispatch_attempted` finding for every InputDispatcher
-    /// call. The corpus can then verify "policy decided X, dispatcher fired X,
-    /// game accepted X" instead of guessing from interleaved log lines.
-    ///
-    /// <para>The <c>path</c> field is the dispatcher's most recent path-taken
-    /// label for the discard family (opcode-15 / list-widget / opcode-7). The
-    /// uniform <c>DispatchResult.Ok</c> can't tell them apart and the live
-    /// addon silently no-ops some shapes, so without this annotation a stall
-    /// shows up as repeated identical Ok results with no way to know which
-    /// branch fired.</para>
-    ///
-    /// <para><c>cur_state</c>, <c>cur_hand</c>, <c>cur_legal</c>, <c>cur_melds</c>
-    /// snapshot the variant-reader's view at the moment the dispatcher fires
-    /// (which can drift from the original scheduled context across the humanized
-    /// delay). Combined with the next-tick `dispatch_outcome` finding, an
-    /// analyzer can prove "fired at (state, hand) → snapshot (state', hand')
-    /// at +N ticks → committed/no-op." Replaces the historical need to
-    /// cross-reference `findings` against `games` against the local
-    /// `dalamud.log` to triage a single freeze.</para>
-    /// </summary>
     private void EmitDispatchFinding(
         string label, InputDispatcher.DispatchResult result,
         int? option = null, Tile? tile = null, int? slot = null, int? state = null,
@@ -296,11 +201,6 @@ public sealed class AutoPlayLoop : IDisposable
             ["cur_legal"] = snap?.Legal.Flags.ToString(),
         });
 
-        // Remember the (state, hand) we dispatched against so the next-tick
-        // verification loop can compare against the post-dispatch snapshot
-        // and emit a `dispatch_outcome` finding with commit=true/false.
-        // Without this verification the addon-silently-no-ops bug class is
-        // invisible in telemetry — every dispatch reports `Ok` regardless.
         if (snap is not null)
         {
             pendingOutcome = new PendingDispatchOutcome(
@@ -313,20 +213,8 @@ public sealed class AutoPlayLoop : IDisposable
         }
     }
 
-    /// <summary>
-    /// Bookkeeping for the dispatch_outcome verification — captured by
-    /// <see cref="EmitDispatchFinding"/> and consumed on subsequent ticks
-    /// inside <see cref="OnUpdate"/>. Null when no dispatch is awaiting
-    /// outcome verification.
-    /// </summary>
     private PendingDispatchOutcome? pendingOutcome;
 
-    /// <summary>
-    /// Window for the dispatch_outcome verification to wait for state
-    /// change before declaring the dispatch a no-op. ~30 framework ticks
-    /// at 60 Hz ≈ 500 ms — enough for animation transitions, short enough
-    /// to flag stalls quickly.
-    /// </summary>
     private static readonly TimeSpan DispatchOutcomeWindow = TimeSpan.FromMilliseconds(500);
 
     private readonly record struct PendingDispatchOutcome(
@@ -337,14 +225,6 @@ public sealed class AutoPlayLoop : IDisposable
         int MeldsAtDispatch,
         string LastDispatchPath);
 
-    /// <summary>
-    /// Threshold for emitting a `stuck_state` finding. ~10 seconds at the
-    /// same (state, hand, legal) tuple with no dispatch commits is well past
-    /// any legitimate animation / opp-turn delay and indicates a real stall.
-    /// Field-observed freezes (post-MinKan, post-2nd-pon) sat at the same
-    /// context for 60-180+ seconds before user intervention — 10 s is
-    /// generous against false positives.
-    /// </summary>
     private static readonly TimeSpan StuckStateThreshold = TimeSpan.FromSeconds(10);
 
     private int? stuckStateCode;
@@ -353,21 +233,10 @@ public sealed class AutoPlayLoop : IDisposable
     private DateTime stuckSince;
     private bool stuckEmitted;
 
-    /// <summary>
-    /// Detect and report sustained "same context, no progress" stalls. The
-    /// canonical example: post-2nd-pon at state=6 hand=10 melds=1 — bot
-    /// returns Pass cleanly, snapshot doesn't change, game waits for input
-    /// the bot can't determine. Pre-fix these were only visible by reading
-    /// the local dalamud.log; now they self-report.
-    /// </summary>
     private void CheckStuckStateAndEmit(StateSnapshot? snap)
     {
         if (snap is null)
-        {
-            // Transient snapshot drop — don't update the stuck timer (it's
-            // not a "different context", just a brief gap).
             return;
-        }
 
         var legal = snap.Legal.Flags;
         if (stuckStateCode != snap.AddonStateCode
@@ -389,6 +258,10 @@ public sealed class AutoPlayLoop : IDisposable
         if (elapsed < StuckStateThreshold)
             return;
 
+        int[]? rawSlots = plugin.AddonReader.DumpHandArrayRaw();
+        string handDump = rawSlots is null ? "(no raw)" : FormatHandArrayDump(rawSlots);
+        int? activeTextureBase = plugin.AddonReader.ActiveLayout?.TileTextureBase;
+
         plugin.FindingsLog?.Record("stuck_state", new Dictionary<string, object?>
         {
             ["state"] = snap.AddonStateCode,
@@ -398,28 +271,49 @@ public sealed class AutoPlayLoop : IDisposable
             ["elapsed_ms"] = (int)elapsed.TotalMilliseconds,
             ["last_dispatch_path"] = plugin.Dispatcher.LastDiscardPath,
             ["last_action"] = LastActionDescription,
+            ["hand_raw"] = rawSlots,
+            ["tile_texture_base"] = activeTextureBase,
         });
         log.Warning(
             $"[AutoPlayLoop] STUCK at state={snap.AddonStateCode} hand={snap.Hand.Count} " +
             $"melds={snap.OurMelds.Count} legal={legal} for {(int)elapsed.TotalSeconds}s. " +
             $"Last dispatch: {LastActionDescription} (path={plugin.Dispatcher.LastDiscardPath}). " +
             $"Manual click required.");
+        log.Warning($"[AutoPlayLoop] STUCK hand-array dump: {handDump}");
         stuckEmitted = true;
     }
 
-    /// <summary>
-    /// Per-tick verification of the most recent dispatch's outcome.
-    /// Compares the live snapshot's (state, hand, melds) against the
-    /// pre-dispatch values:
-    /// <list type="bullet">
-    ///   <item>If the tuple changed within <see cref="DispatchOutcomeWindow"/>,
-    ///         emit <c>dispatch_outcome</c> with <c>commit=true</c>.</item>
-    ///   <item>If the window expires unchanged, emit with <c>commit=false</c>
-    ///         — i.e. the addon silently no-opped the dispatch (the bug class
-    ///         that masked the two-callback discard handshake gap for months).</item>
-    /// </list>
-    /// Emits once per dispatched action then clears the pending marker.
-    /// </summary>
+    private string FormatHandArrayDump(int[] slots)
+    {
+        int textureBase = plugin.AddonReader.ActiveLayout?.TileTextureBase ?? 0;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < slots.Length; i++)
+        {
+            int raw = slots[i];
+            string decoded;
+            if (raw == 0)
+                decoded = "  -";
+            else
+            {
+                int idx = raw - textureBase;
+                decoded = idx switch
+                {
+                    >= 0 and < 34 => Tile.FromId(idx).ToString(),
+                    34 => "5m*",
+                    35 => "5p*",
+                    36 => "5s*",
+                    _ => "??",
+                };
+            }
+            sb.Append($"[{i:00}]={raw,5}({decoded,3})");
+            if (i == 6)
+                sb.Append(" | ");
+            else if (i < slots.Length - 1)
+                sb.Append(' ');
+        }
+        return sb.ToString();
+    }
+
     private void CheckPendingDispatchOutcome(StateSnapshot? snap)
     {
         if (pendingOutcome is not { } pending)
@@ -473,11 +367,6 @@ public sealed class AutoPlayLoop : IDisposable
         return cfg.TosAccepted && cfg.AutomationArmed && !cfg.SuggestionOnly;
     }
 
-    /// <summary>
-    /// If a dispatch is in-flight, either bail this tick (still within timeout)
-    /// or recover from stuck state. Returns true if the loop should continue
-    /// processing this tick.
-    /// </summary>
     private bool ContinueAfterStuckRecovery()
     {
         if (!fsm.IsDispatchInFlight)
@@ -497,12 +386,7 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleVariantAccept(context);
     }
 
-    /// <summary>
-    /// Post-declaration Riichi popup handling: when the riichi-confirm latch is
-    /// set and the popup is still showing Riichi as legal with a 14-tile hand,
-    /// complete the declaration via tsumogiri instead of re-clicking the list
-    /// (which no-ops at this point).
-    /// </summary>
+    /// <summary>Post-declaration Riichi: complete via tsumogiri instead of re-clicking the list (the list click no-ops at this point).</summary>
     private bool TryHandleRiichiConfirmTsumogiri(StateSnapshot snap, DispatchContext context, bool isCallPrompt)
     {
         if (!fsm.IsRiichiConfirmPending)
@@ -515,11 +399,6 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleRiichiTsumogiri(context);
         return true;
     }
-
-    // -----------------------------------------------------------------
-    // Dispatch scheduling — every action goes through ScheduleAction so the
-    // FSM begin/complete pair is the same shape every time.
-    // -----------------------------------------------------------------
 
     private void ScheduleAction(string label, DispatchContext context, int medianDelayMs, Action body)
     {
@@ -547,8 +426,7 @@ public sealed class AutoPlayLoop : IDisposable
     {
         ScheduleAction("variant", context, VariantAcceptDelayMs, () =>
         {
-            // Re-check at dispatch time: the modal can close during the humanized
-            // delay (auto-declare elsewhere, manual click, opponent timeout).
+            // Modal can close during the humanized delay — re-check at dispatch time.
             int currentState = ReadStateCode();
             if (currentState != ChiVariantSelectStateCode)
             {
@@ -590,16 +468,7 @@ public sealed class AutoPlayLoop : IDisposable
         });
     }
 
-    /// <summary>
-    /// If the most recent dispatch returned a transient failure
-    /// (<see cref="InputDispatcher.DispatchResult.HookFailed"/>), wipe the
-    /// (state, hand) context the FSM uses to debounce retries. Without this
-    /// the next 3 s of ticks observe the same context and skip dispatching,
-    /// stranding the bot whenever a discard click misses (observed 2026-05-10
-    /// 17:48: opcode-7 FireCallback against the post-chi list widget returned
-    /// false → FSM suppressed retries → bot froze with the post-call popup
-    /// still up).
-    /// </summary>
+    /// <summary>On HookFailed clear the FSM context — otherwise the 3 s retry debounce keeps the bot stranded on a missed click.</summary>
     private void ClearRetryDebounceIfHookFailed(InputDispatcher.DispatchResult result)
     {
         if (result == InputDispatcher.DispatchResult.HookFailed)
@@ -625,9 +494,7 @@ public sealed class AutoPlayLoop : IDisposable
                 $"choice={choice.Kind} tile={choice.DiscardTile}");
             EmitDecisionFinding("call", snap, choice);
             DispatchCallChoice(snap, choice);
-            // Note: LastDiscardPath belongs to DispatchDiscard, so we
-            // explicitly DON'T print it here — it'd be stale from the
-            // previous tile-click dispatch and mislead during triage.
+            // LastDiscardPath belongs to DispatchDiscard — do not print it on the call path; it would be stale.
             log.Info(
                 $"[AutoPlayLoop] call body done: {LastActionDescription} " +
                 $"pon={snap.Legal.PonCandidates.Count} chi={snap.Legal.ChiCandidates.Count} " +
@@ -646,12 +513,7 @@ public sealed class AutoPlayLoop : IDisposable
                 return;
             }
 
-            // Honor the policy's chosen discard. The latch carries the tile
-            // (e.g. 5p when the policy picked Riichi on 5p) so the slot is
-            // resolved against the live hand. Falls back to slot 13 (last
-            // drawn) only when no tile was latched — that path covers the
-            // post-confirm yaku-preview popup where there's no fresh policy
-            // verdict to consult.
+            // Latch carries the policy-chosen tile; fall back to slot 13 only when no tile was latched (post-confirm yaku-preview popup).
             int slot;
             Tile tile;
             if (fsm.RiichiConfirmTile is { } target)
@@ -677,18 +539,9 @@ public sealed class AutoPlayLoop : IDisposable
             plugin.GameLogger.RecordAction(ActionKind.Discard, tile, slot, result.ToString(), "riichi-tsumogiri");
             EmitDispatchFinding("riichi-tsumogiri", result, tile: tile, slot: slot, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
-            // Don't clear the latch here — once we've declared riichi we
-            // must NOT let policy.Choose re-evaluate it later in the same
-            // hand (it would, since OurRiichi is always false in our
-            // snapshot today and the synthetic Discard|Riichi probe in
-            // ResolveRiichiPopupAcceptance would happily approve again).
-            // ObserveWall clears the latch on the next hand boundary.
+            // Do not clear the latch here — ObserveWall clears it on the next hand; otherwise policy.Choose would re-approve riichi in the same hand.
         });
     }
-
-    // -----------------------------------------------------------------
-    // Choice → dispatch translation
-    // -----------------------------------------------------------------
 
     private void DispatchPolicyChoice(StateSnapshot snap, ActionChoice choice)
     {
@@ -724,13 +577,7 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchAnkan(StateSnapshot snap, ActionChoice choice, Tile kanTile)
     {
-        // AnKan is offered as a button label on the state-6 self-declare
-        // popup alongside Riichi/Tsumo. The pre-fix dispatcher fired
-        // `[12, slot]` (opcode 12, speculative — zero corpus records) which
-        // is the same bug class that broke Ron in issue #39: an unconfirmed
-        // dispatch shape the addon may reject outright. Routing through the
-        // call-prompt button-row path (opcode 11) uses the corpus-confirmed
-        // mechanism that already handles Pon/Chi/Pass.
+        // Route AnKan through opcode 11 (call-prompt button-row) — the speculative opcode-12 path was a no-op in the addon.
         int acceptIndex = ComputeAcceptIndex(ActionKind.AnKan, snap.Legal, null);
         var result = plugin.Dispatcher.DispatchCallOption(acceptIndex);
         LastActionDescription = $"auto-ankan {kanTile} opt={acceptIndex} → {result}";
@@ -738,13 +585,7 @@ public sealed class AutoPlayLoop : IDisposable
         EmitDispatchFinding("ankan", result, option: acceptIndex, tile: kanTile, snap: snap);
         ClearRetryDebounceIfHookFailed(result);
 
-        // Self-declared kans never produce an opp-discard signal, so the
-        // snapshot-delta inference in MeldTracker.ObserveSnapshot can't
-        // catch them — it only fires on hand shrinks paired with an opp
-        // increment. Record the meld here on a successful dispatch so the
-        // 14-tile invariant stays satisfied (closed=10 + ankan=4 = 14).
-        // Without this, every self-ankan trips TsumogiriFallback and
-        // suggestions pause for the rest of the round.
+        // Self-declared kans produce no opp-discard signal; MeldTracker.ObserveSnapshot cannot infer them, so record here to preserve the 14-tile invariant.
         if (result == InputDispatcher.DispatchResult.Ok)
             plugin.MeldTracker.Record(Meld.AnKan(kanTile));
     }
@@ -759,18 +600,7 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
-        // Riichi declaration at state-6 self-declare popup: click the Riichi
-        // button via the call-prompt opcode-11 path, latch the FSM with the
-        // policy's chosen discard tile, and let the next-tick
-        // ScheduleRiichiTsumogiri commit that specific tile.
-        //
-        // History: pre-fix this always tsumogiri'd slot 13 (last drawn) on
-        // the assumption that "the policy chose Riichi because the drawn
-        // tile completed tenpai." That holds for the common case but not
-        // when the wait IS the drawn tile and a different held tile must
-        // be discarded to declare. EfficiencyPolicy returns the ukeire-
-        // maximizing discard via best.Discard, so the latch carries the
-        // tile and the next tick looks up the actual slot.
+        // Riichi at state-6: click via opcode-11 and latch the policy's chosen tile so the next-tick tsumogiri commits the ukeire-max tile, not slot 13.
         if (choice.Kind == ActionKind.Riichi && snap.Legal.Can(ActionFlags.Riichi))
         {
             int riichiIdx = ComputeAcceptIndex(ActionKind.Riichi, snap.Legal, null);
@@ -794,20 +624,7 @@ public sealed class AutoPlayLoop : IDisposable
     {
         var legal = snap.Legal;
 
-        // State-6 SelfDeclareList at hand=14 is dual-use: the popup offers
-        // Riichi/Tsumo/AnKan AND lists the closed hand as discardable items.
-        // When the policy returns Discard (or a manual-tile Riichi), the user
-        // wants to discard a specific tile from the list, not press "Pass" on
-        // the Riichi/Tsumo offer. The list-widget click path
-        // (DispatchDiscard → TryDispatchListItemClick → SelectItem) already
-        // handles the list shell correctly, so route Discard/Riichi through
-        // DispatchPolicyChoice instead of falling through to Pass.
-        //
-        // Without this gate AutoPlay would press opcode-11 option-1 (Pass)
-        // every retry-cooldown, dismissing the Riichi offer without
-        // discarding — the game stays at state=6 hand=14 forever and
-        // auto-play silently stalls. Reproduced 2026-05-19 00:04 (live logs
-        // showed the 3-second-cycle stall in v0.1.0.4 diagnostics).
+        // State-6 popup is dual-use: it offers Riichi/Tsumo/AnKan and lists discardable tiles — route Discard/Riichi through the list-widget path, not Pass.
         if (choice.Kind is ActionKind.Discard or ActionKind.Riichi
             && choice.DiscardTile.HasValue)
         {
@@ -831,23 +648,7 @@ public sealed class AutoPlayLoop : IDisposable
         log.Info($"[AutoPlayLoop] call-prompt dispatch: {LastActionDescription}");
     }
 
-    /// <summary>
-    /// Decide whether the loop should click "Riichi" on a Riichi-bearing call
-    /// prompt. Three branches:
-    /// <list type="bullet">
-    ///   <item>Policy didn't return Pass, or Riichi isn't on offer: not our concern.</item>
-    ///   <item>Riichi-confirm latch already set, or hand sits at a draw-pending count
-    ///         (% 3 != 2): this is the post-click yaku-preview popup; auto-accept since
-    ///         the user already committed during the initial popup.</item>
-    ///   <item>Otherwise (initial popup with a 14/11/8-tile hand): re-run the policy
-    ///         against a synthetic Discard|Riichi snapshot so <c>RiichiPolicy.Evaluate</c>
-    ///         actually fires. The standard call branch in <c>EfficiencyPolicy.Choose</c>
-    ///         skips it because <c>HasCallOffered</c> ignores Riichi, which let every
-    ///         offered Riichi auto-accept regardless of wait quality, wall remaining, or
-    ///         push/fold — the cause of the late-thin-riichi deal-ins observed
-    ///         2026-05-09.</item>
-    /// </list>
-    /// </summary>
+    /// <summary>For an initial Riichi popup, re-run policy against a synthetic Discard|Riichi snapshot so RiichiPolicy actually fires — the standard call branch skips Riichi.</summary>
     private bool ResolveRiichiPopupAcceptance(StateSnapshot snap, ActionChoice choice, out Tile? probeTile, out string? probeReason)
     {
         probeReason = null;
@@ -884,18 +685,7 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchAccept(StateSnapshot snap, ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, Tile? riichiProbeTile, string riichiReason)
     {
-        // Tsumo is the only action with a dedicated dispatch path — opcode 9
-        // is corpus-confirmed (14 installs, 16 records over 2026-05-10..05-18).
-        // Every other accept (Pon, Chi, MinKan, ShouMinKan, AnKan, Ron, Riichi
-        // declaration) flows through the call-prompt button-row path
-        // (opcode 11) which has cross-action test coverage and is verified
-        // live for Pon/Chi/Pass.
-        //
-        // History: v0.1.0.11 also routed Ron through a dedicated opcode (10),
-        // by analogy to the Tsumo fix but without corpus evidence. Field bug
-        // report #39 (2026-05-24) showed `FireCallback(1, [Int=10]) → false`
-        // followed by the game corrupting into state-29 (DRAW screen) with no
-        // legal recovery. Reverted to the button-row path here.
+        // Tsumo has its own dispatch path (opcode 9); every other accept flows through opcode 11. Speculative Ron-via-opcode-10 corrupted the game into state-29.
         if (!acceptRiichiPopup && choice.Kind == ActionKind.Tsumo)
         {
             var result = plugin.Dispatcher.DispatchTsumo();
@@ -906,14 +696,6 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
-        // Compute the correct accept-button index for the chosen action kind.
-        // Pre-fix, this always called DispatchCall() (opt=0), which works only
-        // when the chosen kind is the leftmost button — i.e. when Pon is offered,
-        // Pon was always selected even if the policy returned Chi/MinKan/Ron.
-        // That misfire was the primary cause of the post-2026-05-18 auto-play
-        // regression: on every Pon+Chi simultaneous prompt the loop force-fired
-        // Pon, and on every multi-chi prompt the loop picked the leftmost chi
-        // variant even when the policy preferred a different sequence.
         var loggedKind = acceptRiichiPopup ? ActionKind.Riichi : choice.Kind;
         int acceptIndex = acceptRiichiPopup
             ? ComputeAcceptIndex(ActionKind.Riichi, legal, choice.Call)
@@ -927,20 +709,14 @@ public sealed class AutoPlayLoop : IDisposable
         EmitDispatchFinding(label, result2, option: acceptIndex, snap: snap);
         ClearRetryDebounceIfHookFailed(result2);
 
-        // Latch on for the post-riichi-confirm popup: the yaku-preview confirm
-        // popup shares the Riichi-flag signature of the initial popup, so
-        // without this flag the loop would retry-dispatch forever. Capture
-        // the probe's chosen discard so the next-tick tsumogiri commits the
-        // policy-picked tile, not the last-drawn one.
+        // Yaku-preview confirm popup shares the Riichi-flag signature — latch to prevent retry-dispatch and carry the probe's chosen discard.
         if (acceptRiichiPopup)
             fsm.LatchRiichiConfirm(riichiProbeTile);
     }
 
     private void DispatchPass(StateSnapshot snap, ActionChoice choice, LegalActions legal, string? reasonOverride = null)
     {
-        // Pass is always the rightmost button: its option index equals the
-        // number of accept buttons shown. Multi-chi adds extra accept slots
-        // — one per chi candidate.
+        // Pass index = count of accept buttons (multi-chi adds one slot per chi candidate).
         int passIndex = ComputePassIndex(legal);
         var result = plugin.Dispatcher.DispatchCallOption(passIndex);
         LastActionDescription = $"auto-pass[opt={passIndex}] → {result}";
@@ -949,19 +725,7 @@ public sealed class AutoPlayLoop : IDisposable
         EmitDispatchFinding("pass", result, option: passIndex, snap: snap);
     }
 
-    /// <summary>
-    /// Compute the button index for an accept-side action on a call-prompt popup.
-    /// The button order is fixed by the addon: Pon, then one slot per Chi variant,
-    /// then AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, and finally Pass.
-    /// AnKan/MinKan/ShouMinKan are kept adjacent because all three are kan
-    /// variants and the addon button row groups them.
-    /// </summary>
-    /// <param name="kind">The action the policy decided to take.</param>
-    /// <param name="legal">The legal-action context (flag set + candidate lists).</param>
-    /// <param name="chosenCall">Optional: for Chi, the specific candidate the policy
-    /// picked. Used to find the right chi-variant button index when the prompt
-    /// offers multiple chi sequences. Null falls back to the first variant (opt 0
-    /// among the chi slots).</param>
+    /// <summary>Addon button order: Pon, one slot per Chi variant, AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, Pass.</summary>
     internal static int ComputeAcceptIndex(ActionKind kind, LegalActions legal, MeldCandidate? chosenCall)
     {
         int idx = 0;
@@ -1007,17 +771,9 @@ public sealed class AutoPlayLoop : IDisposable
         if (kind == ActionKind.Tsumo)
             return idx;
 
-        // Unknown action shape for an accept: fall back to leftmost. The dispatcher
-        // would have done this before the fix too, so we preserve the legacy
-        // behavior as the safety net rather than silently swallowing the click.
         return 0;
     }
 
-    /// <summary>
-    /// Find the index of the chosen chi candidate within
-    /// <see cref="LegalActions.ChiCandidates"/>. Matched by structural equality on
-    /// the claimed tile + hand tiles. Returns 0 if no match (the legacy default).
-    /// </summary>
     private static int ResolveChiVariantIndex(LegalActions legal, MeldCandidate? chosenCall)
     {
         if (chosenCall is not { } call)
@@ -1043,7 +799,13 @@ public sealed class AutoPlayLoop : IDisposable
         return true;
     }
 
-    private static int ComputePassIndex(LegalActions legal)
+    /// <summary>
+    /// Index of the Pass button on a call-prompt row: every offered accept
+    /// action contributes one slot (Chi contributes <c>ChiCandidates.Count</c>
+    /// variants), Pass closes the row. Exposed for the developer console so
+    /// it can render the same numbers <see cref="DispatchPass"/> would emit.
+    /// </summary>
+    internal static int ComputePassIndex(LegalActions legal)
     {
         int idx = 0;
         if (legal.Can(ActionFlags.Pon))
