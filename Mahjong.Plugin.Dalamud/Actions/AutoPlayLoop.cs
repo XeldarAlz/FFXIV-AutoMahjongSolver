@@ -22,7 +22,9 @@ public sealed class AutoPlayLoop : IDisposable
     private const int VariantAcceptDelayMs = 500;
     private const int CallDecisionDelayMs = 700;
     private const int RiichiTsumogiriDelayMs = 700;
-    private const int HandResultAdvanceDelayMs = 900;
+    private const int HandResultAdvanceDelayMs = 300;
+    /// <summary>State-29 must persist this long before we fire the Next click. Firing during the result-modal animation phase landed the addon in a stuck state-32 with no inputs accepted (2026-05-26).</summary>
+    private static readonly TimeSpan HandResultStabilityWindow = TimeSpan.FromSeconds(3.5);
 
     private const ActionFlags CallPromptFlags =
         ActionFlags.Pon | ActionFlags.Chi |
@@ -36,6 +38,8 @@ public sealed class AutoPlayLoop : IDisposable
     private readonly ActionStateMachine fsm = new(DispatchTimeout, RetryCooldown);
     private bool disposed;
     private string? lastSkipReason;
+    private DateTime? handResultFirstSeenAt;
+    private bool handResultDispatchedThisInstance;
 
     public string LastActionDescription { get; private set; } = "(none)";
 
@@ -88,14 +92,8 @@ public sealed class AutoPlayLoop : IDisposable
         if (plugin.Configuration.AutoAdvanceAfterHand)
         {
             int earlyState = ReadStateCode();
-            if (earlyState == HandResultStateCode)
-            {
-                LastObservedState = earlyState;
-                LastObservedHandCount = -1;
-                EmitProgressing();
-                HandleHandResultAdvance(new DispatchContext(earlyState, -1));
+            if (TryHandleHandResult(earlyState))
                 return;
-            }
         }
 
         var snap = plugin.AddonReader.TryBuildSnapshot();
@@ -405,11 +403,34 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleVariantAccept(context);
     }
 
-    private void HandleHandResultAdvance(DispatchContext context)
+    private bool TryHandleHandResult(int state)
     {
-        if (fsm.ShouldSuppressForContext(context, DateTime.UtcNow))
-            return;
+        if (state != HandResultStateCode)
+        {
+            handResultFirstSeenAt = null;
+            handResultDispatchedThisInstance = false;
+            return false;
+        }
+
+        LastObservedState = state;
+        LastObservedHandCount = -1;
+
+        var now = DateTime.UtcNow;
+        handResultFirstSeenAt ??= now;
+
+        if (handResultDispatchedThisInstance)
+            return true;
+        if (now - handResultFirstSeenAt < HandResultStabilityWindow)
+            return true;
+
+        var context = new DispatchContext(state, -1);
+        if (fsm.ShouldSuppressForContext(context, now))
+            return true;
+
+        EmitProgressing();
+        handResultDispatchedThisInstance = true;
         ScheduleHandResultAdvance(context);
+        return true;
     }
 
     /// <summary>Post-declaration Riichi: complete via tsumogiri instead of re-clicking the list (the list click no-ops at this point).</summary>
