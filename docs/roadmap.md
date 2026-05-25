@@ -21,6 +21,7 @@ The end goal is full intelligent automation across **all clients** (EU, NA, JP, 
 - GameLogger writes hand-end events into the new hand-file so they survive concurrent telemetry uploads
 - EfficiencyPolicy defensive guard catches DiscardScorer invariant exceptions on shanten-invalid mid-transition states
 - Per-dispatch chat-log annotation (`schedState`/`curState`/`path`) so regressions are one log line away
+- Plugin-layer replay-harness fixture corpus: pure `BuildSnapshotFromMemory` entry on `BaseEmjVariant`, JSON fixture schema with `AddonMemoryBuilder` for synthetic seeds, `tools/extract-fixture.mjs` for pulling fixtures from telemetry memdumps, CI gates on every JSON under `tests/Mahjong.Plugin.Dalamud.Tests/Replay/fixtures/` (Track 0 of the closed meta [#38](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/38))
 - Engine: shanten · ukeire · yaku · fu · scoring (116 tests)
 - Policy: efficiency · Bayesian opponent model · evolutionary weight tuner · Tenhou log parser (86 tests)
 
@@ -32,8 +33,7 @@ The end goal is full intelligent automation across **all clients** (EU, NA, JP, 
 
 ## Planned
 
-- Plugin-layer replay-harness fixture corpus: every captured `FireCallback` frame becomes a replayable scenario in CI ([#38](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/38))
-- JP / OC client verification (variant dumps + capture logs needed)
-- Opponent open-meld struct decode from `agent_b64` for the opponent danger model
-- Per-discard tedashi vs. tsumogiri bit (currently all opp discards are treated as tedashi)
+- LayoutProfile threading into `InputDispatcher`: state codes and hand-array offset remain hardcoded as private constants; required for full JP/OC parity ([#47](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/47))
+- Feature gaps: opponent view (`SeatView.Discards` / `.Melds` / `.Riichi`, per-discard tedashi-tsumogiri bit), self-declared opcode live verification (tsumo, ron, ankan, riichi-accept), open-meld persistence across plugin reload ([#48](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/48))
+- JP / OC client variant support: `data/layouts/jp.json` and `data/layouts/oc.json`; blocked on tester capture contributions ([#49](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/49))
 - Tuner re-run against novice-table corpus once collected: current weights are Tenhou-trained against expert opponents
