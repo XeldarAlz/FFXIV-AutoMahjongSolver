@@ -679,6 +679,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
             return;
         lastLoggedCallPromptState = profile.StateCodes.CallPrompt;
 
+        if (ctx.EventLogger is null)
+            return;
+
         var ints = SnapshotAtkInts(atkValues, max: 24);
         ctx.EventLogger.RaiseCallPrompt(new CallPromptEvent(
             ObservedAtUtc: DateTime.UtcNow,
@@ -787,7 +790,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             return;
         lastLoggedMeldHandCount = hand.Count;
 
-        if (!ctx.EventLogger.Enabled)
+        if (ctx.EventLogger is null || !ctx.EventLogger.Enabled)
             return;
 
         try

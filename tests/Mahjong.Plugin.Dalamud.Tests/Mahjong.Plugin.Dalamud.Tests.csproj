@@ -39,6 +39,17 @@
   </ItemGroup>
 
   <!--
+    Replay fixtures land in the test bin directory so MemberData discovery
+    finds them at runtime. Add a new file under Replay/fixtures/ → CI gates
+    on it automatically.
+  -->
+  <ItemGroup>
+    <None Include="Replay\fixtures\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
     Reference Dalamud's DLLs directly out of the local XIVLauncher install.
     The plugin csproj does the same; mirroring it here lets a regular test
     SDK compile against Dalamud-typed parameters in the plugin shell. The
