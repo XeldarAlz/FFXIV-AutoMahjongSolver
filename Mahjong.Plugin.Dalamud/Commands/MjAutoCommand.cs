@@ -259,7 +259,7 @@ public sealed class MjAutoCommand : IDisposable
             }
 
             var tile = choice.DiscardTile.Value;
-            int slot = Actions.InputDispatcher.FindSlotOfTile(tile, snap.Hand);
+            int slot = plugin.AddonReader.FindAddonSlotOfTile(tile);
             if (slot < 0)
             {
                 chatGui.PrintError($"[MjAuto] tile {tile} not found in hand — internal error.");

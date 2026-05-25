@@ -518,7 +518,7 @@ public sealed class AutoPlayLoop : IDisposable
             Tile tile;
             if (fsm.RiichiConfirmTile is { } target)
             {
-                slot = InputDispatcher.FindSlotOfTile(target, snap.Hand);
+                slot = plugin.AddonReader.FindAddonSlotOfTile(target);
                 if (slot < 0)
                 {
                     LastActionDescription = $"riichi-tsumogiri aborted: latched tile {target} not in hand";
@@ -593,7 +593,7 @@ public sealed class AutoPlayLoop : IDisposable
     private void DispatchDiscardOrRiichi(StateSnapshot snap, ActionChoice choice)
     {
         var tile = choice.DiscardTile!.Value;
-        int slot = InputDispatcher.FindSlotOfTile(tile, snap.Hand);
+        int slot = plugin.AddonReader.FindAddonSlotOfTile(tile);
         if (slot < 0)
         {
             LastActionDescription = $"tile {tile} not in hand";

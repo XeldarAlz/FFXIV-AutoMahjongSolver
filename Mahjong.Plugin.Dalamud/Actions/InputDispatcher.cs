@@ -192,17 +192,7 @@ public sealed class InputDispatcher
         return *(int*)(basePtr + HandArrayStartOffset + slotIndex * 4);
     }
 
-    /// <summary>
-    /// Count non-zero slots in the closed-hand array starting at
-    /// <see cref="HandArrayStartOffset"/>. Stops at the first zero entry — the
-    /// addon zero-terminates the hand region, so empty slots past the live
-    /// tail are always 0. Returns 0..14.
-    ///
-    /// <para>Used to gate the state-6 opcode-15 path on the genuine
-    /// self-declare-after-draw shape (hand=14) and steer the post-call
-    /// shape (hand=11/8/5) to the list-widget click path. See the
-    /// <see cref="DispatchDiscard"/> docstring for the regression history.</para>
-    /// </summary>
+    /// <summary>Counts non-zero hand-array slots (0..14). Scans the full array — post-call layouts park the claimed tile at slot 13 with [10..12] empty, so zero-terminating would miscount.</summary>
     private static unsafe int ReadCurrentHandCount(AtkUnitBase* unit)
     {
         byte* basePtr = (byte*)unit;
@@ -210,9 +200,8 @@ public sealed class InputDispatcher
         for (int i = 0; i < 14; i++)
         {
             int raw = *(int*)(basePtr + HandArrayStartOffset + i * 4);
-            if (raw == 0)
-                break;
-            count++;
+            if (raw != 0)
+                count++;
         }
         return count;
     }
@@ -385,11 +374,7 @@ public sealed class InputDispatcher
     /// </summary>
     public DispatchResult DispatchCall() => DispatchCallOption(0);
 
-    /// <summary>
-    /// Find the slot index (0..13) of a given tile in the hand. Returns -1 if not found.
-    /// For duplicate tiles, prefers the last-drawn slot (13) if the tile matches there,
-    /// otherwise the lowest sorted slot.
-    /// </summary>
+    /// <summary>List-index of <paramref name="target"/> in the rendered hand, for UI highlight callers. Prefers index 13 when hand is full. For addon-slot resolution (dispatch path) use <c>AddonEmjReader.FindAddonSlotOfTile</c>.</summary>
     public static int FindSlotOfTile(Tile target, System.Collections.Generic.IReadOnlyList<Tile> hand)
     {
         if (hand.Count == 14 && hand[13].Id == target.Id)
@@ -447,6 +432,30 @@ public sealed class InputDispatcher
         var values = stackalloc AtkValue[1];
         values[0].SetInt(Opcode.Tsumo);
         unit->FireCallback(1, values, true);
+        return DispatchResult.Ok;
+    }
+
+    /// <summary>
+    /// Pick a chi variant on the chi-variant-select sub-popup. Opcode 12 +
+    /// variant index — captured 2026-05-25 from a manual click on a 2-variant
+    /// chi popup (hand=4778m123568p225s, fire_args=[12, 0], state=30). The
+    /// popup's parent AtkValues carry a "Chi" string label at slot 2, which
+    /// makes <see cref="DispatchCallOption"/> misroute it through the opcode-11
+    /// button-row path — that's why three [11,0] dispatches silently no-opped
+    /// and the bot froze. Routes around the label heuristic by firing opcode
+    /// 12 directly.
+    /// </summary>
+    public unsafe DispatchResult DispatchChiVariant(int variantIndex)
+    {
+        if (!addon.TryGet(out var unit, out _))
+            return DispatchResult.AddonNotFound;
+        if (!unit->IsVisible)
+            return DispatchResult.AddonNotVisible;
+
+        var values = stackalloc AtkValue[2];
+        values[0].SetInt(12);
+        values[1].SetInt(variantIndex);
+        unit->FireCallback(2, values, true);
         return DispatchResult.Ok;
     }
 }

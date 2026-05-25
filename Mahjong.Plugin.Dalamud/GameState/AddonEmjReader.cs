@@ -274,6 +274,24 @@ public sealed class AddonEmjReader : IDisposable
         return slots;
     }
 
+    /// <summary>Addon-slot of the first hand-array entry decoding to <paramref name="target"/>; prefers slot 13. Returns -1 if not found.</summary>
+    public unsafe int FindAddonSlotOfTile(Mahjong.Core.Tile target)
+    {
+        if (ActiveLayout is null)
+            return -1;
+        if (!addon.TryGet(out var unit, out _))
+            return -1;
+        if (!unit->IsVisible)
+            return -1;
+
+        int len = ActiveLayout.Limits.HandSize;
+        Span<int> raw = stackalloc int[len];
+        byte* basePtr = (byte*)unit;
+        for (int i = 0; i < len; i++)
+            raw[i] = *(int*)(basePtr + ActiveLayout.Offsets.HandArrayStart + i * 4);
+        return Variants.HandArrayDecoder.FindAddonSlot(raw, ActiveLayout.TileTextureBase, target.Id);
+    }
+
     public unsafe StateSnapshot? TryBuildSnapshot()
     {
         if (!addon.TryGet(out var unit, out var resolvedName))

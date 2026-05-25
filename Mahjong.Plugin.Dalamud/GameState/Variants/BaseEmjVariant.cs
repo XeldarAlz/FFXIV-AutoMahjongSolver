@@ -114,46 +114,17 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
     private unsafe List<Tile> ReadHand(byte* basePtr, ref int akaDora)
     {
-        var hand = new List<Tile>(profile.Limits.HandSize);
-        for (int i = 0; i < profile.Limits.HandSize; i++)
-        {
-            int raw = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
-            if (raw == 0)
-                break;
-            int tileId = DecodeTileId(raw, out bool isRed);
-            if (tileId < 0)
-                continue;
-            hand.Add(Tile.FromId(tileId));
-            if (isRed)
-                akaDora++;
-        }
-        return hand;
+        int len = profile.Limits.HandSize;
+        Span<int> raw = stackalloc int[len];
+        for (int i = 0; i < len; i++)
+            raw[i] = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
+        var (tiles, aka) = HandArrayDecoder.ReadHand(raw, profile.TileTextureBase);
+        akaDora += aka;
+        return tiles;
     }
 
-    // Doman akadora 5m/5p/5s sit at raw indices 34/35/36 past TileTextureBase; fold them into the plain tile id.
-    private int DecodeTileId(int raw) => DecodeTileId(raw, out _);
-
-    private int DecodeTileId(int raw, out bool isRed)
-    {
-        int idx = raw - profile.TileTextureBase;
-        isRed = false;
-        if (idx >= 0 && idx < Tile.Count34)
-            return idx;
-        switch (idx)
-        {
-            case 34:
-                isRed = true;
-                return 4;
-            case 35:
-                isRed = true;
-                return 13;
-            case 36:
-                isRed = true;
-                return 22;
-            default:
-                return -1;
-        }
-    }
+    private int DecodeTileId(int raw) =>
+        HandArrayDecoder.DecodeTileId(raw, profile.TileTextureBase, out _);
 
     private unsafe int[] ReadScores(byte* basePtr) =>
     [

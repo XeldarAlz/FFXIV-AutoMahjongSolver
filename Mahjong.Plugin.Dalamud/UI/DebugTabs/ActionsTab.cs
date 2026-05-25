@@ -119,7 +119,7 @@ internal sealed class ActionsTab
         }
 
         var tile = choice.DiscardTile.Value;
-        int slot = InputDispatcher.FindSlotOfTile(tile, snap.Hand);
+        int slot = ctx.Plugin.AddonReader.FindAddonSlotOfTile(tile);
         if (slot < 0)
         {
             ctx.LastToast = $"auto-discard: tile {tile} not found in hand";
