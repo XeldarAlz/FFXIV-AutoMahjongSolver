@@ -3,8 +3,8 @@
     "Author": "XeldarAlz",
     "Name": "Doman Mahjong Solver",
     "InternalName": "Mahjong.Plugin.Dalamud",
-    "AssemblyVersion": "0.1.1.0",
-    "TestingAssemblyVersion": "0.1.1.0",
+    "AssemblyVersion": "0.1.1.1",
+    "TestingAssemblyVersion": "0.1.1.1",
     "IsTestingExclusive": false,
     "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
     "ApplicableVersion": "any",
@@ -24,7 +24,7 @@
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",
     "Punchline": "Doman Mahjong helper — hints or auto-play.",
     "Description": "A helper for Doman Mahjong. Shows you hints or plays it for you.",
-    "Changelog": "v0.1.1.0 — Drop the experimental ISMCTS policy tier; the heuristic policy is now the only one shipped. No effect for anyone running the default Standard strength — that was already the heuristic. The Stronger (slower to think) option in the plugin settings is gone, along with the matching `/mjauto policy` chat command. Old configs that still carry `PolicyTier=mcts` are silently dropped on load. Under the hood: removed the entire Mahjong.Policy/Mcts/ tree (Determinizer / IsmctsPolicy / MctsNode / MctsNodePool / MctsSearch / MonteCarloEvaluator / Rollout) and the matching IRolloutPolicy / INodePool / RolloutWeights abstractions, ~1.3k LOC plus four test files. WeightBundle schema bumped 1 → 2 to drop the Rollout sub-bundle. Cleaner DI graph, ~25% smaller policy assembly, no behavioral change for live play.",
+    "Changelog": "v0.1.1.1 — Two stuck-state fixes that should clear the most common Auto-play freezes. (1) After a pon/chi the addon parks the claimed tile at slot 13 with slots [10..12] zeroed; the prior reader stopped at the first zero, reported a 10-tile hand instead of 11, and the discard gate refused to fire. The hand-array scan now walks the full array and the post-call discard goes through. (2) The chi-variant-select sub-popup needs FireCallback opcode 12, not the opcode-11 button-row path the rest of the call prompts use — the previous build dispatched [11, 0] three times into silent no-ops and froze at state-30. Also: multi-chi variant selection now scores each tile-triple by post-call shanten and picks the lowest, instead of always taking the leftmost button. Doman akadora aliases handled correctly across the migration. AboutWindow redesigned (centered icon, shimmer greeting). New compatibility-report issue template to grow the JP / OC / NA client matrix.",
     "DownloadCount": 854,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
@@ -35,6 +35,6 @@
     "LoadPriority": 0,
     "ImageUrls": [],
     "AcceptsFeedback": true,
-    "LastUpdate": "1779574281"
+    "LastUpdate": "1779712207"
   }
 ]
