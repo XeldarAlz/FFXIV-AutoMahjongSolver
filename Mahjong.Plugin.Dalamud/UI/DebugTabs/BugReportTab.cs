@@ -118,7 +118,7 @@ internal sealed class BugReportTab
         using (Theme.BeginCard("br-variant"))
         {
             Theme.SectionHeader("Variant dump (new-client report)");
-            Theme.Subtle("Run this when the plugin can't read your hand or board after a game patch. Writes one file you attach to GitHub issue #13.");
+            Theme.Subtle("Run this when the plugin can't read your hand or board after a game patch. Writes one file to attach when reporting a new client variant.");
             if (ImGui.Button("Dump variant"))
             {
                 cmd.DumpVariant();
@@ -126,7 +126,7 @@ internal sealed class BugReportTab
             }
             ImGui.SameLine(0, 6);
             DevHelpers.CopyPathButton("emj-variant-dump.txt", "variant");
-            Theme.Subtle("Attach emj-variant-dump.txt to issue #13 when reporting a new client variant.");
+            Theme.Subtle("Attach emj-variant-dump.txt when reporting a new client variant.");
         }
 
         ImGui.Dummy(new Vector2(0, 4));
