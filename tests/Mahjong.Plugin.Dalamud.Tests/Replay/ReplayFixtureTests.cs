@@ -149,6 +149,41 @@ public class ReplayFixtureTests
                 MeldCount = 0,
             },
         });
+
+        // State-15 call prompt offering Pon on 5m. Hand has a 55m pair; atkValues carry the "Pon" + "Pass" labels in the button-label scan window and the claimed-tile (raw=textureBase+4) duplicated in [16..17] so AppendPonCandidateFromAtkValues picks it up.
+        var pon5mClaimedRaw = emj.TileTextureBase + 4;
+        var ponAtkValues = new List<ReplayAtkValue>(22);
+        for (int i = 0; i < 22; i++) ponAtkValues.Add(new ReplayAtkValue { Type = "Undefined" });
+        ponAtkValues[emj.AtkValues.StateCode] = new ReplayAtkValue { Type = "Int", Int = 15 };
+        ponAtkValues[2] = new ReplayAtkValue { Type = "String", String = "Pon" };
+        ponAtkValues[3] = new ReplayAtkValue { Type = "String", String = "Pass" };
+        ponAtkValues[16] = new ReplayAtkValue { Type = "Int", Int = pon5mClaimedRaw };
+        ponAtkValues[17] = new ReplayAtkValue { Type = "Int", Int = pon5mClaimedRaw };
+
+        WriteFixture(Path.Combine(seedDir, "state15_pon_offer_emj.json"), new ReplayFixture
+        {
+            Name = "state15_pon_offer_emj",
+            Description = "State-15 call prompt offering Pon on 5m. Hand carries the 55m pair; modal visible.",
+            Variant = "Emj",
+            AddonMemoryBase64 = Convert.ToBase64String(
+                new AddonMemoryBuilder(emj)
+                    .WithScores(25000, 25000, 25000, 25000)
+                    .WithDiscardCounts(0, 0, 1, 0)  // opp (toimen) just discarded the 5m
+                    .WithHand("55m123p456s11234z")  // 13 tiles incl. 55m pair
+                    .WithDoraIndicator("1z")
+                    .Build()),
+            AtkValues = ponAtkValues,
+            CallModalVisible = true,
+            Expected = new ReplayExpected
+            {
+                StateCode = 15,
+                LegalFlags = new List<string> { "Pon", "Pass" },
+                ScoreSelf = 25000,
+                WallRemaining = 69,  // 70 - 1 opp discard
+                AkaDora = 0,
+                MeldCount = 0,
+            },
+        });
     }
 
     private static void WriteFixture(string path, ReplayFixture fixture)
