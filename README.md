@@ -25,9 +25,9 @@
 
 Sit at a mahjong table and a small window watches your hand, suggesting the best discard and why. Three modes:
 
-- **Off** — plugin sleeps.
-- **Hints** — shows the best discard + top alternatives with reasoning. You click every move. *100% safe.*
-- **Auto-play** — plays for you with natural pacing.
+- **Off**: plugin sleeps.
+- **Hints**: shows the best discard + top alternatives with reasoning. You click every move. *100% safe.*
+- **Auto-play**: plays for you with natural pacing.
 
 ## Features
 
@@ -76,9 +76,9 @@ If you're on JP or OC: seat at a Doman table, run `/mjauto variant dump`, and at
 
 ## Troubleshooting
 
-**Misclicked a call prompt?** Click the right option yourself in-game — the plugin resumes on the next turn. Or from chat: `/mjauto pass <N>`.
+**Misclicked a call prompt?** Click the right option yourself in-game: the plugin resumes on the next turn. Or from chat: `/mjauto pass <N>`.
 
-**Plugin stalled on a popup?** Switch to **Off**, click manually, then re-enable **Auto-play**. If you can reproduce, run `/mjauto capture <label>` first — the `FireCallback` payload lands in `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` and is the fastest way to get a fix shipped.
+**Plugin stalled on a popup?** Switch to **Off**, click manually, then re-enable **Auto-play**. If you can reproduce, run `/mjauto capture <label>` first: the `FireCallback` payload lands in `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` and is the fastest way to get a fix shipped.
 
 Known edge cases that can stall the bot (manual click resumes play): post-MinKan transient, two consecutive Pon offers within ~1 second.
 

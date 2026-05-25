@@ -7,11 +7,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file a bug. Please fill out as much as you can — it makes a huge difference.
+        Thanks for taking the time to file a bug. Please fill out as much as you can; it makes a huge difference.
 
         **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/mjauto` → click the bug icon → **Bug report** tab. Every attachment this template asks for has a button right there (Snap, Autosnap, Capture, Variant dump), plus an *Open plugin config dir* button so you can drag the files straight into this issue.
 
-        If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/new?category=help-troubleshooting) — triage is faster there.
+        If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/new?category=help-troubleshooting); triage is faster there.
 
         For security issues, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/security/advisories/new) instead.
 
@@ -52,21 +52,6 @@ body:
       required: true
 
   - type: dropdown
-    id: game-version
-    attributes:
-      label: Game version
-      description: Patch you were on when it happened. Helps me match the report to a binary.
-      options:
-        - "7.55"
-        - "7.5"
-        - "7.45"
-        - "7.4"
-        - Older
-        - Not sure
-    validations:
-      required: true
-
-  - type: dropdown
     id: region
     attributes:
       label: Region / client
@@ -99,20 +84,20 @@ body:
     attributes:
       label: Attachments
       description: |
-        **If you can provide any of these, it's hugely appreciated — they turn guesswork into a fix.**
+        **If you can provide any of these, it's hugely appreciated; they turn guesswork into a fix.**
 
-        Easiest path: open `/mjauto` → bug icon → **Bug report** tab. Every file below has a button there, and *Open plugin config dir* opens the folder so you can drag files straight into this box. GitHub will attach them and replace the drop with a link.
+        Easiest path: open `/mjauto` → bug icon → **Bug report** tab. Press the buttons listed below, then hit *Open plugin config dir* and drag the resulting files into this box. GitHub will attach them and replace the drop with a link.
 
-        - `snap-<label>-<ts>.txt` — one-shot dump → press **Snap**
-        - `snap-auto-NNN-<ts>.txt` — continuous dump for intermittent bugs → press **Start autosnap** (stop it once you've reproduced the bug)
-        - `emj-captures.log` / `emjl-captures.log` (NA) — single-click capture for stuck popups → press **Arm** under *Capture*, then click the in-game button
-        - `emj-events.log` — every UI callback the addon received → tick **Record clicks to emj-events.log** under the *Diagnostics* tab
-        - `emj-discards.log` — discard-hook log (always on while in a match — just attach it)
-        - `emj-variant-dump.txt` — only if the bug looks like a new-client / post-patch read failure → press **Dump variant**
-        - `findings-YYYYMMDD.ndjson` — opt-in telemetry findings if you have logging enabled
+        - **Snap**: one-shot memory dump
+        - **Start autosnap**: continuous capture for intermittent bugs (press **Stop autosnap** once you've reproduced it)
+        - **Arm** (under *Capture*): single-click capture for stuck popups; then click the in-game button you want recorded
+        - **Record clicks to emj-events.log** (under the *Diagnostics* tab): every UI callback the addon received
+        - **Dump variant**: only if the bug looks like a new-client / post-patch read failure
+        - The discard log is always on while you're in a match, just drag it in too
+        - Findings file: only if you have opt-in telemetry logging enabled
 
   - type: textarea
     id: extra
     attributes:
       label: Anything else?
-      description: Screenshots, game context, hunches — anything that helps the bug land.
+      description: Screenshots, game context, hunches, anything that helps the bug land.
