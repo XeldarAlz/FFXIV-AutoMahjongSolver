@@ -2,12 +2,14 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Efficiency;
 
+/// <summary>
+/// EV(push) = P(complete) × E(hand value) − E(deal-in cost). Push when positive.
+/// Hard veto only for hopelessly-far hands under late-round pressure where the EV math is noisiest.
+/// </summary>
 public sealed class HeuristicPushFoldPolicy : IPushFoldPolicy
 {
-    private const int TenpaiDealInCap = 3000;
-    private const int OneShantenRiichiDealInCap = 500;
     private const int LateRoundWallThreshold = 15;
-    private const double HighTenpaiProbability = 0.7;
+    private const int FarShantenHardVeto = 3;
 
     public Decision<PushFoldStance> Evaluate(
         StateSnapshot state,
@@ -16,42 +18,63 @@ public sealed class HeuristicPushFoldPolicy : IPushFoldPolicy
     {
         ArgumentNullException.ThrowIfNull(opponentModel);
 
-        var threats = SummarizeThreats(state, opponentModel);
-        double dealInCost = opponentModel.ExpectedDealInCost(plannedDiscard.Discard.Id);
         int shanten = plannedDiscard.ShantenAfter;
+        var threats = SummarizeThreats(state, opponentModel);
+        double dealInCost = plannedDiscard.DealInCost;
 
-        if (shanten == 0)
-            return EvaluateTenpai(dealInCost);
-        if (shanten == 1)
-            return EvaluateOneShanten(threats.AnyRiichi, dealInCost);
-        return EvaluateFarFromTenpai(state, shanten, threats);
+        if (shanten >= FarShantenHardVeto)
+        {
+            if (threats.AnyRiichi)
+                return Fold("far-vs-riichi", $"{shanten}-shanten vs a riichi");
+            if (state.WallRemaining < LateRoundWallThreshold)
+                return Fold("late-round-far", $"{shanten}-shanten with wall {state.WallRemaining} remaining");
+            if (threats.MaxTenpaiProbability >= 0.7)
+                return Fold("far-vs-tenpai-prob",
+                    $"{shanten}-shanten, opponent tenpai-prob ≥ 0.7");
+        }
+
+        bool isDealer = state.OurSeat == state.DealerSeat;
+        double pComplete = ProbComplete(shanten, plannedDiscard.UkeireWeighted, state.WallRemaining);
+        double handValue = EstimateHandValuePoints(plannedDiscard, isDealer);
+        double evPush = pComplete * handValue - dealInCost;
+
+        if (evPush > 0)
+            return Push("ev-push",
+                $"EV={evPush:F0} (p_complete={pComplete:F2} × value={handValue:F0} − danger={dealInCost:F0})");
+
+        return Fold("ev-fold",
+            $"EV={evPush:F0} (p_complete={pComplete:F2} × value={handValue:F0} − danger={dealInCost:F0})");
     }
 
-    private static Decision<PushFoldStance> EvaluateTenpai(double dealInCost)
+    private static double ProbComplete(int shanten, int ukeireWeighted, int wallRemaining)
     {
-        if (dealInCost > TenpaiDealInCap)
-            return Fold("tenpai-deal-in", $"tenpai but deal-in cost {dealInCost:F0} > {TenpaiDealInCap}");
-        return Push("tenpai-push", $"tenpai, push (deal-in cost {dealInCost:F0})");
+        if (shanten >= 4) return 0.01;
+        double turnsLeft = Math.Max(0.0, wallRemaining / 4.0);
+        double perTurn = shanten switch
+        {
+            0 => 0.045 * Math.Max(1, ukeireWeighted),
+            1 => 0.020 * Math.Max(1, ukeireWeighted),
+            2 => 0.009 * Math.Max(1, ukeireWeighted),
+            3 => 0.004 * Math.Max(1, ukeireWeighted),
+            _ => 0.001,
+        };
+        perTurn = Math.Min(perTurn, 0.35);
+        double cumulative = 1.0 - Math.Pow(1.0 - perTurn, turnsLeft);
+        return Math.Clamp(cumulative, 0.0, 0.95);
     }
 
-    private static Decision<PushFoldStance> EvaluateOneShanten(bool anyRiichi, double dealInCost)
+    private static double EstimateHandValuePoints(ScoredDiscard d, bool isDealer)
     {
-        if (anyRiichi && dealInCost > OneShantenRiichiDealInCap)
-            return Fold("one-shanten-vs-riichi", $"1-shanten vs riichi, danger {dealInCost:F0}");
-        return Push("one-shanten-push", "1-shanten, push");
-    }
-
-    private static Decision<PushFoldStance> EvaluateFarFromTenpai(
-        StateSnapshot state, int shanten, ThreatSummary threats)
-    {
-        if (state.WallRemaining < LateRoundWallThreshold)
-            return Fold("late-round-far", $"{shanten}-shanten with wall {state.WallRemaining} remaining");
-        if (threats.AnyRiichi)
-            return Fold("far-vs-riichi", $"{shanten}-shanten vs a riichi");
-        if (threats.MaxTenpaiProbability >= HighTenpaiProbability)
-            return Fold("far-vs-tenpai-prob",
-                $"{shanten}-shanten, opponent tenpai-prob ≥ {HighTenpaiProbability:F1}");
-        return Push("far-quiet", $"{shanten}-shanten, opponents quiet, push");
+        double han = d.YakuPotential * YakuPotential.TargetHan + d.DoraRetained + d.YakuhaiRetained;
+        double baseHan = Math.Max(0.0, han);
+        double pts;
+        if (baseHan < 1.0) pts = 0;
+        else if (baseHan < 2.0) pts = 1500;
+        else if (baseHan < 3.0) pts = 2700;
+        else if (baseHan < 4.0) pts = 5200;
+        else if (baseHan < 5.0) pts = 7700;
+        else pts = 8000 + (baseHan - 5.0) * 4000;
+        return isDealer ? pts * 1.5 : pts;
     }
 
     private static ThreatSummary SummarizeThreats(StateSnapshot state, IOpponentModel model)
