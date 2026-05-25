@@ -443,17 +443,35 @@ public sealed class InputDispatcher
         return DispatchResult.Ok;
     }
 
-    /// <summary>Dismisses the post-hand agari/draw result modal (state-29 "Next"). Captured 2026-05-26 as a single-arg FireCallback(1, [Int=14]).</summary>
+    /// <summary>Dismisses the post-hand agari/draw result modal (state-29 "Next"). Routes through ReceiveEvent(ButtonClick) rather than FireCallback — the captured `[14]` was the addon's notification *after* the click, not the trigger; firing it directly landed the addon in stuck state-32 (2026-05-26).</summary>
     public unsafe DispatchResult DispatchHandResultNext()
     {
+        const uint nextButtonNodeId = 97;
+        const uint nextButtonCollisionId = 4;
+        const int nextButtonEventParam = 7;
+
         if (!addon.TryGet(out var unit, out _))
             return DispatchResult.AddonNotFound;
         if (!unit->IsVisible)
             return DispatchResult.AddonNotVisible;
 
-        var values = stackalloc AtkValue[1];
-        values[0].SetInt(14);
-        unit->FireCallback(1, values, true);
+        var btnNode = unit->GetNodeById(nextButtonNodeId);
+        if (btnNode == null || (int)btnNode->Type < 1000)
+            return DispatchResult.HookFailed;
+        var compNode = (AtkComponentNode*)btnNode;
+        if (compNode->Component == null)
+            return DispatchResult.HookFailed;
+        var collision = compNode->Component->UldManager.SearchNodeById(nextButtonCollisionId);
+        if (collision == null)
+            return DispatchResult.HookFailed;
+
+        var atkEvent = new AtkEvent
+        {
+            Listener = (AtkEventListener*)compNode->Component,
+            Node = collision,
+            Target = (AtkEventTarget*)collision,
+        };
+        unit->ReceiveEvent(AtkEventType.ButtonClick, nextButtonEventParam, &atkEvent);
         return DispatchResult.Ok;
     }
 }
