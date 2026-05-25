@@ -1,10 +1,22 @@
 using Mahjong.Engine;
+using Mahjong.Rules;
+using Mahjong.Rules.Rulesets;
 
 namespace Mahjong.Policy.Efficiency;
 
 /// <summary>Conservative: requires strict shanten gain AND a reachable yaku path post-call.</summary>
 public sealed class HeuristicCallPolicy : ICallPolicy
 {
+    private readonly IRuleSet ruleSet;
+
+    public HeuristicCallPolicy() : this(new RiichiRuleSet()) { }
+
+    public HeuristicCallPolicy(IRuleSet ruleSet)
+    {
+        ArgumentNullException.ThrowIfNull(ruleSet);
+        this.ruleSet = ruleSet;
+    }
+
     public Decision<MeldCandidate?> Evaluate(StateSnapshot state)
     {
         var candidates = CollectCandidates(state);
@@ -34,11 +46,11 @@ public sealed class HeuristicCallPolicy : ICallPolicy
             foreach (var t in c.HandTiles)
                 counts[t.Id]--;
             int meldsAfter = state.OurMelds.Count + 1;
-            bool yakuReachable = HasReachableYaku(counts, meldsAfter, state, c);
+            int reachableHan = EstimateReachableHan(counts, meldsAfter, state, c, ruleSet.DoraRule);
             foreach (var t in c.HandTiles)
                 counts[t.Id]++;
 
-            if (!yakuReachable)
+            if (reachableHan < ruleSet.MinHan)
                 continue;
 
             if (delta > bestShantenDelta)
@@ -56,7 +68,9 @@ public sealed class HeuristicCallPolicy : ICallPolicy
                 Value: null,
                 Reason: new Reason(
                     Code: "no-shanten-gain-with-yaku",
-                    Display: $"no call improves shanten with yaku (current={currentShanten})"));
+                    Display:
+                        $"no call improves shanten with reachable yaku ≥ {ruleSet.MinHan} han " +
+                        $"(current={currentShanten})"));
         }
 
         return new Decision<MeldCandidate?>(
@@ -107,34 +121,53 @@ public sealed class HeuristicCallPolicy : ICallPolicy
         return Math.Min(std, Math.Min(ci, ko));
     }
 
-    private static bool HasReachableYaku(int[] counts, int meldsAfter, StateSnapshot state, MeldCandidate thisCall)
+    /// <summary>
+    /// Sum reachable han across yaku families plus dora retained on the post-call concealed hand.
+    /// Treats families as independent so MinHan=2 rulesets (Doman) reject lone 1-han yakuhai paths.
+    /// </summary>
+    private static int EstimateReachableHan(int[] counts, int meldsAfter, StateSnapshot state, MeldCandidate thisCall, IDoraRule doraRule)
     {
-        if (HasReachableYakuhai(counts, state, thisCall))
-            return true;
-        if (HasReachableTanyao(counts, state, thisCall))
-            return true;
-        if (HasReachableSuitFlush(counts))
-            return true;
-        if (HasReachableToitoi(counts, state, thisCall))
-            return true;
-        if (HasReachableSanshokuDoujun(counts, state, thisCall))
-            return true;
-        if (HasReachableIttsu(counts, state, thisCall))
-            return true;
-        return false;
+        int han = ReachableYakuhaiHan(counts, state, thisCall);
+        if (HasReachableTanyao(counts, state, thisCall)) han++;
+        if (HasReachableSuitFlush(counts)) han += 2;
+        if (HasReachableToitoi(counts, state, thisCall)) han += 2;
+        if (HasReachableSanshokuDoujun(counts, state, thisCall)) han++;
+        if (HasReachableIttsu(counts, state, thisCall)) han++;
+        han += RetainedDoraHan(counts, state, thisCall, doraRule);
+        return han;
     }
 
-    private static bool HasReachableYakuhai(int[] counts, StateSnapshot state, MeldCandidate thisCall)
+    private static int ReachableYakuhaiHan(int[] counts, StateSnapshot state, MeldCandidate thisCall)
     {
+        int han = 0;
         if (thisCall.Kind == MeldKind.Pon && IsYakuhaiTile(thisCall.ClaimedTile, state))
-            return true;
+            han++;
         for (int id = TileIds.FirstDragon; id <= TileIds.LastDragon; id++)
             if (counts[id] >= 2)
-                return true;
+                han++;
         for (int id = TileIds.FirstWind; id <= TileIds.LastWind; id++)
             if (counts[id] >= 2 && IsYakuhaiWind(id, state))
-                return true;
-        return false;
+                han++;
+        return han;
+    }
+
+    private static int RetainedDoraHan(int[] counts, StateSnapshot state, MeldCandidate thisCall, IDoraRule doraRule)
+    {
+        if (state.DoraIndicators.Count == 0)
+            return 0;
+        int han = 0;
+        foreach (var indicator in state.DoraIndicators)
+        {
+            int doraId = doraRule.Next(indicator).Id;
+            han += counts[doraId];
+            foreach (var m in state.OurMelds)
+                foreach (var t in m.Tiles)
+                    if (t.Id == doraId) han++;
+            if (thisCall.ClaimedTile.Id == doraId) han++;
+            foreach (var t in thisCall.HandTiles)
+                if (t.Id == doraId) han++;
+        }
+        return han;
     }
 
     private static bool HasReachableTanyao(int[] counts, StateSnapshot state, MeldCandidate thisCall)
