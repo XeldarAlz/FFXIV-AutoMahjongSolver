@@ -33,7 +33,6 @@ public sealed class SettingsWindow : Window, IDisposable
 
     private static string StyleLabel(HighlightStyle s) => s switch
     {
-        HighlightStyle.Spotlight => "Spotlight (dim others)",
         HighlightStyle.Arrow => "Big arrow + label",
         _ => "Neon glow + corner brackets",
     };
@@ -92,9 +91,6 @@ public sealed class SettingsWindow : Window, IDisposable
         dl.PushClipRect(origin, origin + new Vector2(canvasW, canvasH), true);
         switch (cfg.HighlightStyle)
         {
-            case HighlightStyle.Spotlight:
-                HandOverlay.DrawHighlightSpotlight(dl, rects, pickSlot, color, intensity);
-                break;
             case HighlightStyle.Arrow:
                 HandOverlay.DrawHighlightArrow(dl, rects[pickSlot], color, intensity, isDrawnTile);
                 break;
@@ -141,7 +137,7 @@ public sealed class SettingsWindow : Window, IDisposable
             ImGui.SetNextItemWidth(300);
             if (ImGui.BeginCombo("Highlight style", StyleLabel(style)))
             {
-                foreach (var opt in new[] { HighlightStyle.NeonGlow, HighlightStyle.Spotlight, HighlightStyle.Arrow })
+                foreach (var opt in new[] { HighlightStyle.NeonGlow, HighlightStyle.Arrow })
                 {
                     bool selected = opt == style;
                     if (ImGui.Selectable(StyleLabel(opt), selected) && opt != style)
@@ -153,7 +149,6 @@ public sealed class SettingsWindow : Window, IDisposable
             }
             Theme.Subtle(style switch
             {
-                HighlightStyle.Spotlight => "Dims every other tile so the pick stands out. Strong but more intrusive.",
                 HighlightStyle.Arrow => "Large arrow with a DISCARD / TSUMOGIRI label. Keeps the tile art uncovered.",
                 _ => "Neon glow halo, L-shaped corner brackets, and a bouncing arrow above the tile.",
             });

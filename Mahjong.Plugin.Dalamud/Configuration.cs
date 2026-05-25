@@ -53,7 +53,6 @@ public sealed record Configuration : IPluginConfiguration
 public enum HighlightStyle
 {
     NeonGlow = 0,
-    Spotlight = 1,
     Arrow = 2,
 }
 

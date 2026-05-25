@@ -99,16 +99,6 @@ public sealed class HandOverlay : IDisposable
         float intensity = Math.Clamp(cfg.HighlightIntensity, 0.4f, 1.6f);
         var dl = ImGui.GetForegroundDrawList();
 
-        // Spotlight needs ALL rects in screen space — offset them once here so the draw method stays caller-agnostic.
-        if (cfg.HighlightStyle == HighlightStyle.Spotlight)
-        {
-            var screenRects = new List<(Vector2 Pos, Vector2 Size)>(rects.Count);
-            for (int i = 0; i < rects.Count; i++)
-                screenRects.Add((rects[i].Pos + viewportOffset, rects[i].Size));
-            DrawHighlightSpotlight(dl, screenRects, slot, color, intensity);
-            return;
-        }
-
         switch (cfg.HighlightStyle)
         {
             case HighlightStyle.Arrow:
@@ -285,58 +275,6 @@ public sealed class HandOverlay : IDisposable
         var vEnd = new Vector2(origin.X, origin.Y + length * dirY);
         dl.AddLine(origin, hEnd, color, thickness);
         dl.AddLine(origin, vEnd, color, thickness);
-    }
-
-    /// <summary>Caller pre-translates rects to screen space; this method does not add a viewport offset.</summary>
-    internal static void DrawHighlightSpotlight(
-        ImDrawListPtr dl,
-        List<(Vector2 Pos, Vector2 Size)> rects,
-        int slot,
-        Vector3 color,
-        float intensity)
-    {
-        float pulse = OverlayPulse(1.2f, 0.85f, 1.0f) * intensity;
-
-        // Dim every tile except the pick. Dim alpha tracks intensity too — lower intensity = lighter dim.
-        float dimAlpha = MathF.Min(0.75f, 0.55f * intensity);
-        uint dim = Theme.Pack(new Vector4(0f, 0f, 0f, dimAlpha));
-        for (int i = 0; i < rects.Count; i++)
-        {
-            if (i == slot)
-                continue;
-            var r = rects[i];
-            dl.AddRectFilled(r.Pos - new Vector2(2, 2), r.Pos + r.Size + new Vector2(2, 2), dim, 4f);
-        }
-
-        // Spotlight ring around the pick.
-        var pickRect = rects[slot];
-        var pmin = pickRect.Pos - new Vector2(3, 3);
-        var pmax = pickRect.Pos + pickRect.Size + new Vector2(3, 3);
-
-        // Soft outward halo so the pick visually "lifts" off the table.
-        for (int i = 3; i >= 1; i--)
-        {
-            float expand = i * 3f;
-            float alpha = pulse * (0.30f / i);
-            dl.AddRectFilled(
-                pmin - new Vector2(expand, expand),
-                pmax + new Vector2(expand, expand),
-                Pack(color, alpha),
-                6f + expand);
-        }
-
-        dl.AddRect(pmin, pmax, Pack(color, pulse), 6f, ImDrawFlags.None, 3.5f);
-
-        // Small bouncing arrow above so you can spot the pick at a glance.
-        float cx = (pmin.X + pmax.X) * 0.5f;
-        float bounce = ArrowBounce(1.0f, 4f);
-        float tipY = pmin.Y - 6f - bounce;
-        float baseY = tipY - 14f;
-        dl.AddTriangleFilled(
-            new Vector2(cx - 10f, baseY),
-            new Vector2(cx + 10f, baseY),
-            new Vector2(cx, tipY),
-            Pack(color, pulse));
     }
 
     internal static void DrawHighlightArrow(ImDrawListPtr dl, (Vector2 Pos, Vector2 Size) rect, Vector3 color, float intensity, bool isDrawnTile)
