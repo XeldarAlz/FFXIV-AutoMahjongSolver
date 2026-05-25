@@ -14,12 +14,15 @@ namespace Mahjong.Plugin.Dalamud.Actions;
 public sealed class AutoPlayLoop : IDisposable
 {
     private const int ChiVariantSelectStateCode = 25;
+    /// <summary>Agari / draw result modal between hands; carries Legal=None and a single "Next" button.</summary>
+    private const int HandResultStateCode = 29;
     private static readonly TimeSpan RetryCooldown = TimeSpan.FromSeconds(3.0);
     private static readonly TimeSpan DispatchTimeout = TimeSpan.FromSeconds(10.0);
 
     private const int VariantAcceptDelayMs = 500;
     private const int CallDecisionDelayMs = 700;
     private const int RiichiTsumogiriDelayMs = 700;
+    private const int HandResultAdvanceDelayMs = 900;
 
     private const ActionFlags CallPromptFlags =
         ActionFlags.Pon | ActionFlags.Chi |
@@ -79,6 +82,20 @@ public sealed class AutoPlayLoop : IDisposable
             EmitSkipReason("dispatch in flight (still within timeout)",
                 state: -1, hand: -1, flags: 0);
             return;
+        }
+
+        // Runs before the snapshot guard: the result modal has no hand-array, so TryBuildSnapshot returns null and the post-snapshot state checks never fire.
+        if (plugin.Configuration.AutoAdvanceAfterHand)
+        {
+            int earlyState = ReadStateCode();
+            if (earlyState == HandResultStateCode)
+            {
+                LastObservedState = earlyState;
+                LastObservedHandCount = -1;
+                EmitProgressing();
+                HandleHandResultAdvance(new DispatchContext(earlyState, -1));
+                return;
+            }
         }
 
         var snap = plugin.AddonReader.TryBuildSnapshot();
@@ -388,6 +405,13 @@ public sealed class AutoPlayLoop : IDisposable
         ScheduleVariantAccept(context);
     }
 
+    private void HandleHandResultAdvance(DispatchContext context)
+    {
+        if (fsm.ShouldSuppressForContext(context, DateTime.UtcNow))
+            return;
+        ScheduleHandResultAdvance(context);
+    }
+
     /// <summary>Post-declaration Riichi: complete via tsumogiri instead of re-clicking the list (the list click no-ops at this point).</summary>
     private bool TryHandleRiichiConfirmTsumogiri(StateSnapshot snap, DispatchContext context, bool isCallPrompt)
     {
@@ -422,6 +446,27 @@ public sealed class AutoPlayLoop : IDisposable
                 fsm.CompleteDispatch();
             }
         }, delay);
+    }
+
+    private void ScheduleHandResultAdvance(DispatchContext context)
+    {
+        ScheduleAction("hand-result-next", context, HandResultAdvanceDelayMs, () =>
+        {
+            int currentState = ReadStateCode();
+            if (currentState != HandResultStateCode)
+            {
+                LastActionDescription = $"hand-result-next aborted: state moved {HandResultStateCode}→{currentState}";
+                return;
+            }
+
+            var snap = plugin.AddonReader.TryBuildSnapshot();
+            var result = plugin.Dispatcher.DispatchHandResultNext();
+            LastActionDescription = $"auto-hand-result-next → {result}";
+            log.Info($"[AutoPlayLoop] hand-result-next dispatch: {LastActionDescription}");
+            plugin.GameLogger.RecordAction(ActionKind.Pass, null, null, result.ToString(), "auto-advance after hand");
+            EmitDispatchFinding("hand-result-next", result, state: currentState, snap: snap);
+            ClearRetryDebounceIfHookFailed(result);
+        });
     }
 
     private void ScheduleVariantAccept(DispatchContext context)

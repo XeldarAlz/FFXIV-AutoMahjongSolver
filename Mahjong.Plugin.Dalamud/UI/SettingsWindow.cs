@@ -115,6 +115,13 @@ public sealed class SettingsWindow : Window, IDisposable
             if (ImGui.SliderInt("Click speed", ref delay, 400, 3000, "%d ms"))
                 plugin.ConfigService.Update(c => c with { HumanizedDelayMs = delay });
             Theme.Subtle("Average delay before each auto-play click.");
+
+            ImGui.Dummy(new Vector2(0, 4));
+
+            bool autoAdvance = cfg.AutoAdvanceAfterHand;
+            if (ImGui.Checkbox("Auto-advance after each hand", ref autoAdvance))
+                plugin.ConfigService.Update(c => c with { AutoAdvanceAfterHand = autoAdvance });
+            Theme.Subtle("Click \"Next\" on the win/draw results screen so the next hand starts automatically.");
         }
 
         ImGui.Dummy(new Vector2(0, 4));

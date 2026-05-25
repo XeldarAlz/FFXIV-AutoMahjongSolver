@@ -40,6 +40,9 @@ public sealed record Configuration : IPluginConfiguration
     /// <summary>Sticky once the user accepts the first-arming auto-play warning.</summary>
     public bool AutoPlayConfirmed { get; init; } = false;
 
+    /// <summary>Auto-clicks Next on the post-hand result modal so the next hand starts without manual input.</summary>
+    public bool AutoAdvanceAfterHand { get; init; } = false;
+
     public bool EnableGameLogging { get; init; } = true;
 
     /// <summary>

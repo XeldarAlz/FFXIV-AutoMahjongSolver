@@ -442,4 +442,18 @@ public sealed class InputDispatcher
         unit->FireCallback(2, values, true);
         return DispatchResult.Ok;
     }
+
+    /// <summary>Dismisses the post-hand agari/draw result modal (state-29 "Next"). Captured 2026-05-26 as a single-arg FireCallback(1, [Int=14]).</summary>
+    public unsafe DispatchResult DispatchHandResultNext()
+    {
+        if (!addon.TryGet(out var unit, out _))
+            return DispatchResult.AddonNotFound;
+        if (!unit->IsVisible)
+            return DispatchResult.AddonNotVisible;
+
+        var values = stackalloc AtkValue[1];
+        values[0].SetInt(14);
+        unit->FireCallback(1, values, true);
+        return DispatchResult.Ok;
+    }
 }
