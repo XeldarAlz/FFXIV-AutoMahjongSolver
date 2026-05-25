@@ -1,8 +1,8 @@
 {
     "Author": "XeldarAlz",
     "Name": "Doman Mahjong Solver",
-    "Punchline": "Doman Mahjong helper — hints or auto-play.",
-    "Description": "A helper for Doman Mahjong. Shows you hints or plays it for you.",
+    "Punchline": "Doman Mahjong, solved for you.",
+    "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",

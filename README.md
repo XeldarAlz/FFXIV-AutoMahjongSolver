@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <em>Hints or full auto-play for Doman Mahjong at the Gold Saucer. Built on Dalamud.</em>
+  <em>Doman Mahjong, solved for you. Built on Dalamud.</em>
 </p>
 
 ---
