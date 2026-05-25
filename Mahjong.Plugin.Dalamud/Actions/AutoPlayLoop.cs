@@ -642,16 +642,6 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchPolicyChoice(StateSnapshot snap, ActionChoice choice)
     {
-        if (choice.Kind == ActionKind.Tsumo)
-        {
-            var result = plugin.Dispatcher.DispatchTsumo();
-            LastActionDescription = $"auto-tsumo → {result}";
-            plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("tsumo", result, snap: snap);
-            ClearRetryDebounceIfHookFailed(result);
-            return;
-        }
-
         if (choice.Kind == ActionKind.AnKan && choice.DiscardTile is { } kanTile)
         {
             DispatchAnkan(snap, choice, kanTile);
@@ -782,17 +772,7 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchAccept(StateSnapshot snap, ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, Tile? riichiProbeTile, string riichiReason)
     {
-        // Tsumo has its own dispatch path (opcode 9); every other accept flows through opcode 11. Speculative Ron-via-opcode-10 corrupted the game into state-29.
-        if (!acceptRiichiPopup && choice.Kind == ActionKind.Tsumo)
-        {
-            var result = plugin.Dispatcher.DispatchTsumo();
-            LastActionDescription = $"auto-tsumo → {result}";
-            plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("tsumo", result, snap: snap);
-            ClearRetryDebounceIfHookFailed(result);
-            return;
-        }
-
+        // Every accept flows through opcode 11 / SelectItem (DispatchCallOption auto-routes by popup shape). The dedicated Tsumo opcode-9 path no-opped at state-6 SelfDeclareList because that popup is a list widget — the corpus capture of opcode 9 was the addon's internal callback fired *after* SelectItem ran, not a click-equivalent payload.
         var loggedKind = acceptRiichiPopup ? ActionKind.Riichi : choice.Kind;
         int acceptIndex = acceptRiichiPopup
             ? ComputeAcceptIndex(ActionKind.Riichi, legal, choice.Call)

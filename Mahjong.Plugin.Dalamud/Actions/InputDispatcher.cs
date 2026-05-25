@@ -391,48 +391,28 @@ public sealed class InputDispatcher
     ///
     /// Discard (15+7) is the two-callback handshake captured 2026-05-23.
     /// CallPrompt (11) handles every popup button: Pon, Chi (multi-variant),
-    /// MinKan, ShouMinKan, AnKan, Ron, Riichi (declaration click), and Pass.
-    /// Tsumo (9) is the only action with a dedicated dispatch — 14 installs,
-    /// 16 records across 2026-05-10..05-18.
+    /// MinKan, ShouMinKan, AnKan, Ron, Riichi (declaration click), Tsumo, and
+    /// Pass.
     ///
-    /// Historical note: opcodes 8 (Riichi), 10 (Ron), and 12 (Kan) were
-    /// shipped as speculative dispatchers in v0.1.0.11..v0.1.1.0. Field bug
-    /// report #39 (2026-05-24) showed the Ron path emitting
-    /// <c>FireCallback(1, [Int=10]) → false (HookFailed)</c>, after which
-    /// the game state corrupted into the DRAW screen (state-29) with no
-    /// legal recovery. The fix routes Ron / AnKan / ShouMinKan / Riichi
-    /// declaration through the call-prompt button-row path (opcode 11)
-    /// which has cross-action test coverage in
-    /// <c>AutoPlayLoopAcceptIndexTests</c> and is verified live for
-    /// Pon/Chi/Pass.
+    /// Historical note: opcodes 8 (Riichi), 9 (Tsumo), 10 (Ron), and 12 (Kan)
+    /// were shipped as speculative dispatchers across v0.1.0.11..v0.1.1.1.
+    /// Field bug #39 (2026-05-24) caught the Ron path corrupting state into
+    /// the DRAW screen; bug #40 (2026-05-25) caught the Tsumo path firing
+    /// <c>FireCallback(1, [Int=9])</c> 50+ times at state-6 SelfDeclareList
+    /// with result=false and zero state movement — same class. The corpus
+    /// records for opcode 9 were the addon's own internal callback fired
+    /// *after* a SelectItem(0) click on the Tsumo list item, not a click-
+    /// equivalent payload our plugin could replay standalone. Ron / AnKan /
+    /// ShouMinKan / Riichi declaration / Tsumo now all flow through the
+    /// corpus-confirmed call-prompt button-row path (opcode 11) — which
+    /// <see cref="DispatchCallOption"/> auto-routes to <c>SelectItem</c> on
+    /// list-widget popups (state-6/28) and to <c>FireCallback([11, opt])</c>
+    /// on classic button-row popups (state-15).
     /// </summary>
     private static class Opcode
     {
         public const int Discard = 7;
         public const int CallPrompt = 11;
-        public const int Tsumo = 9;
-    }
-
-    /// <summary>
-    /// Declare tsumo on the last-drawn tile. Opcode 9 is confirmed via corpus
-    /// (14 installs, 16 records across 2026-05-10..05-18). FireCallback
-    /// returns <c>false</c> for this opcode the same way it does for the
-    /// call-prompt opcode 11 — visibly accepted in-game even when the return
-    /// indicates failure. Always reports <see cref="DispatchResult.Ok"/>; the
-    /// caller is expected to have verified the modal-visibility / legal-action
-    /// gate before dispatching.
-    /// </summary>
-    public unsafe DispatchResult DispatchTsumo()
-    {
-        if (!addon.TryGet(out var unit, out _))
-            return DispatchResult.AddonNotFound;
-        if (!unit->IsVisible)
-            return DispatchResult.AddonNotVisible;
-
-        var values = stackalloc AtkValue[1];
-        values[0].SetInt(Opcode.Tsumo);
-        unit->FireCallback(1, values, true);
-        return DispatchResult.Ok;
     }
 
     /// <summary>
