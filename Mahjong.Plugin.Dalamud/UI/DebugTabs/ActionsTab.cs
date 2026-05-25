@@ -18,7 +18,7 @@ internal sealed class ActionsTab
 
     public void Draw()
     {
-        var snap = ctx.Plugin.AddonReader.TryBuildSnapshot();
+        var snap = ctx.Plugin.Aggregator.Latest;
         bool addonPresent = snap is not null;
         bool ourTurn = addonPresent && snap!.Legal.Can(ActionFlags.Discard);
 

@@ -145,7 +145,7 @@ public sealed class Plugin : IDalamudPlugin
             AddonLifecycle, Log, mahjongAddon, MeldTracker, configDir, layoutsDir, FindingsLog);
         // Accessor closes over AddonReader so state codes and the hand-array offset follow the active variant. Constructed after AddonReader so the closure resolves to the live profile by the time DispatchDiscard runs.
         Dispatcher = new InputDispatcher(mahjongAddon, () => AddonReader.ActiveLayout);
-        Aggregator = new StateAggregator(AddonReader, Framework);
+        Aggregator = new StateAggregator(AddonReader, Framework, Policy);
         EventLogger = new InputEventLogger(
             AddonReader, AddonLifecycle, GameInterop, Log, mahjongAddon, configDir);
         AddonReader.EventLogger = EventLogger;

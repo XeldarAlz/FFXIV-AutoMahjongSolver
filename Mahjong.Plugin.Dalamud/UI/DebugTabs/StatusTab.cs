@@ -5,7 +5,6 @@ using Dalamud.Bindings.ImGui;
 using Mahjong.Engine;
 using Mahjong.Plugin.Dalamud.Actions;
 using Mahjong.Policy.Abstractions;
-using Mahjong.Policy.Efficiency;
 
 namespace Mahjong.Plugin.Dalamud.UI.DebugTabs;
 
@@ -70,7 +69,7 @@ internal sealed class StatusTab
             Theme.SectionHeader("Call-prompt analysis");
             Theme.Subtle("Lights up during a chi/pon/kan offer. opt= is the button index the plugin would click.");
 
-            var snap = ctx.Plugin.AddonReader.TryBuildSnapshot();
+            var snap = ctx.Plugin.Aggregator.Latest;
             if (snap is null)
             {
                 Theme.Subtle("No snapshot.");
@@ -128,16 +127,19 @@ internal sealed class StatusTab
             RowFor(ActionKind.Tsumo, ActionFlags.Tsumo, "Tsumo");
             DevHelpers.KeyValueRow("  Pass", $"opt={AutoPlayLoop.ComputePassIndex(legal)}");
 
-            var choice = ctx.Plugin.Policy.Choose(snap);
-            ImGui.Dummy(new Vector2(0, 4));
-            ImGui.PushStyleColor(ImGuiCol.Text, Theme.Info);
-            ImGui.TextUnformatted($"Policy → {choice.Kind} {(choice.DiscardTile?.ToString() ?? "")}");
-            ImGui.PopStyleColor();
-            if (!string.IsNullOrEmpty(choice.Reasoning))
+            var choice = ctx.Plugin.Aggregator.LastChoice;
+            if (choice is not null)
             {
-                ImGui.PushStyleColor(ImGuiCol.Text, Theme.Faint);
-                ImGui.TextWrapped($"  {choice.Reasoning}");
+                ImGui.Dummy(new Vector2(0, 4));
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.Info);
+                ImGui.TextUnformatted($"Policy → {choice.Kind} {(choice.DiscardTile?.ToString() ?? "")}");
                 ImGui.PopStyleColor();
+                if (!string.IsNullOrEmpty(choice.Reasoning))
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, Theme.Faint);
+                    ImGui.TextWrapped($"  {choice.Reasoning}");
+                    ImGui.PopStyleColor();
+                }
             }
         }
     }
@@ -175,7 +177,7 @@ internal sealed class StatusTab
             Theme.SectionHeader("Suggestions (discard-only)");
             Theme.Subtle("Top 5 discard candidates ranked by shanten / ukeire / dora. Highlighted tile is the policy pick.");
 
-            var snap = ctx.Plugin.AddonReader.TryBuildSnapshot();
+            var snap = ctx.Plugin.Aggregator.Latest;
             if (snap is null)
             {
                 Theme.Subtle("No snapshot — not in a match, or the addon struct is not readable.");
@@ -200,14 +202,16 @@ internal sealed class StatusTab
                 return;
             }
 
-            ScoredDiscard[] scored;
-            try
-            { scored = DiscardScorer.Score(snap); }
-            catch (Exception ex)
+            var scored = ctx.Plugin.Aggregator.LastScored;
+            var scorerError = ctx.Plugin.Aggregator.LastScorerError;
+            if (scored is null)
             {
-                ImGui.PushStyleColor(ImGuiCol.Text, Theme.Danger);
-                ImGui.TextWrapped($"scorer error: {ex.Message}");
-                ImGui.PopStyleColor();
+                if (!string.IsNullOrEmpty(scorerError))
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, Theme.Danger);
+                    ImGui.TextWrapped($"scorer error: {scorerError}");
+                    ImGui.PopStyleColor();
+                }
                 return;
             }
 
@@ -221,16 +225,19 @@ internal sealed class StatusTab
             for (int i = 0; i < show; i++)
                 DrawPickRow(i, scored[i]);
 
-            var choice = ctx.Plugin.Policy.Choose(snap);
-            ImGui.Dummy(new Vector2(0, 6));
-            ImGui.PushStyleColor(ImGuiCol.Text, Theme.Info);
-            ImGui.TextUnformatted($"Policy pick:  {choice.Kind} {(choice.DiscardTile?.ToString() ?? "")}");
-            ImGui.PopStyleColor();
-            if (!string.IsNullOrEmpty(choice.Reasoning))
+            var choice = ctx.Plugin.Aggregator.LastChoice;
+            if (choice is not null)
             {
-                ImGui.PushStyleColor(ImGuiCol.Text, Theme.Faint);
-                ImGui.TextWrapped($"  {choice.Reasoning}");
+                ImGui.Dummy(new Vector2(0, 6));
+                ImGui.PushStyleColor(ImGuiCol.Text, Theme.Info);
+                ImGui.TextUnformatted($"Policy pick:  {choice.Kind} {(choice.DiscardTile?.ToString() ?? "")}");
                 ImGui.PopStyleColor();
+                if (!string.IsNullOrEmpty(choice.Reasoning))
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, Theme.Faint);
+                    ImGui.TextWrapped($"  {choice.Reasoning}");
+                    ImGui.PopStyleColor();
+                }
             }
         }
     }

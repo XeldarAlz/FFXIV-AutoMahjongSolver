@@ -7,7 +7,7 @@ using Dalamud.Interface.Windowing;
 using Mahjong.Engine;
 using Mahjong.Plugin.Dalamud.Actions;
 using Mahjong.Policy;
-using Mahjong.Policy.Efficiency;
+using Mahjong.Policy.Abstractions;
 
 namespace Mahjong.Plugin.Dalamud.UI;
 
@@ -274,29 +274,16 @@ public sealed class MainWindow : Window, IDisposable
         {
             Theme.SectionHeader("Live game");
 
-            var snap = plugin.AddonReader.TryBuildSnapshot();
+            var snap = plugin.Aggregator.Latest;
             if (snap is null)
             {
                 DrawEmptyLive();
                 return;
             }
 
-            // Cache policy + scored discards — hand-row highlight and suggestion panel both need them.
-            ScoredDiscard[]? scored = null;
-            ActionChoice? choice = null;
-            string? scorerError = null;
-            if (snap.Legal.Can(ActionFlags.Discard))
-            {
-                try
-                {
-                    scored = DiscardScorer.Score(snap);
-                    choice = plugin.Policy.Choose(snap);
-                }
-                catch (Exception ex)
-                {
-                    scorerError = ex.Message;
-                }
-            }
+            ScoredDiscard[]? scored = plugin.Aggregator.LastScored;
+            ActionChoice? choice = plugin.Aggregator.LastChoice;
+            string? scorerError = plugin.Aggregator.LastScorerError;
             int highlightSlot = -1;
             if (choice?.DiscardTile is { } t)
                 highlightSlot = InputDispatcher.FindSlotOfTile(t, snap.Hand);

@@ -76,7 +76,7 @@ public sealed class HandOverlay : IDisposable
         if (!prodEnabled)
             return;
 
-        var snap = plugin.AddonReader.TryBuildSnapshot();
+        var snap = plugin.Aggregator.Latest;
         if (snap is null || snap.Hand.Count < 2)
             return;
 
@@ -84,12 +84,8 @@ public sealed class HandOverlay : IDisposable
         if (rects is null)
             return;
 
-        ActionChoice choice;
-        try
-        { choice = plugin.Policy.Choose(snap); }
-        catch { return; }
-
-        if (choice.DiscardTile is null)
+        var choice = plugin.Aggregator.LastChoice;
+        if (choice?.DiscardTile is null)
             return;
         int slot = InputDispatcher.FindSlotOfTile(choice.DiscardTile.Value, snap.Hand);
         if (slot < 0 || slot >= rects.Count)
