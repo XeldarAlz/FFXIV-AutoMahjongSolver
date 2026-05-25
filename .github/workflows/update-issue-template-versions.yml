@@ -1,6 +1,6 @@
 # When a release is published, refresh the "Plugin version" dropdown options in
 # every .github/ISSUE_TEMPLATE/*.yml: prepend the new version (with the leading
-# `v` stripped), dedupe, keep the most recent 5 versions, and preserve the
+# `v` stripped), dedupe, keep the most recent 3 versions, and preserve the
 # "Older / not sure" sentinel at the bottom. Can also be dispatched manually
 # (defaults to the latest GitHub release tag) to backfill or recover.
 
@@ -55,7 +55,7 @@ jobs:
           import os, re
           from pathlib import Path
 
-          MAX_VERSIONS = 5
+          MAX_VERSIONS = 3
           SENTINEL = "Older / not sure"
 
           version = re.sub(r"^v", "", os.environ["VERSION"].strip())
