@@ -401,60 +401,31 @@ public sealed class InputDispatcher
     }
 
     /// <summary>
-    /// Opcode constants for FireCallback's first AtkValue. Discard = 7,
-    /// CallPrompt = 11, and Tsumo = 9 are confirmed from corpus analysis:
-    /// the inputs telemetry shows 16 <c>[9]</c> records across 14 distinct
-    /// installs over 2026-05-10..05-18, all with count=1 matching this
-    /// dispatcher's signature. Riichi / Ron / Kan are still speculative —
-    /// the corpus has zero observations of opcodes 8 / 10 / 12.
+    /// Opcode constants for FireCallback's first AtkValue. All values here
+    /// are corpus-confirmed from the inputs telemetry stream.
+    ///
+    /// Discard (15+7) is the two-callback handshake captured 2026-05-23.
+    /// CallPrompt (11) handles every popup button: Pon, Chi (multi-variant),
+    /// MinKan, ShouMinKan, AnKan, Ron, Riichi (declaration click), and Pass.
+    /// Tsumo (9) is the only action with a dedicated dispatch — 14 installs,
+    /// 16 records across 2026-05-10..05-18.
+    ///
+    /// Historical note: opcodes 8 (Riichi), 10 (Ron), and 12 (Kan) were
+    /// shipped as speculative dispatchers in v0.1.0.11..v0.1.1.0. Field bug
+    /// report #39 (2026-05-24) showed the Ron path emitting
+    /// <c>FireCallback(1, [Int=10]) → false (HookFailed)</c>, after which
+    /// the game state corrupted into the DRAW screen (state-29) with no
+    /// legal recovery. The fix routes Ron / AnKan / ShouMinKan / Riichi
+    /// declaration through the call-prompt button-row path (opcode 11)
+    /// which has cross-action test coverage in
+    /// <c>AutoPlayLoopAcceptIndexTests</c> and is verified live for
+    /// Pon/Chi/Pass.
     /// </summary>
     private static class Opcode
     {
         public const int Discard = 7;
         public const int CallPrompt = 11;
-        public const int Tsumo = 9;     // confirmed: 14 installs, 16 corpus records
-
-        // Speculative — to be confirmed by in-game FireCallback capture:
-        public const int Riichi = 8;    // unconfirmed
-        public const int Ron = 10;      // unconfirmed
-        public const int Kan = 12;      // unconfirmed (shouminkan + ankan from our turn)
-    }
-
-    /// <summary>
-    /// Declare riichi while also discarding the tile at <paramref name="slotIndex"/>.
-    ///
-    /// <para><b>WARNING:</b> opcode 8 is speculative AND unused in the live flow.
-    /// Corpus cross-reference (tools/cross-ref-action-opcodes.mjs) of 8
-    /// action=riichi events against the inputs stream finds zero opcode-8
-    /// FireCallbacks; instead 4 of 8 riichi events pair with opcode 11
-    /// (CallPrompt) within ±2 s. The production sequence is:</para>
-    /// <list type="number">
-    ///   <item>State-6 hand=14 popup: <see cref="DispatchCallOption"/> with the
-    ///         Riichi button index (opcode 11).</item>
-    ///   <item><see cref="ActionStateMachine.LatchRiichiConfirm"/> latches
-    ///         post-click.</item>
-    ///   <item>Next tick: <see cref="AutoPlayLoop.ScheduleRiichiTsumogiri"/>
-    ///         calls <see cref="DispatchDiscard"/> (opcode 7) on the drawn tile.</item>
-    /// </list>
-    /// <para>This combined Riichi+discard dispatch is therefore dead code on the
-    /// shipping Doman addon. Retained as forward-compat scaffolding in case a
-    /// future variant exposes a true single-callback opcode.</para>
-    /// </summary>
-    public unsafe DispatchResult DispatchRiichi(int slotIndex)
-    {
-        if (slotIndex is < 0 or > 13)
-            return DispatchResult.InvalidSlot;
-
-        if (!addon.TryGet(out var unit, out _))
-            return DispatchResult.AddonNotFound;
-        if (!unit->IsVisible)
-            return DispatchResult.AddonNotVisible;
-
-        var values = stackalloc AtkValue[2];
-        values[0].SetInt(Opcode.Riichi);
-        values[1].SetInt(slotIndex);
-        bool ok = unit->FireCallback(2, values, true);
-        return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
+        public const int Tsumo = 9;
     }
 
     /// <summary>
@@ -477,44 +448,5 @@ public sealed class InputDispatcher
         values[0].SetInt(Opcode.Tsumo);
         unit->FireCallback(1, values, true);
         return DispatchResult.Ok;
-    }
-
-    /// <summary>
-    /// Declare ron on the last opponent discard. WARNING: opcode unconfirmed. Ron may
-    /// actually be offered as a call prompt (opcode 11) with a distinct option index;
-    /// if so, <see cref="DispatchCallOption"/> already handles it and this stub
-    /// is not needed.
-    /// </summary>
-    public unsafe DispatchResult DispatchRon()
-    {
-        if (!addon.TryGet(out var unit, out _))
-            return DispatchResult.AddonNotFound;
-        if (!unit->IsVisible)
-            return DispatchResult.AddonNotVisible;
-
-        var values = stackalloc AtkValue[1];
-        values[0].SetInt(Opcode.Ron);
-        bool ok = unit->FireCallback(1, values, true);
-        return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
-    }
-
-    /// <summary>
-    /// Declare kan from our own turn (ankan or shouminkan). WARNING: opcode unconfirmed.
-    /// </summary>
-    public unsafe DispatchResult DispatchKan(int slotIndex)
-    {
-        if (slotIndex is < 0 or > 13)
-            return DispatchResult.InvalidSlot;
-
-        if (!addon.TryGet(out var unit, out _))
-            return DispatchResult.AddonNotFound;
-        if (!unit->IsVisible)
-            return DispatchResult.AddonNotVisible;
-
-        var values = stackalloc AtkValue[2];
-        values[0].SetInt(Opcode.Kan);
-        values[1].SetInt(slotIndex);
-        bool ok = unit->FireCallback(2, values, true);
-        return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
     }
 }

@@ -1,3 +1,5 @@
+using Mahjong.Core;
+
 namespace Mahjong.Plugin.Game;
 
 /// <summary>
@@ -30,6 +32,7 @@ public sealed class ActionStateMachine
     private DateTime lastActionAt;
     private DispatchContext? lastContext;
     private bool riichiConfirmLatched;
+    private Tile? riichiConfirmTile;
     private int lastObservedWall = -1;
 
     /// <summary>
@@ -54,6 +57,14 @@ public sealed class ActionStateMachine
     /// tsumogiri instead of re-clicking the list.
     /// </summary>
     public bool IsRiichiConfirmPending => riichiConfirmLatched;
+
+    /// <summary>
+    /// The discard tile the policy picked when it chose Riichi. Used by the
+    /// next-tick tsumogiri to commit the correct tile rather than the
+    /// hardcoded slot 13 (last drawn). Null when the latch was set via a
+    /// probe-accept path that didn't carry an explicit tile decision.
+    /// </summary>
+    public Tile? RiichiConfirmTile => riichiConfirmTile;
 
     /// <summary>
     /// If the in-flight flag has been set longer than <see cref="dispatchTimeout"/>,
@@ -100,15 +111,30 @@ public sealed class ActionStateMachine
     /// <summary>Forget the most recent context — caller switched to a different mode (idle, no addon).</summary>
     public void ClearContext() => lastContext = null;
 
-    /// <summary>Latch the riichi-confirm flag. Set after a successful auto-riichi-accept dispatch.</summary>
-    public void LatchRiichiConfirm() => riichiConfirmLatched = true;
+    /// <summary>
+    /// Latch the riichi-confirm flag. Set after a successful auto-riichi-accept
+    /// dispatch. Carries the policy-chosen discard tile so the next-tick
+    /// tsumogiri commits the right slot. A null tile preserves whatever tile
+    /// was already latched (e.g. the post-confirm popup re-fires the latch
+    /// without a fresh policy decision — we keep the original choice).
+    /// </summary>
+    public void LatchRiichiConfirm(Tile? target = null)
+    {
+        riichiConfirmLatched = true;
+        if (target is not null)
+            riichiConfirmTile = target;
+    }
 
     /// <summary>
     /// Manually clear the latch. Should rarely be needed — <see cref="ObserveWall"/>
     /// clears it on hand transitions automatically. Useful for tests or for an
     /// explicit "we're starting fresh" signal.
     /// </summary>
-    public void ClearRiichiConfirm() => riichiConfirmLatched = false;
+    public void ClearRiichiConfirm()
+    {
+        riichiConfirmLatched = false;
+        riichiConfirmTile = null;
+    }
 
     /// <summary>
     /// Track the wall count tick by tick so we can detect a hand transition.
@@ -127,6 +153,7 @@ public sealed class ActionStateMachine
         if (lastObservedWall >= 0 && wall > lastObservedWall + 5)
         {
             riichiConfirmLatched = false;
+            riichiConfirmTile = null;
             lastContext = null;
         }
         lastObservedWall = wall;

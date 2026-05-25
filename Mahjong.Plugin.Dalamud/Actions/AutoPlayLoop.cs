@@ -645,12 +645,37 @@ public sealed class AutoPlayLoop : IDisposable
                 LastActionDescription = $"riichi-tsumogiri aborted: hand={snap?.Hand.Count ?? -1}";
                 return;
             }
-            var tile = snap.Hand[13];
-            var result = plugin.Dispatcher.DispatchDiscard(13);
-            LastActionDescription = $"auto-riichi-tsumogiri {tile} slot=13 → {result}";
+
+            // Honor the policy's chosen discard. The latch carries the tile
+            // (e.g. 5p when the policy picked Riichi on 5p) so the slot is
+            // resolved against the live hand. Falls back to slot 13 (last
+            // drawn) only when no tile was latched — that path covers the
+            // post-confirm yaku-preview popup where there's no fresh policy
+            // verdict to consult.
+            int slot;
+            Tile tile;
+            if (fsm.RiichiConfirmTile is { } target)
+            {
+                slot = InputDispatcher.FindSlotOfTile(target, snap.Hand);
+                if (slot < 0)
+                {
+                    LastActionDescription = $"riichi-tsumogiri aborted: latched tile {target} not in hand";
+                    log.Info($"[AutoPlayLoop] {LastActionDescription}");
+                    return;
+                }
+                tile = target;
+            }
+            else
+            {
+                slot = 13;
+                tile = snap.Hand[13];
+            }
+
+            var result = plugin.Dispatcher.DispatchDiscard(slot);
+            LastActionDescription = $"auto-riichi-tsumogiri {tile} slot={slot} → {result}";
             log.Info($"[AutoPlayLoop] riichi-tsumogiri dispatch: {LastActionDescription}");
-            plugin.GameLogger.RecordAction(ActionKind.Discard, tile, 13, result.ToString(), "riichi-tsumogiri");
-            EmitDispatchFinding("riichi-tsumogiri", result, tile: tile, slot: 13, snap: snap);
+            plugin.GameLogger.RecordAction(ActionKind.Discard, tile, slot, result.ToString(), "riichi-tsumogiri");
+            EmitDispatchFinding("riichi-tsumogiri", result, tile: tile, slot: slot, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             // Don't clear the latch here — once we've declared riichi we
             // must NOT let policy.Choose re-evaluate it later in the same
@@ -699,16 +724,18 @@ public sealed class AutoPlayLoop : IDisposable
 
     private void DispatchAnkan(StateSnapshot snap, ActionChoice choice, Tile kanTile)
     {
-        int slot = InputDispatcher.FindSlotOfTile(kanTile, snap.Hand);
-        if (slot < 0)
-        {
-            LastActionDescription = $"kan tile {kanTile} not in hand";
-            return;
-        }
-        var result = plugin.Dispatcher.DispatchKan(slot);
-        LastActionDescription = $"auto-ankan {kanTile} slot={slot} → {result}";
-        plugin.GameLogger.RecordAction(ActionKind.AnKan, kanTile, slot, result.ToString(), choice.Reasoning);
-        EmitDispatchFinding("ankan", result, tile: kanTile, slot: slot, snap: snap);
+        // AnKan is offered as a button label on the state-6 self-declare
+        // popup alongside Riichi/Tsumo. The pre-fix dispatcher fired
+        // `[12, slot]` (opcode 12, speculative — zero corpus records) which
+        // is the same bug class that broke Ron in issue #39: an unconfirmed
+        // dispatch shape the addon may reject outright. Routing through the
+        // call-prompt button-row path (opcode 11) uses the corpus-confirmed
+        // mechanism that already handles Pon/Chi/Pass.
+        int acceptIndex = ComputeAcceptIndex(ActionKind.AnKan, snap.Legal, null);
+        var result = plugin.Dispatcher.DispatchCallOption(acceptIndex);
+        LastActionDescription = $"auto-ankan {kanTile} opt={acceptIndex} → {result}";
+        plugin.GameLogger.RecordAction(ActionKind.AnKan, kanTile, acceptIndex, result.ToString(), choice.Reasoning);
+        EmitDispatchFinding("ankan", result, option: acceptIndex, tile: kanTile, snap: snap);
         ClearRetryDebounceIfHookFailed(result);
 
         // Self-declared kans never produce an opp-discard signal, so the
@@ -732,26 +759,26 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
-        // Riichi declaration at state-6 self-declare popup: accept via the
-        // call-prompt opcode-11 path (riichi as a popup button), latch the
-        // FSM, and let the next-tick ScheduleRiichiTsumogiri commit the
-        // tile. The `DispatchRiichi` opcode-8 path it used to take is dead
-        // code on the shipping addon — confirmed by zero corpus records
-        // of opcode-8 FireCallbacks across all installs through 2026-05-21.
-        // Note: this path tsumogiris the LAST-DRAWN tile (slot 13) rather
-        // than the policy's chosen tile. In practice these are usually the
-        // same — the policy chooses to riichi precisely because the just-
-        // drawn tile put the hand into tenpai. If a future RE of the
-        // game-side click handler reveals a path that honors the specific
-        // tile, swap this branch back out.
+        // Riichi declaration at state-6 self-declare popup: click the Riichi
+        // button via the call-prompt opcode-11 path, latch the FSM with the
+        // policy's chosen discard tile, and let the next-tick
+        // ScheduleRiichiTsumogiri commit that specific tile.
+        //
+        // History: pre-fix this always tsumogiri'd slot 13 (last drawn) on
+        // the assumption that "the policy chose Riichi because the drawn
+        // tile completed tenpai." That holds for the common case but not
+        // when the wait IS the drawn tile and a different held tile must
+        // be discarded to declare. EfficiencyPolicy returns the ukeire-
+        // maximizing discard via best.Discard, so the latch carries the
+        // tile and the next tick looks up the actual slot.
         if (choice.Kind == ActionKind.Riichi && snap.Legal.Can(ActionFlags.Riichi))
         {
             int riichiIdx = ComputeAcceptIndex(ActionKind.Riichi, snap.Legal, null);
             var rResult = plugin.Dispatcher.DispatchCallOption(riichiIdx);
-            LastActionDescription = $"auto-riichi[opt={riichiIdx}] (tile preview={tile}) → {rResult}";
+            LastActionDescription = $"auto-riichi[opt={riichiIdx}] (tile={tile}) → {rResult}";
             plugin.GameLogger.RecordAction(ActionKind.Riichi, tile, riichiIdx, rResult.ToString(), choice.Reasoning);
             EmitDispatchFinding("riichi", rResult, option: riichiIdx, tile: tile, snap: snap);
-            fsm.LatchRiichiConfirm();
+            fsm.LatchRiichiConfirm(tile);
             ClearRetryDebounceIfHookFailed(rResult);
             return;
         }
@@ -789,15 +816,15 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
-        bool acceptRiichiPopup = ResolveRiichiPopupAcceptance(snap, choice, out var riichiReason);
+        bool acceptRiichiPopup = ResolveRiichiPopupAcceptance(snap, choice, out var riichiProbeTile, out var riichiReason);
 
         bool shouldAccept = acceptRiichiPopup || choice.Kind is
             ActionKind.Ron or ActionKind.Tsumo or
             ActionKind.Pon or ActionKind.Chi or
-            ActionKind.MinKan or ActionKind.ShouMinKan;
+            ActionKind.AnKan or ActionKind.MinKan or ActionKind.ShouMinKan;
 
         if (shouldAccept)
-            DispatchAccept(snap, choice, legal, acceptRiichiPopup, riichiReason!);
+            DispatchAccept(snap, choice, legal, acceptRiichiPopup, riichiProbeTile, riichiReason!);
         else
             DispatchPass(snap, choice, legal, riichiReason);
 
@@ -821,9 +848,10 @@ public sealed class AutoPlayLoop : IDisposable
     ///         2026-05-09.</item>
     /// </list>
     /// </summary>
-    private bool ResolveRiichiPopupAcceptance(StateSnapshot snap, ActionChoice choice, out string? probeReason)
+    private bool ResolveRiichiPopupAcceptance(StateSnapshot snap, ActionChoice choice, out Tile? probeTile, out string? probeReason)
     {
         probeReason = null;
+        probeTile = null;
         if (choice.Kind != ActionKind.Pass || !snap.Legal.Can(ActionFlags.Riichi))
             return false;
 
@@ -849,36 +877,31 @@ public sealed class AutoPlayLoop : IDisposable
             return false;
         }
 
+        probeTile = verdict.DiscardTile;
         probeReason = string.IsNullOrEmpty(verdict.Reasoning) ? "riichi-accept" : verdict.Reasoning;
         return true;
     }
 
-    private void DispatchAccept(StateSnapshot snap, ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, string riichiReason)
+    private void DispatchAccept(StateSnapshot snap, ActionChoice choice, LegalActions legal, bool acceptRiichiPopup, Tile? riichiProbeTile, string riichiReason)
     {
-        // Tsumo and Ron have dedicated opcodes (9 and 10) — NOT the call-prompt
-        // opcode-11 button index. Tsumo opcode-9 is corpus-confirmed (14 installs,
-        // 16 records over 2026-05-10..05-18); Ron opcode-10 is still speculative
-        // but the right shape is a standalone callback, not a button-row click.
-        // Live freeze 2026-05-23T15:37: bot detected Tsumo, fired
-        // `auto-tsumo[opt=0]` via DispatchCallOption (opcode-11, opt=0), returned
-        // Ok, popup never closed, winning hand never committed. The pre-fix path
-        // tried to map Tsumo through the button-row dispatcher even though the
-        // addon expects its dedicated agari callback.
+        // Tsumo is the only action with a dedicated dispatch path — opcode 9
+        // is corpus-confirmed (14 installs, 16 records over 2026-05-10..05-18).
+        // Every other accept (Pon, Chi, MinKan, ShouMinKan, AnKan, Ron, Riichi
+        // declaration) flows through the call-prompt button-row path
+        // (opcode 11) which has cross-action test coverage and is verified
+        // live for Pon/Chi/Pass.
+        //
+        // History: v0.1.0.11 also routed Ron through a dedicated opcode (10),
+        // by analogy to the Tsumo fix but without corpus evidence. Field bug
+        // report #39 (2026-05-24) showed `FireCallback(1, [Int=10]) → false`
+        // followed by the game corrupting into state-29 (DRAW screen) with no
+        // legal recovery. Reverted to the button-row path here.
         if (!acceptRiichiPopup && choice.Kind == ActionKind.Tsumo)
         {
             var result = plugin.Dispatcher.DispatchTsumo();
             LastActionDescription = $"auto-tsumo → {result}";
             plugin.GameLogger.RecordAction(ActionKind.Tsumo, null, null, result.ToString(), choice.Reasoning);
             EmitDispatchFinding("tsumo", result, snap: snap);
-            ClearRetryDebounceIfHookFailed(result);
-            return;
-        }
-        if (!acceptRiichiPopup && choice.Kind == ActionKind.Ron)
-        {
-            var result = plugin.Dispatcher.DispatchRon();
-            LastActionDescription = $"auto-ron → {result}";
-            plugin.GameLogger.RecordAction(ActionKind.Ron, null, null, result.ToString(), choice.Reasoning);
-            EmitDispatchFinding("ron", result, snap: snap);
             ClearRetryDebounceIfHookFailed(result);
             return;
         }
@@ -902,12 +925,15 @@ public sealed class AutoPlayLoop : IDisposable
             loggedKind, null, acceptIndex, result2.ToString(),
             acceptRiichiPopup ? riichiReason : choice.Reasoning);
         EmitDispatchFinding(label, result2, option: acceptIndex, snap: snap);
+        ClearRetryDebounceIfHookFailed(result2);
 
         // Latch on for the post-riichi-confirm popup: the yaku-preview confirm
         // popup shares the Riichi-flag signature of the initial popup, so
-        // without this flag the loop would retry-dispatch forever.
+        // without this flag the loop would retry-dispatch forever. Capture
+        // the probe's chosen discard so the next-tick tsumogiri commits the
+        // policy-picked tile, not the last-drawn one.
         if (acceptRiichiPopup)
-            fsm.LatchRiichiConfirm();
+            fsm.LatchRiichiConfirm(riichiProbeTile);
     }
 
     private void DispatchPass(StateSnapshot snap, ActionChoice choice, LegalActions legal, string? reasonOverride = null)
@@ -926,7 +952,9 @@ public sealed class AutoPlayLoop : IDisposable
     /// <summary>
     /// Compute the button index for an accept-side action on a call-prompt popup.
     /// The button order is fixed by the addon: Pon, then one slot per Chi variant,
-    /// then MinKan, ShouMinKan, Ron, Riichi, Tsumo, and finally Pass.
+    /// then AnKan, MinKan, ShouMinKan, Ron, Riichi, Tsumo, and finally Pass.
+    /// AnKan/MinKan/ShouMinKan are kept adjacent because all three are kan
+    /// variants and the addon button row groups them.
     /// </summary>
     /// <param name="kind">The action the policy decided to take.</param>
     /// <param name="legal">The legal-action context (flag set + candidate lists).</param>
@@ -950,6 +978,11 @@ public sealed class AutoPlayLoop : IDisposable
         }
         if (legal.Can(ActionFlags.Chi))
             idx += Math.Max(1, legal.ChiCandidates.Count);
+
+        if (kind == ActionKind.AnKan)
+            return idx;
+        if (legal.Can(ActionFlags.AnKan))
+            idx++;
 
         if (kind == ActionKind.MinKan)
             return idx;
@@ -1017,6 +1050,8 @@ public sealed class AutoPlayLoop : IDisposable
             idx++;
         if (legal.Can(ActionFlags.Chi))
             idx += Math.Max(1, legal.ChiCandidates.Count);
+        if (legal.Can(ActionFlags.AnKan))
+            idx++;
         if (legal.Can(ActionFlags.MinKan))
             idx++;
         if (legal.Can(ActionFlags.ShouMinKan))

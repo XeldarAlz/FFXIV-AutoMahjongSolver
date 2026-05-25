@@ -170,6 +170,52 @@ public class ActionStateMachineTests
     }
 
     [Fact]
+    public void RiichiConfirm_stores_the_policy_chosen_tile()
+    {
+        var fsm = NewFsm();
+        var tile = Tile.FromId(5);
+        fsm.LatchRiichiConfirm(tile);
+
+        Assert.True(fsm.IsRiichiConfirmPending);
+        Assert.Equal(tile, fsm.RiichiConfirmTile);
+    }
+
+    [Fact]
+    public void RiichiConfirm_subsequent_null_latch_keeps_original_tile()
+    {
+        // The post-riichi yaku-preview popup re-fires the latch without a
+        // fresh policy decision (no probe verdict, just a confirm click).
+        // The originally-chosen tile must survive that re-latch.
+        var fsm = NewFsm();
+        var tile = Tile.FromId(11);
+        fsm.LatchRiichiConfirm(tile);
+        fsm.LatchRiichiConfirm(null);
+
+        Assert.Equal(tile, fsm.RiichiConfirmTile);
+    }
+
+    [Fact]
+    public void ClearRiichiConfirm_drops_the_tile()
+    {
+        var fsm = NewFsm();
+        fsm.LatchRiichiConfirm(Tile.FromId(20));
+        fsm.ClearRiichiConfirm();
+
+        Assert.Null(fsm.RiichiConfirmTile);
+    }
+
+    [Fact]
+    public void ObserveWall_hand_transition_clears_the_tile()
+    {
+        var fsm = NewFsm();
+        fsm.LatchRiichiConfirm(Tile.FromId(7));
+        fsm.ObserveWall(20);
+        fsm.ObserveWall(70); // new hand
+
+        Assert.Null(fsm.RiichiConfirmTile);
+    }
+
+    [Fact]
     public void Cooldown_resets_when_a_new_dispatch_for_same_context_completes()
     {
         var fsm = NewFsm();

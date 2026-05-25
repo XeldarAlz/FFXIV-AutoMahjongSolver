@@ -161,8 +161,8 @@ The end goal is full intelligent automation across **all clients** (EU, NA, JP, 
 - Auto-discard via the two-callback handshake `[15, textureId]` + `[7, slotIndex]` (corpus-verified 2026-05-23, the cause of the prior 0 % hand-end rate)
 - Call-prompt acceptance via `FireCallback` opcode 11 with per-action accept-button index computation
 - Tsumo via the dedicated agari opcode 9 (corpus-confirmed, 14 installs)
-- Ron via the dedicated agari opcode 10 (routed but unverified in live play)
-- Riichi declaration: opcode-11 popup accept + FSM riichi-confirm latch + tsumogiri (replaces the dead opcode-8 path)
+- Ron / AnKan / ShouMinKan / Riichi declaration all routed through the call-prompt button-row path (opcode 11) — uniform with Pon/Chi, eliminates the speculative-opcode failure mode that bricked the game into the DRAW screen (issue #39)
+- Riichi tsumogiri honors the policy's chosen discard (latched alongside the riichi-confirm flag) rather than the last-drawn tile
 - Akadora-aware scoring: red 5s in closed hand and open melds contribute to dora count
 - MeldTracker chi/pon/minkan inference from closed-hand deltas + opp-discard increments, with a 30-tick deferred-baseline retry to ride out memory-write races
 - Kan-aware TsumogiriFallback (each meld contributes its actual `TileCount`)

@@ -184,4 +184,71 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Chi, legal, ghostChi);
         Assert.Equal(1, idx); // pon=0 → first chi=1
     }
+
+    // ----- Regression: issue #39 — Ron must go through opcode-11 button-row,
+    // not the speculative dedicated opcode-10 that triggered the addon's
+    // HookFailed → DRAW-screen lockup. The exact log-captured shape was a
+    // Ron|Pass prompt at state-15; the loop sent opcode-10 and the game
+    // bricked. Verifying the button-row index here pins the new path.
+
+    [Fact]
+    public void Ron_with_pon_offered_picks_index_after_pon()
+    {
+        var legal = new LegalActions(
+            ActionFlags.Pon | ActionFlags.Ron | ActionFlags.Pass,
+            [], [MakePon(5)], [], []);
+
+        int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Ron, legal, null);
+        Assert.Equal(1, idx);
+    }
+
+    // ----- AnKan: button row at the state-6 self-declare popup. Group with
+    // MinKan / ShouMinKan since all three are kan variants. AnKan only ever
+    // appears alongside Riichi/Tsumo/Discard at state-6 — never at state-15.
+
+    [Fact]
+    public void AnKan_alone_picks_index_0()
+    {
+        var legal = new LegalActions(
+            ActionFlags.AnKan | ActionFlags.Discard,
+            [], [], [], [MakeKan(5)]);
+
+        int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.AnKan, legal, null);
+        Assert.Equal(0, idx);
+    }
+
+    [Fact]
+    public void AnKan_with_riichi_and_tsumo_picks_first_kan_slot()
+    {
+        // Self-declare popup typical shape: [AnKan][Riichi][Tsumo][Pass] +
+        // tile list. AnKan is the leftmost agari-side button.
+        var legal = new LegalActions(
+            ActionFlags.AnKan | ActionFlags.Riichi | ActionFlags.Tsumo | ActionFlags.Discard,
+            [], [], [], [MakeKan(5)]);
+
+        int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.AnKan, legal, null);
+        Assert.Equal(0, idx);
+    }
+
+    [Fact]
+    public void Riichi_at_self_declare_with_ankan_picks_index_after_ankan()
+    {
+        var legal = new LegalActions(
+            ActionFlags.AnKan | ActionFlags.Riichi | ActionFlags.Tsumo | ActionFlags.Discard,
+            [], [], [], [MakeKan(5)]);
+
+        int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Riichi, legal, null);
+        Assert.Equal(1, idx);
+    }
+
+    [Fact]
+    public void ShouMinKan_with_ankan_offered_picks_index_after_ankan()
+    {
+        var legal = new LegalActions(
+            ActionFlags.AnKan | ActionFlags.ShouMinKan | ActionFlags.Discard,
+            [], [], [], [MakeKan(5)]);
+
+        int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.ShouMinKan, legal, null);
+        Assert.Equal(1, idx);
+    }
 }
