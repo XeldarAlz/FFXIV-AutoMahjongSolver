@@ -25,7 +25,7 @@
     "Punchline": "Doman Mahjong helper — hints or auto-play.",
     "Description": "A helper for Doman Mahjong. Shows you hints or plays it for you.",
     "Changelog": "v0.1.1.0 — Drop the experimental ISMCTS policy tier; the heuristic policy is now the only one shipped. No effect for anyone running the default Standard strength — that was already the heuristic. The Stronger (slower to think) option in the plugin settings is gone, along with the matching `/mjauto policy` chat command. Old configs that still carry `PolicyTier=mcts` are silently dropped on load. Under the hood: removed the entire Mahjong.Policy/Mcts/ tree (Determinizer / IsmctsPolicy / MctsNode / MctsNodePool / MctsSearch / MonteCarloEvaluator / Rollout) and the matching IRolloutPolicy / INodePool / RolloutWeights abstractions, ~1.3k LOC plus four test files. WeightBundle schema bumped 1 → 2 to drop the Rollout sub-bundle. Cleaner DI graph, ~25% smaller policy assembly, no behavioral change for live play.",
-    "DownloadCount": 827,
+    "DownloadCount": 854,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
