@@ -1,0 +1,90 @@
+title: "[Help] "
+labels: ["help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For "is this normal?" / "am I doing this right?" / "the bot did something weird, is it a bug?" questions.
+
+        If you're confident it's a bug (crash, freeze, reproducible misclick), use [Issues](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new/choose) instead — the bug template captures the same info with clearer triage.
+
+        If it's a security issue, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/security/advisories/new) — not a public post.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What's happening?
+      description: One or two sentences. What did the plugin do, what did you expect?
+      placeholder: "The plugin paused on a Pon prompt and never clicked Pass — I had to click manually to keep playing."
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
+      placeholder: "v0.1.0.11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: region
+    attributes:
+      label: Region / client
+      description: Which client are you on?
+      options:
+        - EU
+        - NA
+        - JP
+        - OC
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode at the time
+      options:
+        - Hints
+        - Auto-play
+        - Off
+        - Switching modes when it happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Can you reproduce it?
+      description: If yes, what triggers it? If no, when did it first show up? "Happened once" is fine to answer with.
+      placeholder: |
+        Reproduces every time I get a Pon offer within ~1s of a previous Pon.
+        OR
+        Saw it once on 2026-05-24 around 22:00 EU, no idea what triggered it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Chat-log tail
+      description: |
+        The last ~30 lines of chat log around the issue. Each dispatch is annotated with `schedState` / `curState` / `path` — those three fields pin most regressions on their own.
+      render: text
+
+  - type: textarea
+    id: capture
+    attributes:
+      label: Capture file (for stuck states)
+      description: |
+        If the bot froze with a popup open: switch to Off, run `/mjauto capture <some-label>`, click the right option manually, then attach the resulting `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` (or `emjl-captures.log` on NA).
+
+        See the [Reporting bugs discussion](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/41) for the full flow.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, other Dalamud plugins loaded, anything that might be relevant.

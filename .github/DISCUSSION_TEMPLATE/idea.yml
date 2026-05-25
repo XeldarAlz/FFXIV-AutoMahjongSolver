@@ -1,0 +1,51 @@
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new features, behavior changes, or UX improvements you'd like to see.
+
+        For things that are *broken*, use [Issues](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new/choose) instead.
+
+        Before posting, please skim the [Feature request guidelines](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/45) — they cover what's likely to ship and what's out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The situation or friction that made you want this. Skip the solution — just the problem.
+      placeholder: "When I'm in Hints mode I can't tell at a glance whether I'm in tenpai or 1-shanten away — I have to read the reason text every time."
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
+      description: Rough sketch is fine. Bullet points, mockups, "I wish it would X" — all good. Doesn't have to be implementable.
+      placeholder: |
+        Show a small shanten count next to the top discard candidate, e.g. "tenpai" or "1-shanten".
+    validations:
+      required: true
+
+  - type: textarea
+    id: tradeoff
+    attributes:
+      label: Trade-off
+      description: |
+        Every feature costs something — config surface, screen real estate, code complexity, ToS exposure, weight-tuning time. Even acknowledging "this might be niche" is useful.
+      placeholder: |
+        Slightly more visual noise in the main window. Might not matter to people who play with the window closed.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered (optional)
+      description: Other ways to solve the same problem, and why they're worse.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Related features in other mahjong tools, screenshots of similar UI, links — anything that helps the idea land.

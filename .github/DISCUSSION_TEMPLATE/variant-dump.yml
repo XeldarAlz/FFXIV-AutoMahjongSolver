@@ -1,0 +1,101 @@
+title: "[Variant dump] "
+labels: ["variant-verification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping verify a client variant. This is the single biggest unblocker for cross-region parity.
+
+        Context: see the [Client variants help wanted](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/42) discussion.
+
+        TL;DR of what to do before submitting:
+        1. Seat at a Doman Mahjong table (lobby is fine — you don't need to be mid-hand).
+        2. Run `/mjauto variant dump`.
+        3. Note where the file lands — under `pluginConfigs/Mahjong.Plugin.Dalamud/`.
+        4. Fill out the fields below and attach the dump file.
+
+        The dump contains addon memory offsets and visible game state. No personal data.
+
+  - type: dropdown
+    id: region
+    attributes:
+      label: Region
+      options:
+        - JP
+        - OC
+        - NA
+        - EU (re-verification)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: dc-and-server
+    attributes:
+      label: DC and server (optional)
+      description: Helpful for triangulating which client build you're on.
+      placeholder: "Mana / Anima"
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in /xlplugins, and at the bottom of /mjauto.
+      placeholder: "v0.1.0.11"
+    validations:
+      required: true
+
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version (optional)
+      description: Patch number if you know it (e.g. 7.21). Helps me match the dump to the binary.
+
+  - type: checkboxes
+    id: working
+    attributes:
+      label: What works on your client?
+      description: Check anything you've actually observed. "Untested" = leave unchecked.
+      options:
+        - label: "/mjauto opens and finds the mahjong window when I sit at a table"
+        - label: "The main window populates with scores for all four seats"
+        - label: "The main window populates with my hand and top-3 discards"
+        - label: "Hints mode shows reasoning that matches what I'd expect"
+        - label: "Auto-play correctly discards from my own turn (state 30)"
+        - label: "Auto-play correctly discards from the self-declare popup (after a Tsumo decline)"
+        - label: "Auto-play correctly accepts a Pon"
+        - label: "Auto-play correctly accepts a Chi"
+        - label: "Auto-play correctly passes on a call prompt"
+        - label: "Auto-play declares Riichi / Tsumo / Ron correctly when offered"
+
+  - type: textarea
+    id: what-breaks
+    attributes:
+      label: What's broken, missing, or weird?
+      description: |
+        Empty boxes above are useful but vague. If something is *visibly wrong* (wrong scores, wrong tile in main-window hand, bot clicks the wrong thing), describe what you see.
+      placeholder: |
+        - Main window shows my hand but the scores for the other 3 seats are all 0
+        - When I try to Pon, the bot clicks Pass instead
+
+  - type: textarea
+    id: dump
+    attributes:
+      label: Variant dump file
+      description: |
+        Drag and drop the file into this textarea — GitHub will attach it and replace the drop with a link.
+        File path: `pluginConfigs/Mahjong.Plugin.Dalamud/variant-dump-<timestamp>.json` (or similar).
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Main window screenshot (optional)
+      description: A screenshot of /mjauto open at a Doman table is sometimes faster than describing what populates and what doesn't.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Other Dalamud plugins loaded, custom UI scale, anything you think might matter.
