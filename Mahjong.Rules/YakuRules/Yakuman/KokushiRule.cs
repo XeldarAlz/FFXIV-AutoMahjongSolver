@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Kokushi Musou (yakuman). Thirteen orphans — one of each terminal/honor plus
-/// a duplicate of any one. The decomposition form already encodes this.
-/// </summary>
 public sealed class KokushiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

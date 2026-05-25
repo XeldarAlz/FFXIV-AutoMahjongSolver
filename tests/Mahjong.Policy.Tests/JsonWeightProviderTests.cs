@@ -43,7 +43,6 @@ public class JsonWeightProviderTests
         var path = Path.Combine(Path.GetTempPath(), $"weights-{Guid.NewGuid()}.json");
         try
         {
-            // Hand-craft JSON with a future schema version.
             File.WriteAllText(path, """
                 {
                   "discard": { "shanten": 100, "ukeireKinds": 0, "ukeireWeighted": 0,

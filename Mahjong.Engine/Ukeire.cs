@@ -6,17 +6,8 @@ public readonly record struct UkeireEntry(
     Tile[] AcceptedKinds,
     int WeightedCount);
 
-/// <summary>
-/// For a 14-tile hand (plus optional melds), enumerate each possible discard
-/// and, for each, which tile kinds are accepted (= non-increasing shanten after
-/// drawing that kind). Weighted by live-tile counts from a <see cref="Wall"/>.
-/// </summary>
 public static class UkeireEnumerator
 {
-    /// <summary>
-    /// Enumerate ukeire for each legal discard from a 14-tile hand.
-    /// The returned array lists one entry per distinct closed-tile kind in hand.
-    /// </summary>
     public static UkeireEntry[] Enumerate(Hand hand, Wall? wall = null)
     {
         if (hand.ClosedTileCount + hand.OpenMelds.Count * 3 != 14)

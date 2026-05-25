@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Daisuushii (double yakuman). All four wind triplets/kans.
-/// Mutually exclusive with Shousuushii by hand shape.
-/// </summary>
 public sealed class DaisuushiiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

@@ -76,10 +76,7 @@ public class ConfigurationTests
     [Fact]
     public void Version_is_mutable_for_IPluginConfiguration_compliance()
     {
-        // Dalamud's IPluginConfiguration requires Version to be a settable
-        // property. The migration runner is the only legitimate writer; the
-        // test pins that the field is in fact mutable so a future "make it
-        // init-only" change has to consciously break Dalamud compatibility.
+        // Pin: Dalamud's IPluginConfiguration requires Version to be a settable property; a future init-only change must break this deliberately.
         var c = new Configuration();
         c.Version = 7;
         Assert.Equal(7, c.Version);

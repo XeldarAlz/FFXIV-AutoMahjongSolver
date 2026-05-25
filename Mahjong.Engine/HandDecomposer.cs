@@ -1,16 +1,9 @@
 namespace Mahjong.Engine;
 
 /// <summary>
-/// Given a 14-tile agari hand (closed counts + open melds = 14 tiles), enumerate
-/// every valid decomposition into:
-///   - 4 sets + 1 pair (Standard form)
-///   - 7 distinct pairs (Chiitoitsu, closed only)
-///   - 13 terminals/honors + pair (Kokushi, closed only)
-///
-/// Open melds are fixed (always contribute one set group each).
-/// The winning tile is attributed to whichever closed group contained it
-/// — required for fu (tanki/penchan/kanchan) and for concealed-triplet
-/// reclassification on ron (sanankou rule).
+/// Enumerates Standard/Chiitoitsu/Kokushi decompositions of a 14-tile agari hand.
+/// Winning-tile attribution is required for fu (tanki/penchan/kanchan) and for
+/// sanankou's concealed-triplet reclassification on ron.
 /// </summary>
 public static class HandDecomposer
 {
@@ -27,7 +20,6 @@ public static class HandDecomposer
 
         var decomps = new List<Decomposition>();
 
-        // --- Chiitoitsu (closed only, no open melds at all, and no ankans either) ---
         if (meldCount == 0)
         {
             var chitoi = TryChiitoitsu(hand, ctx);
@@ -39,7 +31,6 @@ public static class HandDecomposer
                 decomps.Add(kokushi);
         }
 
-        // --- Standard ---
         foreach (var d in EnumerateStandard(hand, ctx, isMenzen, winFromOpp))
             decomps.Add(d);
 
@@ -47,13 +38,7 @@ public static class HandDecomposer
     }
 
     private static bool HasKanOnly(Hand hand, int meldCount)
-    {
-        // A hand with kans has 14 closed tiles when hand + kan replacements are considered.
-        // For scoring we treat kans as sets (4 tiles count as 3 for the 14-tile shape).
-        return hand.ClosedTileCount + meldCount * 3 == 14;
-    }
-
-    // ------------------- Chiitoitsu -------------------
+        => hand.ClosedTileCount + meldCount * 3 == 14;
 
     private static Decomposition? TryChiitoitsu(Hand hand, WinContext ctx)
     {
@@ -85,8 +70,6 @@ public static class HandDecomposer
             WinningTileFromOpponent: ctx.Kind == WinKind.Ron);
     }
 
-    // ------------------- Kokushi -------------------
-
     private static Decomposition? TryKokushi(Hand hand, WinContext ctx)
     {
         var counts = hand.ClosedCounts;
@@ -117,14 +100,11 @@ public static class HandDecomposer
             WinningTileFromOpponent: ctx.Kind == WinKind.Ron);
     }
 
-    // ------------------- Standard -------------------
-
     private static IEnumerable<Decomposition> EnumerateStandard(Hand hand, WinContext ctx,
                                                                 bool isMenzen, bool winFromOpp)
     {
         var winTile = ctx.WinningTile;
 
-        // Fixed groups from open melds (in order).
         var fixedGroups = new List<Group>(hand.OpenMelds.Count);
         foreach (var m in hand.OpenMelds)
             fixedGroups.Add(Group.FromMeld(m, completedByWin: false));
@@ -140,7 +120,6 @@ public static class HandDecomposer
 
         var counts = hand.CloneCounts();
 
-        // Try each possible pair (head).
         for (int pairId = 0; pairId < Tile.Count34; pairId++)
         {
             if (counts[pairId] < 2)
@@ -160,8 +139,6 @@ public static class HandDecomposer
                     IsCompletedByWinningTile: winTile.Id == pairId);
                 final.Add(pairGroup);
 
-                // If the pair is the winning-tile group, all other groups must not also be marked.
-                // Otherwise find the first closed set containing the winning tile and mark it.
                 var attributed = AttributeWinningTile(final, winTile, fixedGroups.Count);
 
                 yield return new Decomposition(
@@ -175,16 +152,10 @@ public static class HandDecomposer
         }
     }
 
-    /// <summary>
-    /// Recursive enumerator: extract <paramref name="setsNeeded"/> sets from
-    /// <paramref name="counts"/> starting at <paramref name="pos"/>. Yields every distinct
-    /// list of Group (triplet/run) that fully consumes 3*setsNeeded tiles.
-    /// </summary>
     private static IEnumerable<List<Group>> ExtractSets(int[] counts, int pos, int setsNeeded, List<Group> acc)
     {
         if (setsNeeded == 0)
         {
-            // Ensure counts are fully consumed.
             for (int i = 0; i < Tile.Count34; i++)
                 if (counts[i] != 0)
                     yield break;
@@ -198,7 +169,6 @@ public static class HandDecomposer
         if (pos >= Tile.Count34)
             yield break;
 
-        // Try triplet at pos.
         if (counts[pos] >= 3)
         {
             counts[pos] -= 3;
@@ -209,7 +179,6 @@ public static class HandDecomposer
             counts[pos] += 3;
         }
 
-        // Try run starting at pos (suited only, pos in 0..6 mod 9).
         bool isHonor = pos >= 27;
         bool canRun = !isHonor && (pos % 9) <= 6
                       && counts[pos + 1] > 0 && counts[pos + 2] > 0
@@ -230,21 +199,17 @@ public static class HandDecomposer
     }
 
     /// <summary>
-    /// Mark the first closed group that contains the winning tile as IsCompletedByWinningTile.
-    /// Skip the first <paramref name="openCount"/> fixed groups. If the pair was already
-    /// attributed (IsCompletedByWinningTile=true), leave the set attribution empty
-    /// (tanki wait). Otherwise prefer later groups (tanki/penchan/kanchan ambiguity is
-    /// resolved at fu time by picking the fu-maximizing attribution; this is a first pass).
+    /// First-pass attribution: tanki/penchan/kanchan ambiguity is resolved later at fu time
+    /// by picking the fu-maximizing attribution.
     /// </summary>
     private static IReadOnlyList<Group> AttributeWinningTile(
         List<Group> groups, Tile winTile, int openCount)
     {
-        // If pair is already attributed, nothing more to do.
         bool pairAttributed = groups[^1].IsCompletedByWinningTile;
         if (pairAttributed)
             return groups;
 
-        for (int i = openCount; i < groups.Count - 1; i++)  // skip fixed groups and the pair
+        for (int i = openCount; i < groups.Count - 1; i++)
         {
             if (groups[i].ContainsTile(winTile))
             {

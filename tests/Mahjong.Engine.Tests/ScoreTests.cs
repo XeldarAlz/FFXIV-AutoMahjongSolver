@@ -24,13 +24,12 @@ public class ScoreTests
     [Fact]
     public void Non_dealer_tsumo_30fu_3han_is_2000_total()
     {
-        // base = 30 * 2^(3+2) = 960
         var tier = TestRules.Tier(3, 30);
         Assert.Equal(960, tier.BasePoints);
         var pay = TestRules.Pay(tier, isDealer: false, WinKind.Tsumo);
-        Assert.Equal(2000, pay.DealerPay);     // ceil(960*2 / 100) * 100 = 2000
-        Assert.Equal(1000, pay.NonDealerPay);  // ceil(960 / 100) * 100 = 1000
-        Assert.Equal(4000, pay.Total);         // 2000 + 1000 + 1000
+        Assert.Equal(2000, pay.DealerPay);
+        Assert.Equal(1000, pay.NonDealerPay);
+        Assert.Equal(4000, pay.Total);
     }
 
     [Fact]
@@ -38,8 +37,8 @@ public class ScoreTests
     {
         var tier = TestRules.Tier(3, 30);
         var pay = TestRules.Pay(tier, isDealer: true, WinKind.Tsumo);
-        Assert.Equal(2000, pay.NonDealerPay);  // ceil(960*2/100) * 100 = 2000 each
-        Assert.Equal(6000, pay.Total);         // 2000 × 3
+        Assert.Equal(2000, pay.NonDealerPay);
+        Assert.Equal(6000, pay.Total);
     }
 
     [Fact]
@@ -81,7 +80,6 @@ public class ScoreTests
     [Fact]
     public void Low_han_low_fu_non_mangan()
     {
-        // 20 fu × 2^(1+2) = 160. Below 2000. Not mangan.
         var tier = TestRules.Tier(1, 20);
         Assert.Equal(160, tier.BasePoints);
         Assert.Equal(string.Empty, tier.Name);
@@ -90,7 +88,6 @@ public class ScoreTests
     [Fact]
     public void Evaluator_detects_riichi_pinfu_tsumo_and_pays_correct_amount()
     {
-        // 234m 456p 789s 234s 99m — 99m and 9s break tanyao; wait on 2m is ryanmen.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var ctx = new WinContext(
             WinningTile: Tiles.Parse("2m")[0],
@@ -103,10 +100,8 @@ public class ScoreTests
         Assert.Contains(result!.Yaku, h => h.Yaku == Yaku.Riichi);
         Assert.Contains(result.Yaku, h => h.Yaku == Yaku.MenzenTsumo);
         Assert.Contains(result.Yaku, h => h.Yaku == Yaku.Pinfu);
-        Assert.Equal(3, result.Han);        // riichi + tsumo + pinfu + 0 dora
-        Assert.Equal(20, result.Fu);        // pinfu tsumo
-        // base = 20 * 2^(3+2) = 640
-        // non-dealer tsumo: dealer 1280→1300, each non-dealer 640→700, total 1300+700+700=2700
+        Assert.Equal(3, result.Han);
+        Assert.Equal(20, result.Fu);
         Assert.Equal(1300, result.Payments.DealerPay);
         Assert.Equal(700, result.Payments.NonDealerPay);
         Assert.Equal(2700, result.Payments.Total);
@@ -115,8 +110,7 @@ public class ScoreTests
     [Fact]
     public void Evaluator_returns_null_when_no_yaku()
     {
-        // Open hand with only runs and a simple pair. No yaku.
-        var pon = Meld.Pon(Tile.FromId(3), Tile.FromId(3), fromSeat: 2);  // 4m pon
+        var pon = Meld.Pon(Tile.FromId(3), Tile.FromId(3), fromSeat: 2);
         var hand = Hand.FromNotation("123m456p789s22s", [pon]);
         var ctx = new WinContext(Tiles.Parse("2s")[0], WinKind.Ron, IsDealer: false);
         var result = TestRules.Scorer.Evaluate(hand, ctx);

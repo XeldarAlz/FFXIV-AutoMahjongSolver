@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Tenhou (yakuman). The dealer wins on the very first tsumo of the hand,
-/// before any call has occurred.
-/// </summary>
 public sealed class TenhouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

@@ -5,9 +5,6 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// Edge-case suite extending <see cref="AddonPollDiscardCaptureTests"/>.
-/// </summary>
 public class AddonPollDiscardCaptureExtraTests
 {
     private static StateSnapshot Snap(int[] s0, int[] s1, int[] s2, int[] s3)
@@ -69,7 +66,6 @@ public class AddonPollDiscardCaptureExtraTests
         capture.OnSnapshotChanged(Snap(new[] { 1 }, new[] { 2 }, new[] { 3 }, Array.Empty<int>()));
         capture.OnSnapshotChanged(Snap(new[] { 1, 4 }, new[] { 2 }, new[] { 3 }, Array.Empty<int>()));
 
-        // Sequence: seat0 first (1), seat1 (2), seat2 (3), seat0 again (4).
         Assert.Equal(4, observed.Count);
         for (int i = 0; i < observed.Count; i++)
             Assert.Equal((ulong)(i + 1), observed[i].SequenceNumber);
@@ -83,7 +79,6 @@ public class AddonPollDiscardCaptureExtraTests
         capture.DiscardObserved += observed.Add;
 
         capture.OnSnapshotChanged(Snap(new[] { 1 }, new[] { 2 }, new[] { 3 }, new[] { 4 }));
-        // Only seat 2 advances.
         capture.OnSnapshotChanged(Snap(new[] { 1 }, new[] { 2 }, new[] { 3, 5 }, new[] { 4 }));
 
         Assert.Single(observed);
@@ -99,8 +94,6 @@ public class AddonPollDiscardCaptureExtraTests
         capture.DiscardObserved += observed.Add;
 
         capture.OnSnapshotChanged(Snap(new[] { 5, 6, 7 }, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
-        // Round restart — pool shrinks to 2 tiles. The strategy should
-        // re-prime to 2 silently without emitting either of them.
         capture.OnSnapshotChanged(Snap(new[] { 9, 10 }, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
 
         Assert.Empty(observed);

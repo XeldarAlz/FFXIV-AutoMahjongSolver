@@ -2,24 +2,21 @@ namespace Mahjong.Core;
 
 public enum Yaku : byte
 {
-    // 1 han
     Riichi,
     Ippatsu,
     MenzenTsumo,
     Pinfu,
     Tanyao,
     Iipeiko,
-    YakuhaiHaku,    // white dragon
-    YakuhaiHatsu,   // green dragon
-    YakuhaiChun,    // red dragon
-    YakuhaiRound,   // round wind matches a triplet
-    YakuhaiSeat,    // seat wind matches a triplet
+    YakuhaiHaku,
+    YakuhaiHatsu,
+    YakuhaiChun,
+    YakuhaiRound,
+    YakuhaiSeat,
     Rinshan,
     Chankan,
     Haitei,
     Houtei,
-
-    // 2 han
     DoubleRiichi,
     Chiitoitsu,
     SanshokuDoujun,
@@ -31,16 +28,10 @@ public enum Yaku : byte
     Honroutou,
     Shousangen,
     Chanta,
-
-    // 3 han
     Ryanpeikou,
     Junchan,
     Honitsu,
-
-    // 6 han
     Chinitsu,
-
-    // Yakuman
     Kokushi,
     Suuankou,
     Daisangen,
@@ -61,10 +52,6 @@ public readonly record struct YakuHit(Yaku Yaku, int Han, bool IsYakuman = false
         IsYakuman ? $"{Yaku} (yakuman)" : $"{Yaku} ({Han}han)";
 }
 
-/// <summary>
-/// Display-name lookup for yaku. Pure presentation — kept in Mahjong.Core for now;
-/// will move to Mahjong.Rules in Phase 2 alongside per-yaku rule definitions.
-/// </summary>
 public static class YakuInfo
 {
     public static bool IsYakuman(Yaku y) => y >= Yaku.Kokushi;

@@ -27,9 +27,6 @@ public class HumanTimingTests
     [Fact]
     public void Median_drives_distribution_center()
     {
-        // Sample N draws and compare the empirical median against the
-        // requested one. Log-normal with σ=0.45 has a sample median that
-        // converges to the parameter; 1000 samples gives ample precision.
         const int n = 1000;
         var samples = new double[n];
         for (int i = 0; i < n; i++)
@@ -37,7 +34,6 @@ public class HumanTimingTests
         Array.Sort(samples);
         double empiricalMedian = samples[n / 2];
 
-        // Wide tolerance — clipping to floor/cap can pull the median around.
         Assert.InRange(empiricalMedian, 500.0, 700.0);
     }
 

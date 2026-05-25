@@ -4,17 +4,8 @@ using System.Text.Json;
 namespace Mahjong.Policy.Tuning;
 
 /// <summary>
-/// Reads a <see cref="WeightBundle"/> from a weights.json file on disk. The
-/// canonical replacement for the previous "tuner emits a C# Weights record
-/// to copy-paste" workflow.
-///
-/// Behavior:
-///   * If the file is missing, returns <see cref="WeightBundle.Default"/>.
-///   * If the schema version mismatches, throws — silent migration is worse
-///     than a loud failure when weights drift.
-///
-/// Hot-reload (<see cref="Changed"/> event) isn't implemented yet — Phase 3
-/// only needs static loading. A FileSystemWatcher-based reload can land later.
+/// Missing file returns <see cref="WeightBundle.Default"/>; schema mismatch throws —
+/// silent migration is worse than loud failure when weights drift.
 /// </summary>
 public sealed class JsonWeightProvider : IWeightProvider
 {

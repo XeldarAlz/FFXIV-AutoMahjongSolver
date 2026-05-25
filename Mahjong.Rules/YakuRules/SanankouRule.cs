@@ -1,10 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Sanankou (2 han). Three concealed triplets (ankan counts as concealed).
-/// A triplet completed by an opponent's discard does NOT count as concealed,
-/// which Decomposition.ConcealedTripletCount already reflects.
-/// </summary>
 public sealed class SanankouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

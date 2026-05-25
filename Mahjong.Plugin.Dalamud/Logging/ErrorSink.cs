@@ -7,25 +7,6 @@ using System.Threading;
 
 namespace Mahjong.Plugin.Dalamud.Logging;
 
-/// <summary>
-/// Buffered, append-only NDJSON sink for plugin errors and warnings. Files
-/// land in <c>pluginConfigs/&lt;plugin&gt;/errors/errors-yyyyMMdd.ndjson</c>;
-/// <see cref="Telemetry.TelemetryUploader"/> picks them up and ships them.
-///
-/// <para>Two ways data lands here:
-/// <list type="bullet">
-///   <item>Explicit <see cref="RecordException"/> / <see cref="RecordWarning"/>
-///   calls from inside the plugin (existing <c>Plugin.Log.Error</c> sites are
-///   migrated incrementally).</item>
-///   <item>An <see cref="AppDomain.UnhandledException"/> hook that captures
-///   any unhandled exception in plugin code as a last-resort crash report.</item>
-/// </list></para>
-///
-/// <para>All file writes go through a process-private lock so concurrent
-/// callers from different threads don't interleave NDJSON lines. Errors
-/// inside the sink itself are silently swallowed — a broken error sink
-/// must never throw into game code.</para>
-/// </summary>
 public sealed class ErrorSink : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -61,8 +42,6 @@ public sealed class ErrorSink : IDisposable
         catch { }
     }
 
-    /// <summary>Record a caught exception with optional context tag (e.g.
-    /// "GameLogger.OnStateChanged"). Stack trace is captured automatically.</summary>
     public void RecordException(string context, Exception ex)
     {
         if (disposed || ex is null)
@@ -79,8 +58,6 @@ public sealed class ErrorSink : IDisposable
             Source: "explicit"));
     }
 
-    /// <summary>Record a non-throwing warning (e.g. "sigscan returned 0 hits",
-    /// "addon field offset returned out-of-range tile id"). No stack.</summary>
     public void RecordWarning(string context, string message)
     {
         if (disposed)
@@ -126,7 +103,7 @@ public sealed class ErrorSink : IDisposable
                 w.WriteLine(line);
             }
         }
-        catch { /* never throw */ }
+        catch { }
     }
 
     private static string NowIso() =>

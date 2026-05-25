@@ -1,10 +1,5 @@
 namespace Mahjong.Rules.Tests;
 
-/// <summary>
-/// Structural tests for the two built-in rule sets: registered yaku count,
-/// scoring/dora/fu hookups, and the Doman-vs-Riichi divergence points that
-/// will be the load-bearing differences as more Doman deltas are confirmed.
-/// </summary>
 public class RuleSetTests
 {
     [Fact]
@@ -31,14 +26,12 @@ public class RuleSetTests
     [Fact]
     public void Doman_min_han_is_two()
     {
-        // Per docs/ruleset.md Q1 — the load-bearing Doman delta from riichi.
         Assert.Equal(2, new DomanRuleSet().MinHan);
     }
 
     [Fact]
     public void Doman_inherits_riichi_yaku_list()
     {
-        // Until any Q2-Q13 deltas are confirmed, Doman == Riichi on yaku.
         var riichi = new RiichiRuleSet();
         var doman = new DomanRuleSet();
         Assert.Equal(riichi.YakuRules.Count, doman.YakuRules.Count);

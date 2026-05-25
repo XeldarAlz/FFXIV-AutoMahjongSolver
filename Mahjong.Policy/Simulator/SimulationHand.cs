@@ -3,10 +3,6 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Simulator;
 
-/// <summary>
-/// Mutable per-hand simulation state. Tracks all 4 seats' closed hands (hidden from
-/// outside perspective), public discards, open melds, wall, scores, and turn order.
-/// </summary>
 internal sealed class SimulationHand
 {
     public readonly int[][] ClosedCounts = new int[4][];
@@ -20,7 +16,7 @@ internal sealed class SimulationHand
     public int Round;
     public int Honba;
 #pragma warning disable CS0649
-    public int RiichiSticks;   // unused in MVP, written when riichi is added later
+    public int RiichiSticks;
 #pragma warning restore CS0649
     public int CurrentSeat;
     public readonly bool[] Riichi = new bool[4];
@@ -45,23 +41,13 @@ internal sealed class SimulationHand
         return total;
     }
 
-    /// <summary>
-    /// Build the observable snapshot from <paramref name="observerSeat"/>'s perspective.
-    /// Hand counts are filled from the observer's closed tiles (expanded back to a tile list).
-    /// Other seats' hands are not included — StateSnapshot.Hand is only the observer's.
-    /// </summary>
     public StateSnapshot ToSnapshot(int observerSeat, ActionFlags legal)
     {
-        // Build observer's hand: 13 sorted tiles + optionally the drawn 14th at slot 13.
         var sortedHand = new List<Tile>();
         for (int k = 0; k < Tile.Count34; k++)
             for (int c = 0; c < ClosedCounts[observerSeat][k]; c++)
                 sortedHand.Add(Tile.FromId(k));
 
-        // If observer is the current seat and has drawn, the "extra" tile isn't separately
-        // tracked here — we store all 14 in ClosedCounts. Use the count as-is.
-
-        // Seat-relative ordering: 0=self, 1=shimocha, 2=toimen, 3=kamicha.
         var seatsRelative = new SeatView[4];
         var scoresRelative = new int[4];
         for (int rel = 0; rel < 4; rel++)
@@ -72,7 +58,7 @@ internal sealed class SimulationHand
                 DiscardIsTedashi[abs].ToArray(),
                 Melds[abs].ToArray(),
                 Riichi[abs],
-                Riichi[abs] ? 0 : -1,     // riichi discard index simplified
+                Riichi[abs] ? 0 : -1,
                 Ippatsu: false,
                 IsTenpaiCalled: false);
             scoresRelative[rel] = Scores[abs];

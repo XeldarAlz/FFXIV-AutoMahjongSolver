@@ -13,45 +13,6 @@ using Mahjong.Policy;
 
 namespace Mahjong.Plugin.Dalamud.Logging;
 
-/// <summary>
-/// Per-hand NDJSON game logger. Subscribes to <see cref="StateAggregator.Changed"/>
-/// and emits one JSON line per *changed* state plus one per dispatched action.
-/// Feeds the Doman-specific training corpus — every game played produces
-/// labeled (state, decision, action) episodes that later back supervised
-/// policy training.
-///
-/// Output: <c>%AppData%\XIVLauncher\pluginConfigs\Mahjong.Plugin.Dalamud\games\game-YYYYMMDD-HHMMSS-handNN.ndjson</c>.
-///
-/// Event types (<c>"e"</c> field):
-/// <list type="bullet">
-///   <item><c>hand-start</c>  — first event in a file; seat/wind/dealer context.</item>
-///   <item><c>state</c>       — snapshot diff from the aggregator.</item>
-///   <item><c>decision</c>    — policy.Choose() output paired with the state above.</item>
-///   <item><c>action</c>      — our dispatch (discard/call/riichi/tsumo...).</item>
-///   <item><c>call-prompt</c> — variant-side call-prompt entry: raw AtkValues
-///                              window + decoded candidate tile-ids. Lets us
-///                              diagnose variant-decode mismatches (e.g. the
-///                              chi-claim slot in #34) from telemetry alone.</item>
-///   <item><c>hand-end</c>    — final event in a file: cumulative score delta
-///                              vs the file's hand-start, inferred result kind
-///                              (tsumo/ron/draw), winner/loser seats. Provides
-///                              the reward signal for policy training; without
-///                              this the corpus has decisions but no outcomes.
-///                              The very last hand of a session is not emitted
-///                              (we only detect end-of-hand from the start of
-///                              the next one).</item>
-/// </list>
-///
-/// <para><b>Hash-dedup:</b> StateAggregator.Changed fires every framework tick the
-/// addon reads cleanly, even when nothing about the game state actually moved
-/// — first observed in the 2026-05-08 corpus where one turn produced 1268
-/// identical state lines. We compute a structural hash of every snapshot and
-/// skip writes whose hash matches the previous frame. Only the timestamp
-/// would have differed; nothing is lost.</para>
-///
-/// <para>Schema version bumps invalidate old parsers. Keep field names short —
-/// at ~500 B/tick across many games, every byte counts.</para>
-/// </summary>
 public sealed class GameLogger : IDisposable
 {
     public const int SchemaVersion = 3;
@@ -107,12 +68,7 @@ public sealed class GameLogger : IDisposable
             eventLogger.CallPromptObserved += OnCallPromptObserved;
     }
 
-    /// <summary>
-    /// Test-only constructor: skips the aggregator wiring so unit tests can
-    /// drive <see cref="OnStateChanged"/> directly without standing up a real
-    /// <see cref="StateAggregator"/> (which transitively needs an addon
-    /// reader, framework, and addon-lifecycle service).
-    /// </summary>
+    /// <summary>Test-only: skips aggregator wiring.</summary>
     internal GameLogger(
         IConfigService<Configuration> configService,
         IPluginLog log,
@@ -146,10 +102,7 @@ public sealed class GameLogger : IDisposable
         if (!configService.Current.EnableGameLogging)
             return;
 
-        // Skip ticks where nothing semantically changed. StateAggregator.Changed
-        // fires per-frame even when a re-read of the addon produces a byte-for-
-        // byte identical snapshot; without this guard one turn produces ~1200
-        // duplicate lines.
+        // StateAggregator.Changed fires per-frame; dedup by structural hash or one turn yields ~1200 duplicate lines.
         int hash = ComputeContentHash(snap);
         if (lastStateHash == hash)
             return;
@@ -167,21 +120,10 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// Pair each state with the policy's verdict for that exact state. The
-    /// snap-hash dedup above ensures we only call Choose when the game state
-    /// actually changed; this keeps decision logging cheap (≤ a few calls per
-    /// turn) and the corpus contains one (state, decision) pair per moment
-    /// that mattered. Without this, suggestion-vs-highlight bugs are invisible
-    /// once a session ends — the policy's output isn't otherwise persisted.
-    /// </summary>
     private void MaybeRecordDecision(StateSnapshot snap)
     {
         if (policyAccessor is null)
             return;
-        // No actionable legal flag = nothing to decide (e.g. AI's turn). The
-        // policy still returns Pass with a default reason; logging that for
-        // every state diff would just be noise.
         if (snap.Legal.Flags == ActionFlags.None)
             return;
         ActionChoice choice;
@@ -203,19 +145,6 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// Record a call-prompt entry. Fires once per CallPrompt-state transition
-    /// the variant detects (deduplicated upstream in BaseEmjVariant). Carries
-    /// the raw AtkValues window the variant decoded from plus the candidate
-    /// tile-ids it produced — divergence between the two is the signature of
-    /// a variant-decode bug, and capturing both inline in the games stream
-    /// means it's reproducible from telemetry alone.
-    ///
-    /// <para>If no hand file is open yet (call prompt before first deal), the
-    /// write is silently dropped — there's no useful corpus context for an
-    /// orphaned prompt frame, and rolling a new file just for one event would
-    /// pollute the per-hand structure.</para>
-    /// </summary>
     private void OnCallPromptObserved(CallPromptEvent evt)
     {
         if (disposed || !configService.Current.EnableGameLogging)
@@ -242,12 +171,6 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// Record an action we dispatched. Called from <see cref="AutoPlayLoop"/>
-    /// right after an <see cref="InputDispatcher"/> call returns. Fire-and-forget;
-    /// errors are swallowed to the plugin log so a logging fault can never break
-    /// gameplay.
-    /// </summary>
     public void RecordAction(ActionKind kind, Tile? tile, int? slot, string result, string reasoning)
     {
         if (!configService.Current.EnableGameLogging || disposed)
@@ -270,21 +193,7 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// New-hand detection: inside a hand the wall only decreases. A sharp upward
-    /// jump (+5 tolerance to ride over transient read glitches) means a fresh
-    /// deal. First snapshot after construction also rolls a file.
-    ///
-    /// <para>Hand-size guard: an upward wall jump that arrives while the closed
-    /// hand is at a mid-hand count (e.g. 6 after a pon, 11 after a chi) is a
-    /// transient read or a state-transition artifact, not a genuine deal. Roll
-    /// only when the hand is at a deal-shape count: 0 (between hands), 13
-    /// (non-dealer fresh), or 14 (dealer fresh / mid-turn). This catches the
-    /// remaining wall-jump cases the <see cref="BaseEmjVariant.ResolveWallRemaining"/>
-    /// fix could miss (e.g. addon detach/reattach with stale dc). First-roll
-    /// (currentPath == null) bypasses the guard so the plugin can latch onto
-    /// any addon state.</para>
-    /// </summary>
+    /// <summary>Roll only on wall-jump-up AND hand at deal-shape count (0/13/14); mid-hand jumps are read glitches.</summary>
     private void MaybeRollHand(StateSnapshot snap)
     {
         bool firstRoll = currentPath is null;
@@ -294,28 +203,12 @@ public sealed class GameLogger : IDisposable
             lastWall = snap.WallRemaining;
             return;
         }
-        // Wall jumped up but the closed hand isn't at a deal-shape count
-        // yet (could be mid-deal animation, addon detach/reattach, etc.).
-        // DON'T update lastWall — retain the pre-jump value so the next
-        // tick's check sees the same jump and retries. Pre-fix this updated
-        // lastWall unconditionally, so a single transient tick at hand=7
-        // during the deal would consume the wall-jump signal forever and
-        // we'd never roll the hand boundary. Field corpus shows 2 hand-end
-        // events across 609 hand-starts (~0.3%) — symptom of exactly this:
-        // every install's MaybeRollHand is finding the wall jump but the
-        // hand-shape guard rejects the roll and lastWall steals the signal.
+        // Wall jumped but hand isn't deal-shape — retain lastWall so the next tick re-attempts the roll.
         if (wallJumpUp && snap.Hand.Count != 0 && snap.Hand.Count != 13 && snap.Hand.Count != 14)
             return;
         lastWall = snap.WallRemaining;
 
-        // Cache the previous hand's start-scores before RollWriter clears
-        // the path. We'll use them to write the hand-end event INTO THE NEW
-        // FILE as its first line (instead of the old file's last line). This
-        // dodges a silent-loss hazard where TelemetryUploader's scan tick
-        // can move/upload the old game-file between OnStateChanged ticks,
-        // making any post-upload write into the old path drop silently.
-        // Co-locating hand-end with hand-start in the new file is mildly
-        // unusual but loses zero events.
+        // Write hand-end into the NEW file so TelemetryUploader can't move the old file between writes.
         var previousStartScores = lastHandStartScores;
         bool emitHandEnd = !firstRoll && previousStartScores is not null;
 
@@ -359,23 +252,6 @@ public sealed class GameLogger : IDisposable
         catch (Exception ex) { log.Error($"GameLogger hand-end-write error: {ex.Message}"); }
     }
 
-    /// <summary>
-    /// Best-effort classification from the per-seat delta shape. Three buckets:
-    /// <list type="bullet">
-    ///   <item><c>ron</c>   — exactly one positive Δ and exactly one negative Δ
-    ///                        (winner takes from a single discarder).</item>
-    ///   <item><c>tsumo</c> — exactly one positive Δ and three negative Δ
-    ///                        (winner takes from all three losers).</item>
-    ///   <item><c>draw</c>  — anything else: exhaustive-draw tenpai
-    ///                        redistribution, abortive draws with no payout,
-    ///                        zero-delta edge cases, double-ron (multiple
-    ///                        winners), etc. Downstream analysis can sub-classify
-    ///                        from the raw deltas.</item>
-    /// </list>
-    /// Riichi-stick movements within the hand are naturally absorbed: the delta
-    /// is computed from one hand-start to the next, so the −1000 stick deposit
-    /// and the sticks-to-winner payout cancel for whoever ultimately wins.
-    /// </summary>
     internal static (string kind, int? winner, int? loser) InferResultKind(int[] deltas)
     {
         int pos = 0, neg = 0;
@@ -413,16 +289,7 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// Open-write-close per line. Holding a persistent <see cref="StreamWriter"/>
-    /// across the hand created an active writer handle that prevented
-    /// <see cref="Telemetry.TelemetryUploader"/>'s scan tick from reading the
-    /// file (the uploader's <c>FileShare.Read</c> request fails when an open
-    /// handle has Write access). Per-line opens match the
-    /// <see cref="ErrorSink"/> / <see cref="FindingsLog"/> pattern; volume is
-    /// low enough (≤ a few writes per turn after the dedup fix) that the
-    /// extra syscalls are immaterial.
-    /// </summary>
+    /// <summary>Open-write-close per line — a persistent StreamWriter blocks TelemetryUploader's FileShare.Read.</summary>
     private void WriteLine(string line)
     {
         if (currentPath is null)
@@ -442,12 +309,6 @@ public sealed class GameLogger : IDisposable
         }
     }
 
-    /// <summary>
-    /// Structural hash over every snapshot field that the corpus cares about —
-    /// turn, wall, our hand, melds, dora, riichi/ippatsu flags, legal action
-    /// set, scores, and every seat's discard pile + meld set + riichi flags.
-    /// Excludes the snapshot timestamp; only content drives equality.
-    /// </summary>
     private static int ComputeContentHash(StateSnapshot snap)
     {
         var h = new HashCode();
@@ -541,8 +402,6 @@ public sealed class GameLogger : IDisposable
     private static string Now() =>
         DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 
-    // ---- DTO records ----
-
     private sealed record HandStartEvent(
         [property: JsonPropertyName("t")] string T,
         [property: JsonPropertyName("e")] string E,
@@ -566,10 +425,6 @@ public sealed class GameLogger : IDisposable
     private sealed record StateEvent(
         [property: JsonPropertyName("t")] string T,
         [property: JsonPropertyName("e")] string E,
-        // Raw addon state code (Doman: 6/15/28/30 plus transients). Lets
-        // corpus analyzers distinguish dispatch contexts the `legal` enum
-        // can't tell apart (state-6 hand=14 self-declare popup vs.
-        // state-30 hand=14 classic discard). -1 = unknown/unread.
         [property: JsonPropertyName("state_code")] int StateCode,
         [property: JsonPropertyName("wall")] int Wall,
         [property: JsonPropertyName("turn")] int Turn,
@@ -599,10 +454,6 @@ public sealed class GameLogger : IDisposable
         [property: JsonPropertyName("call_kind")] string? CallKind,
         [property: JsonPropertyName("why")] string? Why,
         [property: JsonPropertyName("steps")] StepDto[]? Steps,
-        // MeldTracker internal state at decision time. Lets the corpus
-        // distinguish clean inference from mid-race deferral from missed.
-        // Null when no tracker accessor was injected (test constructor or
-        // pre-fix builds).
         [property: JsonPropertyName("tracker")] TrackerDto? Tracker);
 
     private sealed record StepDto(

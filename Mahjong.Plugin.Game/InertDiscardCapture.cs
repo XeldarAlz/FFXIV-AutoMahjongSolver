@@ -1,14 +1,6 @@
 namespace Mahjong.Plugin.Game;
 
-/// <summary>
-/// Null-object <see cref="IDiscardCapture"/>. Returned by the plugin when
-/// no strategy could activate (rare — usually a patched binary that breaks
-/// every observation path), and useful as a default in tests that don't
-/// care about discard capture.
-///
-/// <para>Health is permanently <see cref="HookHealth.Offline"/>; the event
-/// never fires and the diagnostic counters never advance.</para>
-/// </summary>
+/// <summary>Null-object capture; Health is permanently Offline and the event never fires.</summary>
 public sealed class InertDiscardCapture : IDiscardCapture
 {
     public const string Name = "inert";

@@ -21,7 +21,6 @@ public class EvolutionaryTunerTests
         Assert.Equal(start, run.StartingMean);
         Assert.Equal(2, run.Generations.Length);
         Assert.Equal(4, run.Generations[0].Population.Length);
-        // Final mean always has 7 non-NaN weight components.
         Assert.False(double.IsNaN(run.FinalMean.UkeireKinds));
     }
 }

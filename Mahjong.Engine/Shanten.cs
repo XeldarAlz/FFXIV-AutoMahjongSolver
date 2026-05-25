@@ -10,11 +10,6 @@ public readonly record struct ShantenResult(
     public bool IsAgari => Min <= -1;
 }
 
-/// <summary>
-/// Shanten calculator. Pure functions over 34-space counts.
-/// Naive-correct implementation for the standard form — to be replaced by
-/// table-lookup (target &lt; 20 µs) once the reference suite is wired up.
-/// </summary>
 public static class ShantenCalculator
 {
     private const int Agari = -1;
@@ -31,10 +26,7 @@ public static class ShantenCalculator
         return new ShantenResult(std, ci, ko);
     }
 
-    /// <summary>
-    /// Chiitoitsu shanten: 6 − pairs + max(0, 7 − distinct).
-    /// Requires a closed hand. Returns 8 if hand has open melds.
-    /// </summary>
+    /// <summary>6 − pairs + max(0, 7 − distinct). Closed-hand only.</summary>
     public static int Chiitoitsu(ReadOnlySpan<int> counts)
     {
         int pairs = 0, distinct = 0;
@@ -48,9 +40,7 @@ public static class ShantenCalculator
         return 6 - pairs + Math.Max(0, 7 - distinct);
     }
 
-    /// <summary>
-    /// Kokushi musou shanten: 13 − distinct_terminal_honor − (hasPair ? 1 : 0).
-    /// </summary>
+    /// <summary>13 − distinct_terminal_honor − (hasPair ? 1 : 0).</summary>
     public static int Kokushi(ReadOnlySpan<int> counts)
     {
         ReadOnlySpan<int> yaochuu = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
@@ -66,10 +56,6 @@ public static class ShantenCalculator
         return 13 - distinct - (hasPair ? 1 : 0);
     }
 
-    /// <summary>
-    /// Standard-form shanten (4 sets + 1 pair).
-    /// meldsAlreadyCalled contributes sets at zero cost to the scan.
-    /// </summary>
     public static int Standard(int[] counts, int meldsAlreadyCalled = 0)
     {
         const int BlocksNeeded = 4;
@@ -77,7 +63,6 @@ public static class ShantenCalculator
 
         int best = 8;
 
-        // Try each candidate pair (head).
         for (int i = 0; i < Tile.Count34; i++)
         {
             if (counts[i] < 2)
@@ -93,7 +78,6 @@ public static class ShantenCalculator
                 best = s;
         }
 
-        // No-pair branch.
         {
             var (sets, partials) = Decompose(counts);
             int totalSets = sets + calledSets;
@@ -113,11 +97,7 @@ public static class ShantenCalculator
             Sets >= other.Sets && Partials >= other.Partials;
     }
 
-    /// <summary>
-    /// Returns (sets, partials) from the single-best decomposition over the 34-space
-    /// counts. "Best" = maximizes (2*sets + partials) with a tie-break preferring
-    /// more sets. Honors are handled trivially (only triplets / pairs possible).
-    /// </summary>
+    /// <summary>Maximizes (2*sets + partials); ties prefer more sets.</summary>
     private static Decomp Decompose(int[] counts)
     {
         var best = new Decomp(0, 0);
@@ -127,7 +107,6 @@ public static class ShantenCalculator
 
     private static void Scan(int[] counts, int pos, int sets, int partials, ref Decomp best)
     {
-        // Honors run 27..33: no runs possible, only triplets and pairs.
         while (pos < Tile.Count34 && counts[pos] == 0)
             pos++;
         if (pos >= Tile.Count34)
@@ -147,7 +126,6 @@ public static class ShantenCalculator
         bool canKanchan = !isHonor && (pos % 9) <= 6 && counts[pos + 2] > 0;
         bool canRyanmen = !isHonor && (pos % 9) <= 7 && counts[pos + 1] > 0;
 
-        // Try triplet.
         if (counts[pos] >= 3)
         {
             counts[pos] -= 3;
@@ -155,7 +133,6 @@ public static class ShantenCalculator
             counts[pos] += 3;
         }
 
-        // Try run (three consecutive).
         if (canRun)
         {
             counts[pos]--;
@@ -167,7 +144,6 @@ public static class ShantenCalculator
             counts[pos + 2]++;
         }
 
-        // Try pair as partial (shanpon candidate).
         if (counts[pos] >= 2)
         {
             counts[pos] -= 2;
@@ -175,7 +151,6 @@ public static class ShantenCalculator
             counts[pos] += 2;
         }
 
-        // Try ryanmen / penchan (consecutive two).
         if (canRyanmen)
         {
             counts[pos]--;
@@ -185,7 +160,6 @@ public static class ShantenCalculator
             counts[pos + 1]++;
         }
 
-        // Try kanchan (skip-one).
         if (canKanchan)
         {
             counts[pos]--;
@@ -195,7 +169,6 @@ public static class ShantenCalculator
             counts[pos + 2]++;
         }
 
-        // Skip the remaining copies at this position.
         int save = counts[pos];
         counts[pos] = 0;
         Scan(counts, pos + 1, sets, partials, ref best);

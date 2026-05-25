@@ -1,10 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Shousangen (2 han). Two dragon triplets/kans plus a dragon pair — i.e.
-/// "small three dragons." If you have all three dragon triplets it's
-/// Daisangen (yakuman), not this.
-/// </summary>
 public sealed class ShousangenRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

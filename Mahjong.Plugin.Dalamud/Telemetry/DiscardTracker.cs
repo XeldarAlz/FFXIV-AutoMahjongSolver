@@ -8,19 +8,6 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Flat append-only NDJSON log of every discard observed across all matches —
-/// distinct from <see cref="Logging.GameLogger"/>'s per-hand snapshots, and
-/// distinct from <see cref="Logging.DiscardCaptureLogger"/>'s diagnostic text
-/// log. This file is what the <c>discards</c> telemetry stream ships, giving
-/// the offline corpus a long-running flat record of every tile played for
-/// pattern/ML analysis.
-///
-/// <para>One line per <see cref="IDiscardCapture.DiscardObserved"/> event;
-/// daily roll under <c>pluginConfigs/&lt;plugin&gt;/discards/discards-yyyyMMdd.ndjson</c>.
-/// IO failures are swallowed — telemetry must never break the capture
-/// pipeline.</para>
-/// </summary>
 public sealed class DiscardTracker : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -82,7 +69,6 @@ public sealed class DiscardTracker : IDisposable
         }
         catch
         {
-            // Never throw from a logger.
         }
     }
 

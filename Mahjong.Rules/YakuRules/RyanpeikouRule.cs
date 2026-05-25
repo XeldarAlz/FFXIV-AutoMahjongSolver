@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Ryanpeikou (3 han, closed only). Two pairs of identical sequences in same suit.
-/// Supersedes Iipeiko (which would otherwise also fire).
-/// </summary>
 public sealed class RyanpeikouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

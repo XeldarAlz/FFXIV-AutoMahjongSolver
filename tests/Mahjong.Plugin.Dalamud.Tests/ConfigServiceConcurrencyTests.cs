@@ -3,11 +3,6 @@ using Mahjong.Plugin.Dalamud.Composition;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// Concurrency-flavored tests for <see cref="DalamudConfigService"/>. The
-/// service uses an internal lock so concurrent <c>Update</c> calls don't
-/// interleave; these tests exercise that guarantee under contention.
-/// </summary>
 public class ConfigServiceConcurrencyTests
 {
     [Fact]
@@ -38,8 +33,6 @@ public class ConfigServiceConcurrencyTests
             _ => { },
             new Configuration { TosAccepted = true, AutomationArmed = true });
 
-        // Writers flip between two consistent shapes; readers should always
-        // see one or the other, never a mix.
         var done = new System.Threading.ManualResetEventSlim(false);
         var writer = Task.Run(() =>
         {
@@ -55,8 +48,6 @@ public class ConfigServiceConcurrencyTests
         while (!done.IsSet)
         {
             var snap = svc.Current;
-            // Both fields move together in every Update — they should never
-            // be observed in a mismatched state.
             Assert.Equal(snap.TosAccepted, snap.AutomationArmed);
             readChecks++;
         }

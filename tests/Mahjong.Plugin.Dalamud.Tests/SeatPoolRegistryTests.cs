@@ -73,9 +73,7 @@ public class SeatPoolRegistryTests
     [Fact]
     public void Bases_is_a_snapshot_of_keys_at_call_time()
     {
-        // ConcurrentDictionary.Keys returns a moment-in-time copy. Pin the
-        // semantics so consumers know they need to re-read on every dump,
-        // not cache the collection across ticks.
+        // Pins the moment-in-time copy contract so consumers re-read on every dump.
         var reg = new SeatPoolRegistry();
         var snapshot = reg.Bases;
         reg.Observe(0x1000);

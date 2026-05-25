@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Iipeiko (1 han, closed only). Two identical sequences in the same suit.
-/// Superseded by Ryanpeikou (which finds two such pairs).
-/// </summary>
 public sealed class IipeikoRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

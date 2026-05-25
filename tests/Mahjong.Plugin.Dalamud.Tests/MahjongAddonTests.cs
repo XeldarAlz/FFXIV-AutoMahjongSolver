@@ -13,9 +13,9 @@ public class MahjongAddonTests
     }
 
     [Theory]
-    [InlineData("emj")]               // case-sensitive
+    [InlineData("emj")]
     [InlineData("EMJ")]
-    [InlineData("EmjAuth")]            // partial match shouldn't count
+    [InlineData("EmjAuth")]
     [InlineData("LobbyChat")]
     [InlineData("")]
     public void IsMahjongAddon_rejects_unknown_or_mismatched_names(string name)
@@ -26,8 +26,7 @@ public class MahjongAddonTests
     [Fact]
     public void CandidateNames_includes_emj_first_then_emjL()
     {
-        // Probe order matters — most clients expose "Emj"; the static order
-        // is the loop iteration order in TryGet, so the cheapest match wins.
+        // Order pinned because TryGet iterates this list; Emj is the common match.
         var names = MahjongAddon.CandidateNames;
         Assert.Equal("Emj", names[0]);
         Assert.Equal("EmjL", names[1]);

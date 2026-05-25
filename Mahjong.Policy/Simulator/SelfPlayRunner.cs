@@ -2,10 +2,6 @@ using System;
 
 namespace Mahjong.Policy.Simulator;
 
-/// <summary>
-/// Play N hands with the given 4 policies, collect aggregate metrics. Useful for
-/// self-play tournaments and weight tuning.
-/// </summary>
 public sealed class SelfPlayRunner
 {
     private readonly IRandomSource rng;
@@ -19,21 +15,20 @@ public sealed class SelfPlayRunner
         this.rng = rng;
     }
 
-    /// <summary>Convenience overload that wraps an int seed in a <see cref="SeededRandomSource"/>.</summary>
     public SelfPlayRunner(IRuleSet rules, int? seed = null)
         : this(rules, seed is null ? new SeededRandomSource() : new SeededRandomSource(seed.Value))
     { }
 
     public readonly record struct Stats(
         int HandsPlayed,
-        int[] WinCounts,         // per seat (tsumo + ron)
-        int[] TsumoCounts,       // per seat
-        int[] RonCounts,         // per seat (wins by ron)
-        int[] DealInCounts,      // per seat (times they were the ron target)
-        int[] RiichiCounts,      // per seat (times declared riichi)
+        int[] WinCounts,
+        int[] TsumoCounts,
+        int[] RonCounts,
+        int[] DealInCounts,
+        int[] RiichiCounts,
         int RyuukyokuCount,
         int AbortCount,
-        long[] TotalScoreDelta,  // net score change per seat across all hands
+        long[] TotalScoreDelta,
         int AverageTurnCount);
 
     public Stats Run(IPolicy[] policies, int hands = 100, int dealer = 0)

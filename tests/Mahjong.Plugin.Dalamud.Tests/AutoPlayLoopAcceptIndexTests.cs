@@ -4,17 +4,6 @@ using Mahjong.Policy.Abstractions;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// Pins the accept-button index that AutoPlayLoop sends to FireCallback for
-/// every call-prompt failure shape catalogued in meta-issue #38.
-///
-/// Pre-fix the loop dispatched <c>DispatchCall()</c> (opt=0) for every
-/// accept. That works only when the chosen action is the leftmost button —
-/// i.e. when Pon is offered, Pon is force-fired regardless of what the
-/// policy chose. The four failure shapes from #38 (multi-variant chi,
-/// pon+chi simultaneous, state-28 list, state-6 hand!=14) all collapsed to
-/// the same dispatch-index bug.
-/// </summary>
 public class AutoPlayLoopAcceptIndexTests
 {
     private static MeldCandidate MakePon(int tileId, int fromSeat = 1) =>
@@ -33,8 +22,6 @@ public class AutoPlayLoopAcceptIndexTests
         new(MeldKind.MinKan, Tile.FromId(tileId),
             [Tile.FromId(tileId), Tile.FromId(tileId), Tile.FromId(tileId)], fromSeat);
 
-    // ----- Pon-only prompt: opt=0 -----
-
     [Fact]
     public void Pon_alone_returns_index_0()
     {
@@ -45,10 +32,6 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Pon, legal, MakePon(5));
         Assert.Equal(0, idx);
     }
-
-    // ----- Failure shape 1: pon + chi simultaneous prompt -----
-    // Pre-fix: choice=Chi → DispatchCall() opt=0 → fires Pon. Post-fix:
-    // skip the Pon slot to get to Chi at index 1.
 
     [Fact]
     public void Pon_and_chi_simultaneous_chi_picks_index_after_pon()
@@ -71,11 +54,6 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Pon, legal, MakePon(5));
         Assert.Equal(0, idx);
     }
-
-    // ----- Failure shape 2: multi-variant chi -----
-    // Two chi candidates [Chi(123)][Chi(234)][Pass]. Pre-fix: always opt=0
-    // (the first chi variant). Post-fix: the chosen candidate's index in
-    // legal.ChiCandidates is the offset.
 
     [Fact]
     public void Multi_chi_first_variant_picks_index_0()
@@ -106,7 +84,6 @@ public class AutoPlayLoopAcceptIndexTests
     [Fact]
     public void Multi_chi_with_pon_third_variant_picks_index_3()
     {
-        // [Pon][Chi(0)][Chi(1)][Chi(2)][Pass]
         var chi0 = MakeChi(claimedId: 1, low: 0, high: 2);
         var chi1 = MakeChi(claimedId: 1, low: 1, high: 3);
         var chi2 = MakeChi(claimedId: 1, low: 2, high: 4);
@@ -118,8 +95,6 @@ public class AutoPlayLoopAcceptIndexTests
         Assert.Equal(3, idx);
     }
 
-    // ----- Pon + Kan simultaneous (kan slot after pon) -----
-
     [Fact]
     public void Pon_and_kan_simultaneous_kan_picks_index_1()
     {
@@ -130,9 +105,6 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.MinKan, legal, MakeKan(5));
         Assert.Equal(1, idx);
     }
-
-    // ----- Ron / Riichi / Tsumo button ordering -----
-    // Order: Pon → Chi → MinKan → ShouMinKan → Ron → Riichi → Tsumo → Pass.
 
     [Fact]
     public void Ron_picks_first_index_when_only_action()
@@ -160,7 +132,6 @@ public class AutoPlayLoopAcceptIndexTests
     [Fact]
     public void Tsumo_with_riichi_in_prompt_picks_last_accept_index()
     {
-        // [Riichi][Tsumo][Pass]
         var legal = new LegalActions(
             ActionFlags.Riichi | ActionFlags.Tsumo | ActionFlags.Pass,
             [], [], [], []);
@@ -168,8 +139,6 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Tsumo, legal, null);
         Assert.Equal(1, idx);
     }
-
-    // ----- Defensive: chosen call doesn't match any chi candidate (legacy data) -----
 
     [Fact]
     public void Chi_with_no_matching_candidate_falls_back_to_first_chi_slot()
@@ -179,17 +148,10 @@ public class AutoPlayLoopAcceptIndexTests
             ActionFlags.Pon | ActionFlags.Chi | ActionFlags.Pass,
             [], [MakePon(5)], [chi1], []);
 
-        // Mismatched candidate (claimed tile is different)
         var ghostChi = MakeChi(claimedId: 8, low: 7, high: 9);
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Chi, legal, ghostChi);
-        Assert.Equal(1, idx); // pon=0 → first chi=1
+        Assert.Equal(1, idx);
     }
-
-    // ----- Regression: issue #39 — Ron must go through opcode-11 button-row,
-    // not the speculative dedicated opcode-10 that triggered the addon's
-    // HookFailed → DRAW-screen lockup. The exact log-captured shape was a
-    // Ron|Pass prompt at state-15; the loop sent opcode-10 and the game
-    // bricked. Verifying the button-row index here pins the new path.
 
     [Fact]
     public void Ron_with_pon_offered_picks_index_after_pon()
@@ -201,10 +163,6 @@ public class AutoPlayLoopAcceptIndexTests
         int idx = AutoPlayLoop.ComputeAcceptIndex(ActionKind.Ron, legal, null);
         Assert.Equal(1, idx);
     }
-
-    // ----- AnKan: button row at the state-6 self-declare popup. Group with
-    // MinKan / ShouMinKan since all three are kan variants. AnKan only ever
-    // appears alongside Riichi/Tsumo/Discard at state-6 — never at state-15.
 
     [Fact]
     public void AnKan_alone_picks_index_0()
@@ -220,8 +178,6 @@ public class AutoPlayLoopAcceptIndexTests
     [Fact]
     public void AnKan_with_riichi_and_tsumo_picks_first_kan_slot()
     {
-        // Self-declare popup typical shape: [AnKan][Riichi][Tsumo][Pass] +
-        // tile list. AnKan is the leftmost agari-side button.
         var legal = new LegalActions(
             ActionFlags.AnKan | ActionFlags.Riichi | ActionFlags.Tsumo | ActionFlags.Discard,
             [], [], [], [MakeKan(5)]);

@@ -8,16 +8,6 @@ using Dalamud.Plugin.Services;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Thin wrapper around <see cref="HttpClient"/> that gzips a payload and
-/// POSTs it to the resolved telemetry endpoint with envelope headers.
-/// Encoding-only — has no concept of files, retries, or scheduling; that
-/// lives in <see cref="TelemetryUploader"/>.
-///
-/// <para>Errors are reported to the supplied <see cref="IPluginLog"/> at
-/// Warning level (one line per failure) so the upload pipeline stays
-/// visible without flooding the log.</para>
-/// </summary>
 public sealed class HttpTelemetryClient
 {
     private readonly HttpClient http;
@@ -34,12 +24,6 @@ public sealed class HttpTelemetryClient
         this.log = log;
     }
 
-    /// <summary>
-    /// POST <paramref name="payloadPath"/>'s contents (gzipped) to
-    /// <paramref name="endpoint"/> tagged as <paramref name="stream"/>.
-    /// Returns true if the server returned 2xx; false (and logs) on any
-    /// network / status / serialization failure.
-    /// </summary>
     public async Task<bool> UploadAsync(
         string endpoint, string stream, string payloadPath, CancellationToken ct)
     {
@@ -56,8 +40,7 @@ public sealed class HttpTelemetryClient
             msg.Headers.Add("X-Stream", stream);
             msg.Headers.Add("X-Filename", Path.GetFileName(payloadPath));
 
-            // Pre-gzip into a memory stream so Content-Length is set and the
-            // server can reject oversize uploads before reading the body.
+            // Pre-gzip to set Content-Length so the server can reject oversize uploads pre-body.
             var compressed = await ReadAndCompressAsync(payloadPath, ct).ConfigureAwait(false);
             var content = new ByteArrayContent(compressed);
             content.Headers.ContentType =
@@ -76,7 +59,6 @@ public sealed class HttpTelemetryClient
         }
         catch (OperationCanceledException)
         {
-            // Cancellation is normal at shutdown — surface only at debug.
             log.Debug($"[Telemetry] upload canceled: {Path.GetFileName(payloadPath)}");
             return false;
         }

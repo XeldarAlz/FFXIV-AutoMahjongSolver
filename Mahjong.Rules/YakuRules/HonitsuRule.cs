@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Honitsu (3 han closed / 2 han open). One suit + honors.
-/// Superseded by Chinitsu (which is one suit, no honors).
-/// </summary>
 public sealed class HonitsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

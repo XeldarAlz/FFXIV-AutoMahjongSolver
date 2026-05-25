@@ -26,10 +26,9 @@ public class HandTests
         var counts = Tiles.ToCounts(Tiles.Parse("123m"));
         var hand = new Hand(counts);
 
-        // Mutate the source array — the hand should be unaffected.
         counts[0] = 0;
 
-        Assert.Equal(1, hand.ClosedCounts[0]);  // 1m still present
+        Assert.Equal(1, hand.ClosedCounts[0]);
     }
 
     [Fact]
@@ -38,7 +37,7 @@ public class HandTests
         var melds = new List<Meld> { Meld.Pon(Tile.FromId(0), Tile.FromId(0), 1) };
         var hand = new Hand(Tiles.ToCounts(Tiles.Parse("234m")), melds);
 
-        melds.Clear();   // mutate caller's list
+        melds.Clear();
 
         Assert.Single(hand.OpenMelds);
     }
@@ -47,7 +46,7 @@ public class HandTests
     public void WithTileAdded_returns_new_instance_with_increment()
     {
         var hand = Hand.FromNotation("123m");
-        var bigger = hand.WithTileAdded(Tile.FromId(0));  // add another 1m
+        var bigger = hand.WithTileAdded(Tile.FromId(0));
 
         Assert.Equal(3, hand.ClosedTileCount);
         Assert.Equal(4, bigger.ClosedTileCount);
@@ -69,7 +68,7 @@ public class HandTests
             Tiles.ToCounts(Tiles.Parse("123m")),
             [Meld.AnKan(Tile.FromId(0))]);
 
-        Assert.Equal(6, hand.TotalShantenTileCount);  // 3 closed + 3 (kan)
+        Assert.Equal(6, hand.TotalShantenTileCount);
     }
 
     [Fact]

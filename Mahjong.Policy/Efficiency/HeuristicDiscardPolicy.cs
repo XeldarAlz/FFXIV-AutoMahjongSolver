@@ -3,13 +3,8 @@ using Mahjong.Engine;
 namespace Mahjong.Policy.Efficiency;
 
 /// <summary>
-/// Heuristic <see cref="IDiscardPolicy"/> built on top of <see cref="DiscardScorer"/>.
-/// Pulls discard weights from the injected <see cref="IWeightProvider"/> on
-/// every call so weight reloads (Phase 5+) take effect without reconstruction.
-///
-/// Does not call <see cref="IOpponentModel.Update"/> itself — the composing
-/// policy updates the model once per turn so every sub-policy reads consistent
-/// state.
+/// Re-reads weights every call so live reloads land without reconstruction. Does NOT call
+/// <see cref="IOpponentModel.Update"/> — the composing policy does that once per turn.
 /// </summary>
 public sealed class HeuristicDiscardPolicy : IDiscardPolicy
 {

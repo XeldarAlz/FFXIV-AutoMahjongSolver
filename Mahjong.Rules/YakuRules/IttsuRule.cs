@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Ittsu (2 han closed / 1 han open). Straight 1-9 in a single suit:
-/// 123 + 456 + 789 of m, p, or s.
-/// </summary>
 public sealed class IttsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

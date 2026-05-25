@@ -1,29 +1,20 @@
 namespace Mahjong.Rules.Scoring;
 
 /// <summary>
-/// Standard fu accounting.
-///
-/// Special forms:
-///   * Chiitoitsu — flat 25 fu.
-///   * Kokushi — irrelevant (yakuman); returns 30 for completeness.
-///   * Pinfu tsumo — flat 20 fu.
-///   * Pinfu ron — flat 30 fu.
-///
-/// Otherwise: 20 base + tsumo bonus + menzen-kafu (closed ron) + per-group fu
-/// + wait fu, rounded up to the nearest 10.
+/// Chiitoitsu=25, Pinfu tsumo=20, Pinfu ron=30. Otherwise 20 base + bonuses, rounded up to 10.
 /// </summary>
 public sealed class StandardFuRule : IFuRule
 {
     private const int Base = 20;
     private const int TsumoBonus = 2;
-    private const int MenzenKafu = 10;        // closed ron bonus
+    private const int MenzenKafu = 10;
     private const int RoundStep = 10;
     private const int PinfuTsumoFu = 20;
     private const int PinfuRonFu = 30;
     private const int ChiitoitsuFu = 25;
     private const int KokushiFu = 30;
     private const int YakuhaiPairFu = 2;
-    private const int SingleWaitFu = 2;       // tanki / kanchan / penchan
+    private const int SingleWaitFu = 2;
 
     private const int OpenTripletSimpleFu = 2;
     private const int OpenTripletTermHonorFu = 4;
@@ -97,8 +88,6 @@ public sealed class StandardFuRule : IFuRule
 
     private static int TripletFu(Group g, bool winFromOpponent)
     {
-        // A triplet completed by an opponent's discard scores as open even if
-        // the underlying meld was held closed.
         bool effectiveOpen = g.IsOpen || (g.IsCompletedByWinningTile && winFromOpponent);
         bool termHonor = g.First.IsTerminalOrHonor;
         return effectiveOpen
@@ -108,7 +97,6 @@ public sealed class StandardFuRule : IFuRule
 
     private static int KanFu(Group g)
     {
-        // Kans don't shanpon-ron, so the open/closed status is exactly g.IsOpen.
         bool termHonor = g.First.IsTerminalOrHonor;
         return g.IsOpen
             ? (termHonor ? OpenKanTermHonorFu : OpenKanSimpleFu)
@@ -132,9 +120,9 @@ public sealed class StandardFuRule : IFuRule
         var c = completing.Value;
         return c.Kind switch
         {
-            GroupKind.Pair => SingleWaitFu,                 // tanki
+            GroupKind.Pair => SingleWaitFu,
             GroupKind.Run => RunWaitFu(c, ctx.WinningTile),
-            _ => 0,                                          // shanpon: triplet fu already handled
+            _ => 0,
         };
     }
 
@@ -144,11 +132,11 @@ public sealed class StandardFuRule : IFuRule
         int firstMod = first % TileIds.SuitSize;
 
         if (winTile.Id == first + 1)
-            return SingleWaitFu;                                  // kanchan (middle)
+            return SingleWaitFu;
         if (winTile.Id == first + 2 && firstMod == 0)
-            return SingleWaitFu;            // penchan 12 → 3
+            return SingleWaitFu;
         if (winTile.Id == first && firstMod == TileIds.SuitSize - 3)
-            return SingleWaitFu;  // penchan 89 → 7
-        return 0;                                                  // ryanmen
+            return SingleWaitFu;
+        return 0;
     }
 }

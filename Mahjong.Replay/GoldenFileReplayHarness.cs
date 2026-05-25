@@ -4,23 +4,8 @@ using System.Text.Json;
 namespace Mahjong.Replay;
 
 /// <summary>
-/// Runs a Tenhou kyoku through an <see cref="IPolicy"/> and compares the resulting
-/// decision trace to a stored "golden" snapshot file. Used by the regression
-/// test suite to catch policy drift between phases — if the new policy makes
-/// different cuts on a recorded game, the golden-file diff fails the build.
-///
-/// Workflow:
-/// <list type="bullet">
-///   <item><see cref="Replay"/> runs the kyoku, builds a deterministic
-///         <see cref="ReplaySnapshot"/>.</item>
-///   <item><see cref="LoadGolden"/> reads the expected snapshot from disk
-///         (returns null if missing).</item>
-///   <item><see cref="WriteGolden"/> writes the snapshot — used both for
-///         first-time generation and the explicit "regenerate baselines" mode.</item>
-/// </list>
-/// Tests use <see cref="VerifyOrUpdate"/> as the one-line entry point: in normal
-/// mode it asserts equality; with <c>UPDATE_REPLAY_SNAPSHOTS=1</c> set it
-/// regenerates the file.
+/// Use <see cref="VerifyOrUpdate"/> as the entry point. Setting env var
+/// <c>UPDATE_REPLAY_SNAPSHOTS=1</c> regenerates golden files instead of asserting.
 /// </summary>
 public static class GoldenFileReplayHarness
 {
@@ -32,7 +17,6 @@ public static class GoldenFileReplayHarness
         WriteIndented = true,
     };
 
-    /// <summary>Parse a Tenhou JSON file and replay its first kyoku at the given seat.</summary>
     public static ReplaySnapshot Replay(string tenhouJsonPath, IPolicy policy, int seat = 0)
     {
         ArgumentNullException.ThrowIfNull(tenhouJsonPath);
@@ -81,14 +65,6 @@ public static class GoldenFileReplayHarness
         File.WriteAllText(snapshotPath, json);
     }
 
-    /// <summary>
-    /// Convenience entry point for tests. Replays the kyoku and either:
-    /// <list type="bullet">
-    ///   <item>Asserts equality with the golden file (normal mode), or</item>
-    ///   <item>Writes/overwrites the golden file (when env var
-    ///         <c>UPDATE_REPLAY_SNAPSHOTS=1</c> is set, or when no golden exists yet).</item>
-    /// </list>
-    /// </summary>
     public static GoldenFileResult VerifyOrUpdate(
         string tenhouJsonPath, string snapshotPath, IPolicy policy, int seat = 0)
     {
@@ -117,8 +93,8 @@ public enum GoldenFileStatus
 {
     Match,
     Mismatch,
-    Created,        // golden file didn't exist; was generated
-    Updated,        // golden file existed and was overwritten (UPDATE_REPLAY_SNAPSHOTS=1)
+    Created,
+    Updated,
 }
 
 public sealed record GoldenFileResult(

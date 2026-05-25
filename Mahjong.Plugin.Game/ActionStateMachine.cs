@@ -3,24 +3,9 @@ using Mahjong.Core;
 namespace Mahjong.Plugin.Game;
 
 /// <summary>
-/// Explicit state for the auto-play tick loop. Replaces the pre-Phase-7
-/// scattering of <c>actionPending</c>, <c>actionPendingStartedAt</c>,
-/// <c>lastActionAt</c>, <c>lastDispatchedContext</c>, and
-/// <c>riichiConfirmLatched</c> booleans with named transitions and invariants.
-///
-/// Invariants:
-///   * <see cref="BeginDispatch"/> followed by <see cref="CompleteDispatch"/>
-///     bracket every dispatch attempt — the latter MUST run in the
-///     scheduling callback's <c>finally</c> so a partial failure doesn't
-///     leak the in-flight flag.
-///   * <see cref="TryRecoverFromStuckDispatch"/> is the one place that can
-///     clear the in-flight flag without a paired <see cref="CompleteDispatch"/>.
-///   * <see cref="LatchRiichiConfirm"/> is one-shot — the latch self-clears
-///     when the popup goes away (via <see cref="ClearRiichiConfirm"/>) or
-///     when the next tsumogiri dispatch consumes it.
-///
-/// Pure logic — no Dalamud, no async, no I/O. Lives in Mahjong.Plugin.Game so
-/// it's covered by the same tests as the rest of the plugin contract layer.
+/// Pure state for the auto-play tick loop. Invariants: <see cref="BeginDispatch"/> must
+/// be paired with <see cref="CompleteDispatch"/> in a finally; <see cref="LatchRiichiConfirm"/>
+/// is one-shot and self-clears on hand transition.
 /// </summary>
 public sealed class ActionStateMachine
 {
@@ -35,43 +20,23 @@ public sealed class ActionStateMachine
     private Tile? riichiConfirmTile;
     private int lastObservedWall = -1;
 
-    /// <summary>
-    /// Construct with the timeouts that govern stuck-dispatch recovery and
-    /// per-context retry debouncing.
-    /// </summary>
-    /// <param name="dispatchTimeout">Force-clear the in-flight flag if this elapses with no completion.</param>
-    /// <param name="retryCooldown">Don't re-dispatch the same (state, hand) until this elapses.</param>
     public ActionStateMachine(TimeSpan dispatchTimeout, TimeSpan retryCooldown)
     {
         this.dispatchTimeout = dispatchTimeout;
         this.retryCooldown = retryCooldown;
     }
 
-    /// <summary>True if a dispatch was started and hasn't been completed (or recovered).</summary>
     public bool IsDispatchInFlight => inFlight;
 
-    /// <summary>
-    /// True iff the last successful dispatch was a riichi-accept and the
-    /// game's follow-up "yaku preview" popup may still be visible. The next
-    /// tick that sees the same Riichi popup completes the declaration via
-    /// tsumogiri instead of re-clicking the list.
-    /// </summary>
+    /// <summary>True when the riichi-accept popup may still be visible from a previous dispatch.</summary>
     public bool IsRiichiConfirmPending => riichiConfirmLatched;
 
     /// <summary>
-    /// The discard tile the policy picked when it chose Riichi. Used by the
-    /// next-tick tsumogiri to commit the correct tile rather than the
-    /// hardcoded slot 13 (last drawn). Null when the latch was set via a
-    /// probe-accept path that didn't carry an explicit tile decision.
+    /// Tile the policy chose for the post-riichi tsumogiri; null when the latch was set via a
+    /// probe-accept path without an explicit tile decision.
     /// </summary>
     public Tile? RiichiConfirmTile => riichiConfirmTile;
 
-    /// <summary>
-    /// If the in-flight flag has been set longer than <see cref="dispatchTimeout"/>,
-    /// clear it and return true. Defends against the case where a scheduled
-    /// callback's <c>finally</c> never ran (framework shutdown, RunOnTick lost),
-    /// which would otherwise stick the loop forever.
-    /// </summary>
     public bool TryRecoverFromStuckDispatch(DateTime now)
     {
         if (!inFlight)
@@ -82,11 +47,6 @@ public sealed class ActionStateMachine
         return true;
     }
 
-    /// <summary>
-    /// Open a dispatch window for the given context. Pairs with
-    /// <see cref="CompleteDispatch"/>. Records the context so subsequent ticks
-    /// can de-duplicate via <see cref="ShouldSuppressForContext"/>.
-    /// </summary>
     public void BeginDispatch(DateTime now, DispatchContext context)
     {
         inFlight = true;
@@ -95,29 +55,16 @@ public sealed class ActionStateMachine
         lastContext = context;
     }
 
-    /// <summary>Close the dispatch window — call from the scheduling callback's <c>finally</c>.</summary>
     public void CompleteDispatch() => inFlight = false;
 
-    /// <summary>
-    /// True iff the given context matches the most recently dispatched and
-    /// the retry cooldown hasn't elapsed yet. Callers skip the dispatch when
-    /// this returns true to avoid hammering the same (state, hand) every frame.
-    /// </summary>
     public bool ShouldSuppressForContext(DispatchContext context, DateTime now)
         => lastContext.HasValue
            && lastContext.Value.Equals(context)
            && now - lastActionAt < retryCooldown;
 
-    /// <summary>Forget the most recent context — caller switched to a different mode (idle, no addon).</summary>
     public void ClearContext() => lastContext = null;
 
-    /// <summary>
-    /// Latch the riichi-confirm flag. Set after a successful auto-riichi-accept
-    /// dispatch. Carries the policy-chosen discard tile so the next-tick
-    /// tsumogiri commits the right slot. A null tile preserves whatever tile
-    /// was already latched (e.g. the post-confirm popup re-fires the latch
-    /// without a fresh policy decision — we keep the original choice).
-    /// </summary>
+    /// <summary>A null <paramref name="target"/> preserves any previously-latched tile.</summary>
     public void LatchRiichiConfirm(Tile? target = null)
     {
         riichiConfirmLatched = true;
@@ -125,11 +72,6 @@ public sealed class ActionStateMachine
             riichiConfirmTile = target;
     }
 
-    /// <summary>
-    /// Manually clear the latch. Should rarely be needed — <see cref="ObserveWall"/>
-    /// clears it on hand transitions automatically. Useful for tests or for an
-    /// explicit "we're starting fresh" signal.
-    /// </summary>
     public void ClearRiichiConfirm()
     {
         riichiConfirmLatched = false;
@@ -137,16 +79,8 @@ public sealed class ActionStateMachine
     }
 
     /// <summary>
-    /// Track the wall count tick by tick so we can detect a hand transition.
-    /// Within a hand the wall only ever decreases; a sharp upward jump (or
-    /// the very first observation crossing into a much-larger value) means a
-    /// new hand has been dealt and per-hand state needs reset. Used to clear
-    /// the riichi latch — without this the latch only cleared when the popup
-    /// signature briefly dropped between ticks, which let the policy re-evaluate
-    /// riichi every time the popup re-appeared in the same hand and produced
-    /// the 23-confirms-in-14-seconds spam observed 2026-05-09 09:53.
-    /// Tolerance of 5 rides over the transient wall-read glitches that
-    /// <see cref="GameLogger.MaybeRollHand"/> already documented.
+    /// Sharp upward wall jump = new hand dealt → clear per-hand state. Tolerance 5 absorbs
+    /// transient wall-read glitches.
     /// </summary>
     public void ObserveWall(int wall)
     {
@@ -160,9 +94,4 @@ public sealed class ActionStateMachine
     }
 }
 
-/// <summary>
-/// Identifies a "moment" the auto-play loop is responding to — a (state code,
-/// hand count) pair. Two ticks with the same context are considered the same
-/// situation for retry-debounce purposes.
-/// </summary>
 public readonly record struct DispatchContext(int State, int Hand);

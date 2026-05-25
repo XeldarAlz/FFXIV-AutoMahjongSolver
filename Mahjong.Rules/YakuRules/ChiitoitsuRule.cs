@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Chiitoitsu (2 han, closed only). Seven pairs. The decomposition form already
-/// guarantees the seven-pairs structure, so this is just a form check.
-/// </summary>
 public sealed class ChiitoitsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

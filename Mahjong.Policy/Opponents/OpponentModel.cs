@@ -2,24 +2,7 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Opponents;
 
-/// <summary>
-/// Rule-based Bayesian opponent model. Maintains per-opponent estimates of:
-/// <list type="bullet">
-///   <item><c>TenpaiProb[3]</c> — logistic-ish score on public evidence</item>
-///   <item><c>HandMarginal[3][34]</c> — P(tile_k ∈ hand[opp]), factorized per-tile</item>
-///   <item><c>DangerMap[3][34]</c> — P(deal-in | we discard k), composited from genbutsu/suji/kabe/tenpai</item>
-/// </list>
-/// Indexed relative to self (<c>state.OurSeat</c>): index 0=shimocha, 1=toimen, 2=kamicha.
-///
-/// Coefficients (logistic intercept and slopes, suji discount, base deal-in
-/// rate, expected hand value) come from <see cref="OpponentWeights"/> — defaults
-/// preserve the pre-Phase-3 hand-tuned values; calibration via the weight tuner
-/// is outstanding work.
-///
-/// Phase 2 MVP note: discard pools aren't yet read from the game. Until they
-/// are, TenpaiProb uses only wall-remaining and meld-count heuristics, and
-/// DangerMap treats <b>our own discards</b> as the only reliable genbutsu.
-/// </summary>
+/// <summary>Opponents indexed relative to self: 0=shimocha, 1=toimen, 2=kamicha.</summary>
 public sealed class OpponentModel : IOpponentModel
 {
     public const int OpponentCountConst = 3;
@@ -50,10 +33,6 @@ public sealed class OpponentModel : IOpponentModel
 
     public double TenpaiProbability(int opponentIndex) => TenpaiProb[opponentIndex];
 
-    /// <summary>
-    /// Recompute all per-opponent estimates from the current snapshot. Pure — no
-    /// cross-tick state. Cheap enough to call every decision point.
-    /// </summary>
     public void Update(StateSnapshot state)
     {
         UpdateTenpaiProbabilities(state);
@@ -68,15 +47,12 @@ public sealed class OpponentModel : IOpponentModel
             int absSeat = (state.OurSeat + 1 + opp) % 4;
             var seat = state.Seats[absSeat];
 
-            // Riichi declared → tenpai certain.
             if (seat.Riichi)
             {
                 TenpaiProb[opp] = 1.0;
                 continue;
             }
 
-            // Prefer the authoritative DiscardCount (pinned from addon memory)
-            // over Discards.Count (which is 0 when the pool couldn't be resolved).
             double discardCount = seat.DiscardCount > 0 ? seat.DiscardCount : seat.Discards.Count;
             double meldCount = seat.Melds.Count;
             int turnsElapsed = 70 - state.WallRemaining;
@@ -96,8 +72,6 @@ public sealed class OpponentModel : IOpponentModel
         for (int k = 0; k < TileKinds; k++)
             unseenTotal += live[k];
 
-        // Each opponent holds ~13 tiles; each live tile has ~13/unseenTotal chance
-        // of being in their hand.
         double perTileBase = unseenTotal > 0 ? 13.0 / unseenTotal : 0.0;
 
         for (int opp = 0; opp < OpponentCountConst; opp++)
@@ -136,11 +110,9 @@ public sealed class OpponentModel : IOpponentModel
 
     private double ComputeDealInRisk(int tileId, double tenpai, SeatView seat, int[] live)
     {
-        // Genbutsu: opponent already discarded this tile → 0% deal-in.
         if (ContainsTile(seat.Discards, tileId))
             return 0.0;
 
-        // Kabe: 4 copies all visible → nobody can wait on it.
         if (live[tileId] == 0)
             return 0.0;
 
@@ -161,8 +133,8 @@ public sealed class OpponentModel : IOpponentModel
         int suitBase = (tileId / 9) * 9;
         int middle = pos switch
         {
-            0 => suitBase + 3,        // 1 → middle 4
-            8 => suitBase + 5,        // 9 → middle 6
+            0 => suitBase + 3,
+            8 => suitBase + 5,
             _ => -1,
         };
         if (middle < 0)
@@ -171,7 +143,6 @@ public sealed class OpponentModel : IOpponentModel
         return ContainsTile(seat.Discards, middle);
     }
 
-    /// <summary>Sum of P(deal-in) × value across all opponents if we discard kind k.</summary>
     public double ExpectedDealInCost(int tileId)
     {
         double total = 0;

@@ -46,7 +46,6 @@ public class HandSimulatorTests
     [Fact]
     public void Tsumo_winner_gets_score_increase()
     {
-        // Run until we find a seed that produces a tsumo.
         var policies = new IPolicy[]
         {
             new EfficiencyPolicy(),
@@ -72,7 +71,6 @@ public class HandSimulatorTests
                 return;
             }
         }
-        // No tsumo in 50 seeds — possible but rare; don't fail.
     }
 
     [Fact]
@@ -100,9 +98,6 @@ public class HandSimulatorTests
     [Fact]
     public void Ron_detection_fires_when_policy_discards_a_winning_tile()
     {
-        // Play several hands; ron must occur at least sometimes given EfficiencyPolicy ignores
-        // deal-in cost without populated discard pools. Just verify ron + riichi counters
-        // in the aggregated stats are integers ≥ 0.
         var policies = new IPolicy[]
         {
             new EfficiencyPolicy(),
@@ -119,6 +114,6 @@ public class HandSimulatorTests
         foreach (var d in stats.DealInCounts)
             totalDealIns += d;
         Assert.True(totalRons >= 0);
-        Assert.Equal(totalRons, totalDealIns);   // each ron pairs with one deal-in
+        Assert.Equal(totalRons, totalDealIns);
     }
 }

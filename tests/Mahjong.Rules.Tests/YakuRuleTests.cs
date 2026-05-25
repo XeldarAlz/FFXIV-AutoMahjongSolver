@@ -3,19 +3,12 @@ using Mahjong.Rules.YakuRules.Yakuman;
 
 namespace Mahjong.Rules.Tests;
 
-/// <summary>
-/// Targeted unit tests for individual <see cref="IYakuRule"/> implementations.
-/// The full integration coverage (yaku detected on real hands) lives in
-/// <c>Engine.Tests</c>; these tests pin the rule's contract — the right
-/// <see cref="YakuDefinition"/> and the right yes/no answer on stripped-down
-/// inputs.
-/// </summary>
 public class YakuRuleTests
 {
     private static readonly Tile One = Tile.FromId(0);
     private static readonly Tile Two = Tile.FromId(1);
     private static readonly Tile Three = Tile.FromId(2);
-    private static readonly Tile FiveZ = Tile.FromId(31);   // haku
+    private static readonly Tile FiveZ = Tile.FromId(31);
 
     private static WinContext Tsumo(Tile w) => new(w, WinKind.Tsumo);
 
@@ -59,7 +52,7 @@ public class YakuRuleTests
         var pair = new Group(GroupKind.Pair, FiveZ, IsOpen: false);
         var run234 = new Group(GroupKind.Run, Two, IsOpen: false);
         var d = StandardDecomp(pair, run234, run234, run234, run234);
-        Assert.Empty(rule.Detect(d, Tsumo(One)));   // pair is honor, blocks tanyao
+        Assert.Empty(rule.Detect(d, Tsumo(One)));
     }
 
     [Fact]
@@ -67,7 +60,7 @@ public class YakuRuleTests
     {
         var rule = new TanyaoRule();
         var pair = new Group(GroupKind.Pair, Two, IsOpen: false);
-        var run = new Group(GroupKind.Run, Two, IsOpen: false);   // 2-3-4
+        var run = new Group(GroupKind.Run, Two, IsOpen: false);
         var d = StandardDecomp(pair, run, run, run, run);
         Assert.Single(rule.Detect(d, Tsumo(Two)));
     }

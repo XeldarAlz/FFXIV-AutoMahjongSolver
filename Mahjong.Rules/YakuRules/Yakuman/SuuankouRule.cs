@@ -1,13 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Suuankou (yakuman). Four concealed triplets (concealed kans count).
-///
-/// TODO (docs/ruleset.md Q7): Suuankou-tanki — winning on a single-tile wait
-/// where the pair completes the hand — is a double yakuman in many variants.
-/// Not currently distinguished; would be added as <c>SuuankouTankiRule</c> with
-/// Conflicts = [Suuankou].
-/// </summary>
 public sealed class SuuankouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

@@ -1,12 +1,7 @@
 namespace Mahjong.Policy.Abstractions.Random;
 
-/// <summary>
-/// Higher-level helpers built on top of the minimal <see cref="IRandomSource"/>
-/// surface. Defined as extensions so every implementation gets them for free.
-/// </summary>
 public static class RandomSourceExtensions
 {
-    /// <summary>Fisher-Yates shuffle in-place.</summary>
     public static void Shuffle<T>(this IRandomSource rng, IList<T> list)
     {
         ArgumentNullException.ThrowIfNull(rng);
@@ -19,10 +14,7 @@ public static class RandomSourceExtensions
         }
     }
 
-    /// <summary>
-    /// Draw one tile uniformly at random from a "live" pool described by per-tile
-    /// remaining counts. Returns null if no tiles remain.
-    /// </summary>
+    /// <summary>Draw uniformly from a live-tile pool; null if empty.</summary>
     public static Tile? DrawFromLive(this IRandomSource rng, ReadOnlySpan<int> live)
     {
         ArgumentNullException.ThrowIfNull(rng);

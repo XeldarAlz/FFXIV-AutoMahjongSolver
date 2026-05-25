@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Haitei Raoyue (1 han). Tsumo on the very last wall draw.
-/// </summary>
 public sealed class HaiteiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

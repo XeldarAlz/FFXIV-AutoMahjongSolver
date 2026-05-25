@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Daisangen (yakuman). All three dragon triplets (or kans).
-/// </summary>
 public sealed class DaisangenRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

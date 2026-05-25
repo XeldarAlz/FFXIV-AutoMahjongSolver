@@ -9,12 +9,7 @@ public enum TileSuit : byte
 }
 
 /// <summary>
-/// 34-space tile. Id layout:
-///   0..8   = 1m..9m
-///   9..17  = 1p..9p
-///   18..26 = 1s..9s
-///   27..30 = E,S,W,N winds
-///   31..33 = haku (white), hatsu (green), chun (red) dragons
+/// 34-space tile. Id: 0..8=1m..9m, 9..17=1p..9p, 18..26=1s..9s, 27..30=E/S/W/N, 31..33=haku/hatsu/chun.
 /// </summary>
 public readonly record struct Tile(byte Id) : IComparable<Tile>
 {
@@ -60,11 +55,7 @@ public readonly record struct Tile(byte Id) : IComparable<Tile>
 
 public static class Tiles
 {
-    /// <summary>
-    /// Parse tile notation like "123m456p789s1234567z" into a sorted 34-space tile array.
-    /// Digits accumulate until a suit letter (m/p/s/z), which flushes them.
-    /// For z: 1=E, 2=S, 3=W, 4=N, 5=haku, 6=hatsu, 7=chun.
-    /// </summary>
+    /// <summary>Parse "123m456p789s1234567z" notation. z: 1=E,2=S,3=W,4=N,5=haku,6=hatsu,7=chun.</summary>
     public static Tile[] Parse(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -118,7 +109,6 @@ public static class Tiles
         return result.ToArray();
     }
 
-    /// <summary>Render an unordered tile set as "123m45p6s7z" — sorted per suit.</summary>
     public static string Render(IEnumerable<Tile> tiles)
     {
         var counts = new int[Tile.Count34];
@@ -159,7 +149,6 @@ public static class Tiles
         return sb.ToString();
     }
 
-    /// <summary>Convert an unordered tile set into 34-space counts.</summary>
     public static int[] ToCounts(IEnumerable<Tile> tiles)
     {
         var counts = new int[Tile.Count34];

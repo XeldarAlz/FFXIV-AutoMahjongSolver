@@ -1,10 +1,6 @@
 namespace Mahjong.Replay;
 
-/// <summary>
-/// One discard decision in a recorded kyoku, captured for golden-file storage.
-/// Tile fields are short names (e.g. "5m", "2p", "1z") — stable across schema
-/// changes and trivially diff-readable in the JSON file.
-/// </summary>
+/// <summary>Tile fields are short names ("5m", "1z") — stable across schema changes.</summary>
 public sealed record ReplayDecisionEntry(
     int Turn,
     string Actual,
@@ -12,14 +8,8 @@ public sealed record ReplayDecisionEntry(
     bool Matched);
 
 /// <summary>
-/// JSON-serializable trace of a policy's decisions over one replay run. The
-/// golden file format the regression suite reads and writes.
-///
-/// <see cref="Source"/> is the Tenhou log filename (not the full path) — keeps
-/// the snapshot portable across checkout locations.
-///
-/// <see cref="Equal"/> compares two snapshots field-by-field on every entry,
-/// because record equality on collection-typed members is reference-equal.
+/// <see cref="Source"/> is the filename only; <see cref="Equal"/> hand-compares because
+/// record equality on array members is reference-equal.
 /// </summary>
 public sealed record ReplaySnapshot(
     string Source,

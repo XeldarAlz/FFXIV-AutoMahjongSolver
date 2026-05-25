@@ -5,7 +5,6 @@ public class DoraTests
     [Fact]
     public void Dora_indicator_cycles_next_tile_in_suit()
     {
-        // Hand has exactly one 2m. Indicator 1m → dora = 2m → +1 han vs. no-dora.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var withDora = baseCtx with { DoraIndicators = [Tiles.Parse("1m")[0]] };
@@ -18,7 +17,6 @@ public class DoraTests
     [Fact]
     public void Dora_cycles_nine_back_to_one()
     {
-        // Indicator 9s → dora = 1s. Hand has two 1s (in two 123s runs).
         var hand = Hand.FromNotation("234m456p123s123s99m");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var withDora = baseCtx with { DoraIndicators = [Tiles.Parse("9s")[0]] };
@@ -31,7 +29,6 @@ public class DoraTests
     [Fact]
     public void Wind_indicator_cycles_east_south_west_north_east()
     {
-        // Indicator N (30) → dora = E (27). Pair 11z = two E → +2 han.
         var hand = Hand.FromNotation("234m456p789s234s11z");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo,
                                       RoundWindTileId: 28, SeatWindTileId: 28);
@@ -45,7 +42,6 @@ public class DoraTests
     [Fact]
     public void Dragon_indicator_cycles_haku_hatsu_chun_haku()
     {
-        // Indicator chun (33) → dora = haku (31). Pair 55z = two haku → +2 han.
         var hand = Hand.FromNotation("234m456p789s234s55z");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var withDora = baseCtx with { DoraIndicators = [Tiles.Parse("7z")[0]] };
@@ -58,7 +54,6 @@ public class DoraTests
     [Fact]
     public void Ura_dora_counted_only_with_riichi_and_menzen()
     {
-        // Hand has exactly one 2m. Ura-indicator 1m → ura 2m → +1 han when riichi.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var withoutRiichi = new WinContext(
             Tiles.Parse("2m")[0], WinKind.Tsumo,
@@ -68,17 +63,12 @@ public class DoraTests
         var r1 = TestRules.Scorer.Evaluate(hand, withoutRiichi)!;
         var r2 = TestRules.Scorer.Evaluate(hand, withRiichi)!;
 
-        // r2 adds riichi (+1) and ura dora (+1) compared to r1.
         Assert.Equal(r1.Han + 2, r2.Han);
     }
-
-    // -------- Akadora side-channel --------
 
     [Fact]
     public void AkaDora_adds_one_han_per_red_in_closed_hand()
     {
-        // Variant reader counts a red 5m and reports AkaDora=1 in the snapshot,
-        // which flows to WinContext. Scorer must add the count to the total.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var withOneRed = baseCtx with { AkaDora = 1 };
@@ -95,8 +85,6 @@ public class DoraTests
     [Fact]
     public void AkaDora_stacks_with_regular_dora()
     {
-        // Both effects apply additively: regular dora from an indicator AND
-        // akadora from the snapshot's AkaDora count.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var withBoth = baseCtx with
@@ -113,10 +101,6 @@ public class DoraTests
     [Fact]
     public void AkaDora_combines_closed_and_open_meld_reds()
     {
-        // The variant reader sums closed-hand akadora + MeldTracker.MeldAkadora
-        // before plumbing through to WinContext. A win-context AkaDora=2
-        // represents "one red still in closed hand, one red in an open meld."
-        // The scorer treats them the same — both add to dora han.
         var hand = Hand.FromNotation("234m456p789s234s99m");
         var baseCtx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo);
         var twoReds = baseCtx with { AkaDora = 2 };

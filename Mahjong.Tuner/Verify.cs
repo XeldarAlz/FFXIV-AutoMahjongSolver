@@ -3,10 +3,6 @@ using Mahjong.Policy.Tuning;
 
 namespace Mahjong.Tuner;
 
-/// <summary>
-/// Sanity check: head-to-head match between two weight sets at high hand counts
-/// to confirm whether a tuner result is real or noise.
-/// </summary>
 public static class Verify
 {
     public static int RunVerify(string[] args)
@@ -14,9 +10,6 @@ public static class Verify
         System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
             System.Globalization.CultureInfo.InvariantCulture;
 
-        // Optional baseline-mode flag: `verify orig 2000 9999` compares the coord
-        // weights against the original hand-picked defaults (pre-tuning) instead
-        // of the current Weights.Default.
         bool vsOriginal = args.Length > 0 && args[0] == "orig";
         if (vsOriginal) args = args.Skip(1).ToArray();
 

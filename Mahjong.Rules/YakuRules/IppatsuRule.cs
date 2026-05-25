@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Ippatsu (1 han, closed only). Win within one go-around of declaring riichi,
-/// with no calls intervening. Caller signals via <see cref="WinContext.IsIppatsu"/>.
-/// </summary>
 public sealed class IppatsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

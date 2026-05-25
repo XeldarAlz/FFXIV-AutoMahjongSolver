@@ -18,10 +18,10 @@ public class TileTests
     }
 
     [Theory]
-    [InlineData(27, 1)] // East
-    [InlineData(30, 4)] // North
-    [InlineData(31, 5)] // haku
-    [InlineData(33, 7)] // chun
+    [InlineData(27, 1)]
+    [InlineData(30, 4)]
+    [InlineData(31, 5)]
+    [InlineData(33, 7)]
     public void Honor_tile_maps_to_z_digit(int id, int zDigit)
     {
         var t = Tile.FromId(id);
@@ -33,9 +33,9 @@ public class TileTests
     [Fact]
     public void Terminals_and_honors_flagged()
     {
-        Assert.True(Tile.FromId(0).IsTerminal);   // 1m
-        Assert.True(Tile.FromId(8).IsTerminal);   // 9m
-        Assert.False(Tile.FromId(4).IsTerminal);  // 5m
+        Assert.True(Tile.FromId(0).IsTerminal);
+        Assert.True(Tile.FromId(8).IsTerminal);
+        Assert.False(Tile.FromId(4).IsTerminal);
         Assert.True(Tile.FromId(27).IsTerminalOrHonor);
         Assert.True(Tile.FromId(0).IsTerminalOrHonor);
         Assert.True(Tile.FromId(4).IsSimple);
@@ -70,7 +70,6 @@ public class TileTests
     {
         var tiles = Tiles.Parse("123m456p789s");
         Assert.Equal(9, tiles.Length);
-        // 1m=0, 2m=1, 3m=2; 4p=12, 5p=13, 6p=14; 7s=24, 8s=25, 9s=26
         Assert.Equal([0, 1, 2, 12, 13, 14, 24, 25, 26],
                      tiles.Select(t => (int)t.Id));
     }
@@ -106,7 +105,6 @@ public class TileTests
     [Fact]
     public void Parse_then_render_roundtrips_for_canonical_forms()
     {
-        // Canonical form = per-suit ascending digits then suit letter.
         string[] cases = ["123m456p789s1234567z", "1122m3344p5566s77z", "119m19p19s1234567z"];
         foreach (var c in cases)
         {
@@ -119,7 +117,6 @@ public class TileTests
     [Fact]
     public void Render_canonicalizes_ordering()
     {
-        // Digits may appear out of order; render sorts within each suit.
         var tiles = Tiles.Parse("19m19p19s1234567z1m");
         Assert.Equal("119m19p19s1234567z", Tiles.Render(tiles));
     }

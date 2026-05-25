@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Houtei Raoyui (1 han). Ron on the final discard of the round.
-/// </summary>
 public sealed class HouteiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

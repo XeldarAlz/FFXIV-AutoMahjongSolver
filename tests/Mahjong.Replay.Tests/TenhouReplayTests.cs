@@ -45,8 +45,6 @@ public class TenhouReplayTests
     [Fact]
     public void Replay_accuracy_is_zero_when_no_decisions_match()
     {
-        // The synthetic log uses random discards; depending on the policy's pick, accuracy
-        // may be 0 or non-zero. We just assert the math is sane: matches/total = accuracy.
         var kyokus = TenhouLog.ParseDocument(ThreeTurnSyntheticKyoku);
         var policy = new EfficiencyPolicy();
         var result = TenhouReplay.ReplaySeat(kyokus[0], policy, seat: 0);

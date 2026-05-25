@@ -1,16 +1,8 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Chuuren Poutou (yakuman). Single-suit closed hand 1-1-1-2-3-4-5-6-7-8-9-9-9
-/// plus one extra tile of that suit.
-///
-/// Pure variant (double yakuman): the winning tile is the "extra" — i.e. before
-/// the winning tile, the hand was exactly 1-1-1-2-3-4-5-6-7-8-9-9-9, so any
-/// of the nine tiles in that suit completed it (the "9-sided wait").
-/// </summary>
+/// <summary>Pure variant (double yakuman): winning tile is the extra, leaving a 9-sided wait.</summary>
 public sealed class ChuurenPoutouRule : IYakuRule
 {
-    /// <summary>The 1-1-1-2-3-4-5-6-7-8-9-9-9 pattern in 9-tile counts.</summary>
     private static readonly int[] Baseline = [3, 1, 1, 1, 1, 1, 1, 1, 3];
 
     public YakuDefinition Definition { get; } = new(
@@ -100,7 +92,6 @@ public sealed class ChuurenPoutouRule : IYakuRule
         if (winId < suitBase || winId >= suitBase + TileIds.SuitSize)
             return false;
 
-        // Removing the winning tile should leave exactly the baseline pattern.
         counts[winId]--;
         for (int i = 0; i < TileIds.SuitSize; i++)
         {

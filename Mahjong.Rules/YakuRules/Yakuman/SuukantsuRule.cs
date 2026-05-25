@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Suukantsu (yakuman). Four kans of any kind — open, added, or concealed.
-/// </summary>
 public sealed class SuukantsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

@@ -1,13 +1,6 @@
 namespace Mahjong.Core;
 
-/// <summary>
-/// Live-tile tracker. Counts every publicly-visible copy of each tile kind —
-/// our hand, all discards, all open melds, and all dora/kan-dora indicators.
-/// Live count for kind k is <c>4 - Seen[k]</c>.
-///
-/// Deliberately mutable: callers feed observations as they arrive (per discard,
-/// per call). Reset between rounds with <see cref="Clear"/>.
-/// </summary>
+/// <summary>Mutable seen-tile tracker. Live count = 4 - Seen[k]. Reset with <see cref="Clear"/>.</summary>
 public sealed class Wall
 {
     private readonly int[] seen = new int[Tile.Count34];

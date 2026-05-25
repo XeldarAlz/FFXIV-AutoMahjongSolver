@@ -1,15 +1,7 @@
 namespace Mahjong.Engine;
 
 /// <summary>
-/// Given the closed hand and an opponent's discard that the game is offering us
-/// to claim, enumerate the pon / chi / minkan <see cref="MeldCandidate"/>s we
-/// could legally form. Pure — no UI or game-memory coupling.
-///
-/// <para>
-/// <paramref name="fromSeat"/> is seat-relative with the plugin's convention:
-/// 0 = self (never valid for a call candidate), 1 = shimocha, 2 = toimen,
-/// 3 = kamicha. Chi is only legal when the claim comes from kamicha (3).
-/// </para>
+/// fromSeat is plugin-relative: 0=self, 1=shimocha, 2=toimen, 3=kamicha. Chi only from kamicha.
 /// </summary>
 public static class CallCandidateDeriver
 {
@@ -53,7 +45,6 @@ public static class CallCandidateDeriver
             int baseId = (int)claimed.Suit * 9;
             int n = claimed.Number;
 
-            // Three run positions for the claimed tile: high-end, middle, low-end.
             TryChi(counts, claimed, fromSeat, baseId, n, -2, -1, chi);
             TryChi(counts, claimed, fromSeat, baseId, n, -1, +1, chi);
             TryChi(counts, claimed, fromSeat, baseId, n, +1, +2, chi);

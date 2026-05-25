@@ -1,12 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Junchan (3 han closed / 2 han open). Strict chanta — every group contains a
-/// terminal AND there are no honors anywhere. At least one run is required
-/// (otherwise it's Chinroutou).
-///
-/// Supersedes Chanta.
-/// </summary>
 public sealed class JunchanRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(
@@ -28,7 +21,7 @@ public sealed class JunchanRule : IYakuRule
             if (!g.ContainsTerminalOrHonor)
                 return [];
             if (g.First.IsHonor)
-                return [];                                  // Junchan forbids honors
+                return [];
             if (g.Kind == GroupKind.Run)
                 hasRun = true;
         }

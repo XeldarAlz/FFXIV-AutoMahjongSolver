@@ -5,11 +5,6 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// Test-double for <see cref="IDiscardCapture"/> that lets tests fire
-/// arbitrary <see cref="DiscardEvent"/>s and assert that subscribers — like
-/// <see cref="DiscardCaptureLogger"/> — react correctly.
-/// </summary>
 internal sealed class FakeDiscardCapture : IDiscardCapture
 {
     public HookHealth Health { get; set; } = HookHealth.Active;

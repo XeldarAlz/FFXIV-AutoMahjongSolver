@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Tanyao (1 han). All-simples — no terminals (1, 9), no honors anywhere in the hand.
-/// </summary>
 public sealed class TanyaoRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

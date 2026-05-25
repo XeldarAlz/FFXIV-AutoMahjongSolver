@@ -6,13 +6,6 @@ using Mahjong.Policy.Simulator;
 
 namespace Mahjong.Policy.Tuning;
 
-/// <summary>
-/// Coordinate-descent hill climbing for DiscardScorer weights. Each generation
-/// perturbs one weight at a time (×factor, ÷factor) and keeps the variant with
-/// the best net score delta against the incumbent. Intended for offline runs —
-/// not fast, not provably optimal. CMA-ES or replay-based supervision is the
-/// next step.
-/// </summary>
 public sealed class WeightTuner
 {
     public sealed record Settings(
@@ -44,10 +37,7 @@ public sealed class WeightTuner
         DiscardWeights FinalWeights,
         List<TuningStep> Steps);
 
-    /// <summary>
-    /// Head-to-head match between two weight sets. Candidate plays seats 0/2,
-    /// baseline plays seats 1/3. Returns net score delta for the candidates.
-    /// </summary>
+    /// <summary>Candidate plays seats 0/2; baseline plays 1/3.</summary>
     public static EvaluationResult Evaluate(
         DiscardWeights candidate,
         DiscardWeights baseline,
@@ -61,9 +51,6 @@ public sealed class WeightTuner
             new EfficiencyPolicy(candidate),
             new EfficiencyPolicy(baseline),
         };
-        // Tuning runs use riichi rules (matches the Tenhou corpora most policies are
-        // calibrated against). Phase 5 (Mahjong.Replay) will revisit this if a
-        // tuning workflow ever needs Doman-specific scoring.
         var runner = new SelfPlayRunner(new RiichiRuleSet(), seed);
         var stats = runner.Run(policies, hands);
 
@@ -87,11 +74,9 @@ public sealed class WeightTuner
 
         for (int iter = 0; iter < s.Iterations; iter++)
         {
-            // Pick one field to perturb this iteration.
             string field = fields[iter % fields.Length];
             double oldVal = GetField(current, field);
 
-            // Try ×factor and ÷factor; keep the best (if either beats current).
             var up = SetField(current, field, oldVal * s.PerturbFactor);
             var down = SetField(current, field, oldVal / s.PerturbFactor);
 

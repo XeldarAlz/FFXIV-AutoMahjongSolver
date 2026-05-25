@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Sanshoku Doukou (2 han). Same triplet (or kan) in all three suits — e.g.
-/// 555m + 555p + 555s.
-/// </summary>
 public sealed class SanshokuDoukouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

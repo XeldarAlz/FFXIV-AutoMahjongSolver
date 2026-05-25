@@ -1,23 +1,8 @@
 namespace Mahjong.Plugin.Game;
 
-/// <summary>
-/// Applies an ordered chain of <see cref="IConfigMigrator{TConfig}"/> steps
-/// to bring a loaded config up to the current schema version.
-///
-/// Throws if the chain has gaps (no migrator from the persisted version) or
-/// loops (migrator output version is &lt;= input version) — silent skips are
-/// worse than a loud failure when migrations are at stake.
-/// </summary>
+/// <summary>Throws on gaps and non-progressing migrators — silent skips would corrupt state.</summary>
 public static class ConfigMigrationRunner
 {
-    /// <summary>
-    /// Apply migrators sequentially. Each migrator runs once; the chain stops
-    /// when the config reaches <paramref name="targetVersion"/>.
-    /// </summary>
-    /// <param name="config">The loaded config.</param>
-    /// <param name="currentVersion">The persisted config's reported schema version.</param>
-    /// <param name="targetVersion">The current code's schema version.</param>
-    /// <param name="migrators">All registered migrators (order doesn't matter — picked by FromVersion).</param>
     public static TConfig Run<TConfig>(
         TConfig config,
         int currentVersion,

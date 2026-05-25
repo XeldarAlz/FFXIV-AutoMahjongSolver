@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Toitoi (2 han). All triplets — every non-pair group is a triplet or kan.
-/// </summary>
 public sealed class ToitoiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

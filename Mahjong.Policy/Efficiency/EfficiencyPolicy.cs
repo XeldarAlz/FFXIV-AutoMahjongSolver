@@ -4,26 +4,6 @@ using Mahjong.Policy.Placement;
 
 namespace Mahjong.Policy.Efficiency;
 
-/// <summary>
-/// Heuristic top-level <see cref="IPolicy"/>. Composes the four sub-policies
-/// (<see cref="IDiscardPolicy"/>, <see cref="ICallPolicy"/>,
-/// <see cref="IRiichiPolicy"/>, <see cref="IPushFoldPolicy"/>) plus an
-/// <see cref="IOpponentModel"/> that's updated once per decision so every
-/// sub-policy reads consistent threat data.
-///
-/// Decision precedence:
-///   1. Agari (legal Tsumo/Ron) — declare immediately.
-///   2. Call offered — accept iff <see cref="ICallPolicy"/> says yes.
-///   3. Discard pipeline:
-///        a. Tsumogiri fallback when meld+hand counts are inconsistent.
-///        b. Pick top discard from <see cref="IDiscardPolicy"/>.
-///        c. Push/fold check; on Fold, swap to lowest-deal-in-cost cut.
-///        d. Riichi check on the chosen cut; declare iff yes.
-///        e. Plain discard otherwise.
-///
-/// Each step contributes a <see cref="Reason"/> to <see cref="ActionChoice.Steps"/>
-/// so the UI can render the rationale chain without parsing strings.
-/// </summary>
 public sealed class EfficiencyPolicy : IPolicy
 {
     private readonly IOpponentModel opponentModel;
@@ -32,7 +12,6 @@ public sealed class EfficiencyPolicy : IPolicy
     private readonly IRiichiPolicy riichi;
     private readonly IPushFoldPolicy pushFold;
 
-    /// <summary>Full DI constructor.</summary>
     public EfficiencyPolicy(
         IOpponentModel opponentModel,
         IDiscardPolicy discard,
@@ -52,12 +31,10 @@ public sealed class EfficiencyPolicy : IPolicy
         this.pushFold = pushFold;
     }
 
-    /// <summary>Convenience constructor — wires up heuristic defaults from the given weights.</summary>
     public EfficiencyPolicy(IWeightProvider? weightProvider = null)
         : this(BuildDefault(weightProvider ?? new DefaultWeightProvider()))
     { }
 
-    /// <summary>Convenience constructor — overrides discard weights only; everything else default.</summary>
     public EfficiencyPolicy(DiscardWeights weights)
         : this(BuildWithDiscardWeights(weights))
     { }
@@ -92,7 +69,6 @@ public sealed class EfficiencyPolicy : IPolicy
         if (!legal.Can(ActionFlags.Discard))
             return ActionChoice.Pass("no actionable legal action for efficiency policy");
 
-        // Tsumogiri fallback for inconsistent meld+hand counts (e.g. round-end races).
         if (TsumogiriFallback(state) is { } fallback)
             return fallback;
 
@@ -103,17 +79,6 @@ public sealed class EfficiencyPolicy : IPolicy
         }
         catch (ArgumentException ex)
         {
-            // DiscardScorer requires a shanten-valid 14-tile hand
-            // (closed + 3*melds.Count == 14). Mid-transition states the
-            // variant occasionally surfaces with Discard legal — e.g.
-            // post-minkan before the rinshan replacement tile lands in
-            // the hand array — fail that check. Pre-fix, the exception
-            // bubbled to AutoPlayLoop and re-fired every 3 seconds for
-            // minutes (live: 2026-05-23T15:29..32, state=6 hand=10
-            // melds=1 minkan, ~50+ throws in 3 minutes). Now we return
-            // Pass with a clear reason — the next tick's snapshot may
-            // have stabilized (rinshan tile arrived, MeldTracker caught
-            // up, etc.) and we'll re-enter the normal flow.
             return ActionChoice.Pass(
                 $"scorer invariant: {ex.Message} (likely mid-transition state)");
         }
@@ -148,7 +113,6 @@ public sealed class EfficiencyPolicy : IPolicy
 
         if (pushFoldDecision.Accept && pushFoldDecision.Value == PushFoldStance.Fold)
         {
-            // Swap to the lowest-deal-in cut available.
             ScoredDiscard safest = scored[0];
             for (int i = 1; i < scored.Length; i++)
             {
@@ -181,27 +145,9 @@ public sealed class EfficiencyPolicy : IPolicy
     }
 
     /// <summary>
-    /// Detect a hand/meld count mismatch — typically the symptom of a call
-    /// the plugin saw fire but couldn't reconstruct the meld for (the
-    /// claimed-tile parsing failed, so MeldTracker didn't record it). The
-    /// closed hand shrank but OurMelds didn't grow, leaving total ≠ 14.
-    ///
-    /// <para>Old behavior was to "tsumogiri" — discard the last hand tile
-    /// blind. That confidently surfaced a misleading suggestion in the hint
-    /// UI and a misleading auto-click in auto mode. Both were worse than no
-    /// suggestion: the user saw the highlight on a tile that had nothing to
-    /// do with their actual hand state.</para>
-    ///
-    /// <para>Now we return Pass with a clear "out of sync" reason. The hint
-    /// UI won't draw an overlay (DiscardTile is null), the auto-play loop
-    /// won't click, and the next state event whose count reconciles back to
-    /// 14 unblocks normal hint flow.</para>
-    ///
-    /// <para>Total-tile arithmetic uses each meld's actual tile count
-    /// (<see cref="Meld.TileCount"/>) so kans contribute 4 — not 3 —
-    /// to the invariant. Pre-fix this used <c>melds.Count * 3</c> which
-    /// silently undercounted every kan by 1 and left every kan-bearing
-    /// hand stuck in fallback for the rest of the round.</para>
+    /// Pauses suggestions when hand+meld arithmetic ≠ 14 (typically a call MeldTracker
+    /// couldn't reconstruct). Must use <see cref="Meld.TileCount"/>, not melds.Count*3 —
+    /// kans count 4 and a per-kan undercount left those hands stuck in fallback forever.
     /// </summary>
     private static ActionChoice? TsumogiriFallback(StateSnapshot state)
     {
@@ -238,11 +184,6 @@ public sealed class EfficiencyPolicy : IPolicy
         return BuildDefault(new InMemoryWeightProvider(bundle));
     }
 
-    /// <summary>
-    /// Tiny inline provider for the <c>EfficiencyPolicy(DiscardWeights)</c> back-compat
-    /// constructor. Doesn't fire <see cref="IWeightProvider.Changed"/> — the bundle is
-    /// frozen for the lifetime of the policy.
-    /// </summary>
     private sealed class InMemoryWeightProvider : IWeightProvider
     {
         public WeightBundle Current { get; }

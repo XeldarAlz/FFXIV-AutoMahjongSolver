@@ -58,8 +58,6 @@ public class AddonPollDiscardCaptureTests
         var observed = new List<DiscardEvent>();
         capture.DiscardObserved += observed.Add;
 
-        // Mid-hand snapshot: each seat already has discards. The strategy
-        // shouldn't replay the entire pre-existing pool.
         capture.OnSnapshotChanged(SnapshotWith(
             new[] { 5, 6, 7 },
             new[] { 10 },
@@ -134,12 +132,10 @@ public class AddonPollDiscardCaptureTests
         capture.DiscardObserved += observed.Add;
 
         capture.OnSnapshotChanged(SnapshotWith(new[] { 5, 6, 7 }, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
-        // New hand — pool dropped to one tile.
         capture.OnSnapshotChanged(SnapshotWith(new[] { 9 }, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
 
         Assert.Empty(observed);
 
-        // Subsequent appends from the new baseline DO fire.
         capture.OnSnapshotChanged(SnapshotWith(new[] { 9, 10 }, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
         Assert.Single(observed);
         Assert.Equal(10, observed[0].Tile.Id);

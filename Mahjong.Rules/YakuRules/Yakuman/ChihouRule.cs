@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Chihou (yakuman). A non-dealer wins on their very first tsumo of the hand,
-/// before any call has occurred.
-/// </summary>
 public sealed class ChihouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

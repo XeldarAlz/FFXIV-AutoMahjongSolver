@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Chinroutou (yakuman). All terminals — no simples, no honors. Runs are impossible.
-/// </summary>
 public sealed class ChinroutouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

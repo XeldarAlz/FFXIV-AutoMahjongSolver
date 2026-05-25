@@ -2,11 +2,6 @@ using Mahjong.Policy.Efficiency;
 
 namespace Mahjong.Policy.Tests;
 
-/// <summary>
-/// Pins the structured-rationale contract: <see cref="EfficiencyPolicy.Choose"/>
-/// populates <see cref="ActionChoice.Steps"/> with one <see cref="Reason"/> per
-/// sub-policy that ran on the way to the final action.
-/// </summary>
 public class DecisionRationaleTests
 {
     private static readonly EfficiencyPolicy Policy = new();
@@ -20,7 +15,6 @@ public class DecisionRationaleTests
         Assert.Equal(ActionKind.Discard, choice.Kind);
         Assert.NotEmpty(choice.ReasonSteps);
 
-        // The discard pipeline always runs push/fold and then records the discard.
         Assert.Contains(choice.ReasonSteps, r => r.Code.Contains("push") || r.Code.Contains("fold") || r.Code.Contains("tenpai-push"));
         Assert.Contains(choice.ReasonSteps, r => r.Code == "discard");
     }
@@ -42,7 +36,6 @@ public class DecisionRationaleTests
         var choice = Policy.Choose(s);
 
         Assert.Equal(ActionKind.Tsumo, choice.Kind);
-        // Agari shortcircuits the pipeline — no sub-policy steps recorded.
         Assert.Empty(choice.ReasonSteps);
     }
 }

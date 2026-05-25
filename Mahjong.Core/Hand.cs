@@ -1,10 +1,6 @@
 namespace Mahjong.Core;
 
-/// <summary>
-/// A player's hand: closed-tile counts (34-space) plus open melds.
-/// Immutable — mutation returns a new instance, and inputs are defensive-copied
-/// at construction so callers can keep their own buffers.
-/// </summary>
+/// <summary>Immutable hand: closed-tile counts (34-space) plus open melds. Inputs are defensive-copied.</summary>
 public sealed class Hand
 {
     private readonly int[] closedCounts;
@@ -41,10 +37,9 @@ public sealed class Hand
     public static Hand FromNotation(string notation, IReadOnlyList<Meld>? melds = null)
         => FromTiles(Tiles.Parse(notation), melds);
 
-    /// <summary>Total tiles including open melds (closed + 3 per meld; kans still count as 3 for shanten).</summary>
+    /// <summary>Closed + 3 per meld — kans count as 3 for shanten purposes.</summary>
     public int TotalShantenTileCount => ClosedTileCount + OpenMelds.Count * 3;
 
-    /// <summary>Return a mutable copy of the closed counts for in-place DP.</summary>
     public int[] CloneCounts()
     {
         var copy = new int[Tile.Count34];

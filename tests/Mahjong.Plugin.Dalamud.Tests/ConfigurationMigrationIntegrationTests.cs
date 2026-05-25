@@ -3,11 +3,6 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// End-to-end migration integration tests. Hand a v0 config (the shape that
-/// existed before Phase 7.B-1) through the actual migrator chain Plugin.cs
-/// constructs at boot, and verify the output is a healthy v2 record.
-/// </summary>
 public class ConfigurationMigrationIntegrationTests
 {
     private static IConfigMigrator<Configuration>[] FullChain() =>
@@ -92,7 +87,6 @@ public class ConfigurationMigrationIntegrationTests
     {
         var input = new Configuration { Version = 0 };
         ConfigMigrationRunner.Run(input, 0, 2, FullChain());
-        // Input record is untouched.
         Assert.Equal(0, input.Version);
         Assert.Equal(Guid.Empty, input.InstallId);
     }

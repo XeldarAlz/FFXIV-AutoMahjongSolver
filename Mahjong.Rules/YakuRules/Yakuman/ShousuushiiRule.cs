@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Shousuushii (yakuman). Three wind triplets/kans plus a wind pair.
-/// Mutually exclusive with Daisuushii by hand shape.
-/// </summary>
 public sealed class ShousuushiiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

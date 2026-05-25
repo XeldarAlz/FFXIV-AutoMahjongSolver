@@ -3,20 +3,6 @@ using Mahjong.Policy.Efficiency;
 
 namespace Mahjong.Replay.Tests;
 
-/// <summary>
-/// Regression suite — replays every <c>*.tenhou.json</c> fixture in
-/// <c>data/replays/</c> through <see cref="EfficiencyPolicy"/> with default
-/// weights, and compares the resulting decision trace to the matching
-/// <c>*.snapshot.json</c> golden file. Any drift in policy behavior shows
-/// up as a test failure with a side-by-side diff.
-///
-/// To add a new fixture: drop a Tenhou-format log into <c>data/replays/</c>;
-/// run the suite once with <c>UPDATE_REPLAY_SNAPSHOTS=1</c> to generate the
-/// snapshot; commit both files together.
-///
-/// To accept new behavior as the baseline: re-run with the env var set;
-/// review and commit the updated snapshot.
-/// </summary>
 public class GoldenFileTests
 {
     public static IEnumerable<object[]> ReplayFixtures()
@@ -44,16 +30,11 @@ public class GoldenFileTests
         switch (result.Status)
         {
             case GoldenFileStatus.Match:
-                // Behavior matches the committed baseline.
                 break;
             case GoldenFileStatus.Created:
-                // First-time fixture: snapshot was just generated. Pass — but
-                // surface the message so the developer knows to commit the file.
                 Assert.NotNull(result.Actual);
                 break;
             case GoldenFileStatus.Updated:
-                // UPDATE_REPLAY_SNAPSHOTS=1 was set — pass and let the developer
-                // review the diff before committing.
                 Assert.NotNull(result.Actual);
                 break;
             case GoldenFileStatus.Mismatch:

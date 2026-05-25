@@ -2,21 +2,7 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Placement;
 
-/// <summary>
-/// Placement-aware multiplier resolver. Mahjong ratings reward final rank,
-/// not raw score — a bot that maximises EV(score) loses to one that maximises
-/// EV(rank). Behavior shifts most aggressively on the last hand of the match,
-/// but is active throughout the hanchan.
-///
-/// Maps the (rank, last-hand, score-gap) state to a triple of multipliers that
-/// the discard scorer uses to bias its terms:
-///   * Danger     — higher = fold harder (avoid deal-ins)
-///   * Ukeire     — lower during fold mode, higher during push mode
-///   * HandValue  — encourage big hands when we need big hands (4th seat, last-round)
-///
-/// Concrete values come from <see cref="PlacementWeights"/> (tunable),
-/// previously hard-coded into the switch body.
-/// </summary>
+/// <summary>Mahjong rewards rank, not raw score — bias the discard scorer accordingly.</summary>
 public sealed class PlacementAdjuster : IPlacementPolicy
 {
     private readonly PlacementWeights weights;
@@ -49,7 +35,7 @@ public sealed class PlacementAdjuster : IPlacementPolicy
         };
     }
 
-    /// <summary>1-indexed rank (1 = highest score) of the given seat in this snapshot.</summary>
+    /// <summary>1-indexed rank (1 = highest score).</summary>
     public static int RankOf(StateSnapshot state, int seat)
     {
         int ourScore = state.Scores[seat];
@@ -72,11 +58,7 @@ public sealed class PlacementAdjuster : IPlacementPolicy
         return minGap;
     }
 
-    /// <summary>
-    /// Heuristic: last hand of the hanchan. We don't have a reliable "final hand"
-    /// field yet (M4 owes round + honba extraction); approximate by wall-remaining
-    /// ≤ 10 combined with round wind = South.
-    /// </summary>
+    /// <summary>Approximate; we don't yet have a reliable final-hand flag.</summary>
     public static bool IsLastHand(StateSnapshot state)
         => state.RoundWind == 1 && state.WallRemaining <= 10;
 }

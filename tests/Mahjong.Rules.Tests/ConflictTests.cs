@@ -2,11 +2,6 @@ using Mahjong.Rules.YakuRules;
 
 namespace Mahjong.Rules.Tests;
 
-/// <summary>
-/// The conflict graph encodes which yaku supersede which. These tests pin
-/// the declarations so accidental edits to a rule's <see cref="IYakuRule.Conflicts"/>
-/// list — which would silently change scoring outputs — get caught.
-/// </summary>
 public class ConflictTests
 {
     [Fact]
@@ -36,8 +31,6 @@ public class ConflictTests
     [Fact]
     public void Most_rules_have_no_conflicts()
     {
-        // Sanity check: only the three superseding rules above declare conflicts.
-        // If a fourth shows up, we should know.
         var rules = new RiichiRuleSet().YakuRules;
         var withConflicts = rules.Where(r => r.Conflicts.Count > 0).ToList();
         Assert.Equal(3, withConflicts.Count);

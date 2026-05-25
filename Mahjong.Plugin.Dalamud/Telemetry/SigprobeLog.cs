@@ -7,24 +7,11 @@ using System.Threading;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Append-only NDJSON log of every signature-scan attempt the plugin makes
-/// against the live FFXIV process. One line per probe with pattern, match
-/// address (or null on miss), and elapsed time. Lets us correlate sigscan
-/// failures across game patches without relying on every probe site
-/// remembering to call <see cref="Logging.IFindingsLog"/>.
-///
-/// <para>Files land under
-/// <c>pluginConfigs/&lt;plugin&gt;/sigprobes/sigprobes-yyyyMMdd.ndjson</c>;
-/// <see cref="TelemetryUploader"/> picks them up via the <c>sigprobes</c>
-/// stream. Daily roll mirrors <see cref="Logging.FindingsLog"/>.</para>
-/// </summary>
 public interface ISigprobeLog
 {
     void Record(string sigName, string pattern, nint matchAddress, double elapsedMs, bool success, string? errorMessage = null);
 }
 
-/// <summary>Inert no-op used in tests and code paths that don't ship telemetry.</summary>
 public sealed class NullSigprobeLog : ISigprobeLog
 {
     public static readonly NullSigprobeLog Instance = new();
@@ -79,7 +66,6 @@ public sealed class SigprobeLog : ISigprobeLog
         }
         catch
         {
-            // Never throw from a logger.
         }
     }
 

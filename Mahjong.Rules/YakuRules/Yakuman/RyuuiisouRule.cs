@@ -1,13 +1,7 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Ryuuiisou (yakuman). All "green" tiles — 2s, 3s, 4s, 6s, 8s + hatsu (green dragon).
-/// </summary>
 public sealed class RyuuiisouRule : IYakuRule
 {
-    /// <summary>
-    /// 34-space ids of the only tiles allowed: 2s=19, 3s=20, 4s=21, 6s=23, 8s=25, hatsu=32.
-    /// </summary>
     private static readonly int[] AllowedIds = [19, 20, 21, 23, 25, TileIds.Hatsu];
 
     public YakuDefinition Definition { get; } = new(

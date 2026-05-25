@@ -9,12 +9,7 @@ public enum DispatchResult
     HookFailed,
 }
 
-/// <summary>
-/// Executes a chosen <see cref="ActionChoice"/> against the live game —
-/// translating it into the appropriate Dalamud callback / native click /
-/// FireCallback opcode. Implementation owns Dalamud thread-discipline; the
-/// caller can be on any thread.
-/// </summary>
+/// <summary>Implementations own Dalamud thread-discipline; caller may be on any thread.</summary>
 public interface IActionDispatcher
 {
     Task<DispatchResult> DispatchAsync(ActionChoice action, CancellationToken cancellationToken = default);

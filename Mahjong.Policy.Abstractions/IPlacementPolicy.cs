@@ -1,10 +1,6 @@
 namespace Mahjong.Policy.Abstractions;
 
-/// <summary>
-/// One row of placement-aware multipliers — the discard scorer multiplies its
-/// terms by these to bias play toward the right rank-context behavior:
-/// rank 1 plays defensively, rank 4 chases, etc.
-/// </summary>
+/// <summary>Discard-scorer multipliers biasing play by rank context (rank 1 defends, rank 4 chases).</summary>
 public readonly record struct PlacementMultipliers(
     double Danger,
     double Ukeire,
@@ -13,10 +9,6 @@ public readonly record struct PlacementMultipliers(
     public static PlacementMultipliers Neutral => new(1.0, 1.0, 1.0);
 }
 
-/// <summary>
-/// Resolves the (rank, last-hand, score-gap) state into placement multipliers.
-/// Phase 4 will compose this into the discard scorer.
-/// </summary>
 public interface IPlacementPolicy
 {
     PlacementMultipliers ComputeFor(StateSnapshot state);

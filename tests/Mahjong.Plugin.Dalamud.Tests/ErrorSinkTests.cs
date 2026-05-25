@@ -8,9 +8,6 @@ public class ErrorSinkTests
     [Fact]
     public void Throws_on_null_directory()
     {
-        // ArgumentException.ThrowIfNullOrEmpty raises ArgumentNullException
-        // for null and ArgumentException for empty — both inherit from
-        // ArgumentException, but the precise type differs.
         Assert.Throws<ArgumentNullException>(() => new ErrorSink(null!));
     }
 
@@ -58,7 +55,7 @@ public class ErrorSinkTests
         var contents = File.ReadAllText(files[0]);
         Assert.Contains("\"sev\":\"warn\"", contents);
         Assert.Contains("\"msg\":\"sigscan returned 0 hits\"", contents);
-        Assert.DoesNotContain("\"ex\":", contents); // no exception type for warnings
+        Assert.DoesNotContain("\"ex\":", contents);
     }
 
     [Fact]

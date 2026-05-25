@@ -2,20 +2,6 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Efficiency;
 
-/// <summary>
-/// Scores each legal discard from a 14-tile hand by evaluating a linear
-/// combination of features:
-///   * shanten regression (heavy penalty)
-///   * ukeire kinds and weighted ukeire (reward keeping wide acceptance)
-///   * dora and yakuhai retained
-///   * isolated terminal/honor discard preference
-///   * deal-in cost (subtract from score)
-///
-/// Coefficients live on <see cref="DiscardWeights"/>; per-state placement
-/// multipliers come from <see cref="PlacementMultipliers"/> (computed once
-/// upstream and passed in). The opponent model — if supplied — drives the
-/// deal-in cost term.
-/// </summary>
 public static class DiscardScorer
 {
     public static ScoredDiscard[] Score(
@@ -45,13 +31,6 @@ public static class DiscardScorer
 
             double dealInCost = opponentModel?.ExpectedDealInCost(u.Discard.Id) ?? 0.0;
 
-            // Yakuless tenpai is the trap that motivates this whole feature: at
-            // shanten=0 with a yaku-potential score below the 2-han threshold,
-            // the hand can only riichi as its yaku — and against a real-game
-            // opponent that's a coin flip on dealing into a mangan. Penalty
-            // grows linearly with how far below threshold we are; at exactly 0
-            // potential it dominates ukeire/dora and forces the scorer to pick
-            // a different shanten path.
             double yakulessPenalty = u.ShantenAfter == 0 && yakuPotential < 0.5
                 ? w.YakulessTenpaiPenalty * (0.5 - yakuPotential) * 2.0
                 : 0.0;
@@ -99,7 +78,6 @@ public static class DiscardScorer
                 if (DoraNext(ind) == id)
                     total += count;
         }
-        // Tiles inside open melds also count as dora; open melds don't change on discard.
         foreach (var m in hand.OpenMelds)
             foreach (var t in m.Tiles)
                 foreach (var ind in indicators)
@@ -120,10 +98,6 @@ public static class DiscardScorer
 
     private static int CountYakuhai(Hand hand, Tile removed, int roundWindTileId, StateSnapshot state)
     {
-        // Dragons always count. Winds count iff state.SeatInfoKnown — otherwise
-        // OurSeat/RoundWind are at their 0/0 defaults and we'd be falsely
-        // treating East as "always yakuhai" regardless of who we are or what
-        // round it is.
         int seatWindTileId = 27 + state.OurSeat;
         int total = 0;
         for (int id = 27; id < Tile.Count34; id++)
@@ -131,7 +105,7 @@ public static class DiscardScorer
             int count = hand.ClosedCounts[id] - (removed.Id == id ? 1 : 0);
             if (count <= 0)
                 continue;
-            bool isYakuhai = id >= 31;          // dragons (always)
+            bool isYakuhai = id >= 31;
             if (!isYakuhai && state.SeatInfoKnown)
                 isYakuhai = id == roundWindTileId || id == seatWindTileId;
             if (isYakuhai)
@@ -140,29 +114,23 @@ public static class DiscardScorer
         return total;
     }
 
-    /// <summary>
-    /// An isolated terminal/honor — tile has no neighbors that'd make it useful.
-    /// Cheap heuristic: a terminal/honor tile with no duplicate and no adjacent same-suit tiles.
-    /// </summary>
     private static bool IsIsolatedTerminalOrHonor(Hand hand, Tile t)
     {
         if (!t.IsTerminalOrHonor)
             return false;
         if (hand.ClosedCounts[t.Id] >= 2)
-            return false;   // pair candidate
+            return false;
 
         if (t.IsHonor)
-            return true;   // honors have no neighbors
+            return true;
 
-        // Terminal suited: check one-step neighbor in suit.
         int suitBase = (t.Id / 9) * 9;
         int pos = t.Id - suitBase;
-        int neighborPos = pos == 0 ? 1 : 7;   // 1 → 2; 9 → 8
+        int neighborPos = pos == 0 ? 1 : 7;
         int neighborId = suitBase + neighborPos;
         if (hand.ClosedCounts[neighborId] > 0)
             return false;
 
-        // And two-step for kanchan possibility.
         int twoStepPos = pos == 0 ? 2 : 6;
         int twoStepId = suitBase + twoStepPos;
         if (hand.ClosedCounts[twoStepId] > 0)

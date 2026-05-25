@@ -15,12 +15,8 @@ public enum ActionKind : byte
 }
 
 /// <summary>
-/// A policy's final decision on the current turn. Immutable.
-///
-/// <see cref="Reasoning"/> is the human-readable summary for the debug overlay
-/// and chat output. <see cref="Steps"/> carries the structured per-evaluator
-/// reasons (call/riichi/push-fold/discard) so the UI can render the rationale
-/// chain without parsing strings.
+/// <see cref="Reasoning"/> is a human summary; <see cref="Steps"/> is the structured
+/// per-evaluator rationale chain.
 /// </summary>
 public sealed record ActionChoice(
     ActionKind Kind,

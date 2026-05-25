@@ -36,8 +36,8 @@ public class PlacementAdjusterTests
     {
         var s = State([40000, 25000, 20000, 15000], wall: 50, roundWind: 0);
         var w = Adjuster.ComputeFor(s);
-        Assert.True(w.Danger > 1.0);       // fold bias
-        Assert.True(w.Ukeire <= 1.0);      // less push
+        Assert.True(w.Danger > 1.0);
+        Assert.True(w.Ukeire <= 1.0);
     }
 
     [Fact]
@@ -53,7 +53,6 @@ public class PlacementAdjusterTests
     [Fact]
     public void Last_hand_rank4_goes_max_aggressive()
     {
-        // South round, wall nearly empty.
         var s = State([15000, 25000, 30000, 30000], wall: 5, roundWind: 1);
         var w = Adjuster.ComputeFor(s);
         Assert.True(w.Danger < 0.5);
@@ -63,7 +62,6 @@ public class PlacementAdjusterTests
     [Fact]
     public void Last_hand_rank1_locked_first_goes_max_conservative()
     {
-        // 1st place with a big lead on the last hand.
         var s = State([50000, 20000, 15000, 15000], wall: 5, roundWind: 1);
         var w = Adjuster.ComputeFor(s);
         Assert.True(w.Danger >= 2.0);

@@ -4,11 +4,6 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Simulator;
 
-/// <summary>
-/// Plays a single mahjong hand forward using the given policies. MVP: discard-only
-/// (no calls, no riichi, no ron). Wins detected by tsumo (shanten -1 with yaku).
-/// Wall exhaustion → ryuukyoku.
-/// </summary>
 public sealed class HandSimulator
 {
     private readonly IRandomSource rng;
@@ -19,12 +14,12 @@ public sealed class HandSimulator
 
     public record HandResult(
         Outcome Outcome,
-        int WinnerSeat,           // -1 if no winner
-        int LoserSeat,            // ron target, -1 otherwise
+        int WinnerSeat,
+        int LoserSeat,
         int[] FinalScores,
         int TurnCount,
         int TotalDiscards,
-        int[] RiichiDeclared);    // 0/1 per seat
+        int[] RiichiDeclared);
 
     public HandSimulator(IRandomSource rng, IRuleSet rules)
     {
@@ -65,7 +60,6 @@ public sealed class HandSimulator
 
         while (state.Wall.Count > 0 && turnCount < MaxTurns)
         {
-            // Current seat draws (dealer starts with 14 on turn 0, everyone else draws then).
             int seat = state.CurrentSeat;
             int handSize = state.HandTileCount(seat);
             if (handSize == 13)
@@ -77,7 +71,6 @@ public sealed class HandSimulator
                 state.LastDrawnTile = drawn;
                 handSize = 14;
 
-                // Tsumo check.
                 if (IsTsumoWin(state, seat))
                 {
                     ApplyTsumoScore(state, seat);
@@ -88,7 +81,6 @@ public sealed class HandSimulator
                 }
             }
 
-            // Build snapshot and ask policy.
             var snap = state.ToSnapshot(seat, ActionFlags.Discard);
             var choice = policies[seat].Choose(snap);
 
@@ -102,14 +94,12 @@ public sealed class HandSimulator
                         (int[])state.Scores.Clone(), turnCount, totalDiscards,
                         ToIntArray(state.Riichi));
                 }
-                // Policy wanted tsumo but hand isn't actually a win — treat as abort.
                 return new HandResult(
                     Outcome.Aborted, -1, -1,
                     (int[])state.Scores.Clone(), turnCount, totalDiscards,
                     ToIntArray(state.Riichi));
             }
 
-            // Declare riichi: commit 1000 points to stick pool, mark seat.
             if (choice.Kind == ActionKind.Riichi && !state.Riichi[seat] && state.Scores[seat] >= 1000)
             {
                 state.Riichi[seat] = true;
@@ -117,7 +107,6 @@ public sealed class HandSimulator
                 state.RiichiSticks++;
             }
 
-            // Default: discard. Coerce non-discard choices to a safe default.
             Tile discardTile;
             if ((choice.Kind == ActionKind.Discard || choice.Kind == ActionKind.Riichi)
                 && choice.DiscardTile is { } d
@@ -137,7 +126,6 @@ public sealed class HandSimulator
             state.LastDrawnTile = null;
             totalDiscards++;
 
-            // Ron check: any of the other three seats holds a winning hand with this tile?
             for (int offset = 1; offset <= 3; offset++)
             {
                 int other = (seat + offset) % 4;
@@ -151,7 +139,6 @@ public sealed class HandSimulator
                 }
             }
 
-            // Advance seat.
             state.CurrentSeat = (state.CurrentSeat + 1) % 4;
             turnCount++;
         }
@@ -172,20 +159,17 @@ public sealed class HandSimulator
 
     private void DealInitialHands(SimulationHand state)
     {
-        // Build a 136-tile wall: 4 copies of each 34-space tile.
         var wall = new List<Tile>(136);
         for (int k = 0; k < Tile.Count34; k++)
             for (int c = 0; c < Tile.CopiesPerKind; c++)
                 wall.Add(Tile.FromId(k));
 
-        // Shuffle.
         for (int i = wall.Count - 1; i > 0; i--)
         {
             int j = rng.Next(i + 1);
             (wall[i], wall[j]) = (wall[j], wall[i]);
         }
 
-        // Deal 13 tiles per seat (52 total). Dealer gets dealt first.
         for (int seat = 0; seat < 4; seat++)
         {
             for (int i = 0; i < 13; i++)
@@ -196,7 +180,6 @@ public sealed class HandSimulator
             }
         }
 
-        // Dead wall: 14 tiles. Take from the bottom.
         var dead = new List<Tile>();
         for (int i = 0; i < 14 && wall.Count > 0; i++)
         {
@@ -205,15 +188,13 @@ public sealed class HandSimulator
         }
         state.DoraIndicator = dead.Count > 0 ? dead[0] : Tile.FromId(0);
 
-        // Remaining = live wall (70 tiles).
         foreach (var t in wall)
             state.Wall.Enqueue(t);
     }
 
+    /// <summary>Furiten is not modeled.</summary>
     private bool IsRonWin(SimulationHand state, int seat, Tile discardedTile)
     {
-        // Ron win: adding the discarded tile to seat's 13-tile hand creates a winning shape
-        // with at least one yaku. Furiten not modeled here.
         int handSize = state.HandTileCount(seat);
         if (handSize != 13)
             return false;
@@ -264,24 +245,20 @@ public sealed class HandSimulator
         if (result is null)
             return;
 
-        // Ron payment: full total paid by the ron target.
         int total = result.Payments.RonTotal;
         state.Scores[loser] -= total;
         state.Scores[winner] += total;
 
-        // Winner collects riichi sticks on the table.
         state.Scores[winner] += state.RiichiSticks * 1000;
         state.RiichiSticks = 0;
     }
 
     private bool IsTsumoWin(SimulationHand state, int seat)
     {
-        // Requires 14-tile hand with shanten -1 and at least one yaku.
         int total = state.HandTileCount(seat);
         if (total != 14)
             return false;
 
-        // Reconstruct hand as tile list for the evaluator.
         var tiles = new List<Tile>();
         for (int k = 0; k < Tile.Count34; k++)
             for (int c = 0; c < state.ClosedCounts[seat][k]; c++)
@@ -324,11 +301,8 @@ public sealed class HandSimulator
         if (result is null)
             return;
 
-        // Non-dealer winner: dealer pays DealerPay, each non-dealer pays NonDealerPay.
-        // Dealer winner: each non-dealer pays NonDealerPay.
         var pay = result.Payments;
 
-        // Apply riichi-stick bonus.
         state.Scores[seat] += state.RiichiSticks * 1000;
         state.RiichiSticks = 0;
         if (seat == state.Dealer)

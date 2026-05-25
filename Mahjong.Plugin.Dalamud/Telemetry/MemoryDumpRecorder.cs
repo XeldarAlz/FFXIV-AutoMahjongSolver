@@ -14,82 +14,22 @@ using Mahjong.Plugin.Dalamud.Logging;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Captures labeled memory snapshots of the live Mahjong addon and ships
-/// them through the telemetry pipeline so cross-client RE can be done
-/// offline against a real corpus instead of one developer's reproductions.
-///
-/// <para><b>Per-snapshot scope (~6 KB):</b>
-/// <list type="bullet">
-///   <item><c>AtkUnitBase</c> header + a 4 KB tail (covers AddonEmj's known
-///   size, including all four seat blocks at layout offsets ~0x04FE / 0x07DE
-///   / 0x0ABE / 0x0D9E for the released Emj variant).</item>
-///   <item><c>RootNode</c> header + the live ~0x300 region. Empirical byte
-///   variability across a 77-min capture (461e8ece, 2026-05-10) showed
-///   everything past 0x400 in the root node is near-static node-tree
-///   plumbing — capturing 0x1000 there wastes ~3 KB per snapshot.</item>
-///   <item>Each observed seat-pool struct from <see cref="SeatPoolRegistry"/>
-///   (4 KB each, up to 4 seats). Currently empty in production: the only
-///   producer of pool addresses is the asm-hook discard capture (see
-///   <see cref="Hooks.Strategies.NativeAsmDiscardCapture"/>), which the
-///   factory keeps disabled because the 2026-04-27 sig collides with idle
-///   game code on post-2026-05 builds. Per-seat data is still captured —
-///   it lives inside the addon dump above; the heap-allocated pool structs
-///   the asm hook used to expose are separate and currently invisible.</item>
-///   <item>Full <c>AtkValues</c> array (variable, capped at 1024 entries).</item>
-/// </list></para>
-///
-/// <para><b>Cadence:</b> every <c>StateAggregator.Changed</c> event triggers
-/// a snapshot, and external callers (action dispatchers, FireCallback hook)
-/// can call <see cref="Record"/> directly to label pre/post-action pairs.
-/// Hash-dedup at the byte-level prevents the same layout shipping twice
-/// per session — most state-change ticks won't actually move bytes.</para>
-///
-/// <para><b>Output:</b> NDJSON under <c>memdumps/memdumps-yyyyMMdd-HHmmss.ndjson</c>;
-/// the file rolls every 1 MB so the uploader can ship slices incrementally
-/// instead of waiting on one giant blob at session end.</para>
-/// </summary>
 public sealed class MemoryDumpRecorder : IDisposable
 {
-    // v2 adds `agent_addr` + `agent_b64` (AgentEmj 0x2000-byte dump) to
-    // unblock opponent discard-array RE. Analyzers consuming v1 corpus
-    // entries should treat missing agent_* fields as absent.
+    // v2 adds agent_addr + agent_b64; v1 entries are missing-field-tolerant.
     public const int SchemaVersion = 2;
 
-    // The state-change cadence captures three discrete addon "shapes" by
-    // AtkValuesCount: 50 (lobby/idle), 73 (menu/transition), and 109 (active
-    // hand). The 2026-05 corpus showed 50/73 dumps account for ~32% of all
-    // memdump traffic without carrying any signal the gameplay layer can
-    // use — every interesting field (hand, seat blocks, dora) is only
-    // populated in the 109-bucket. Drop ticks below this threshold for
-    // state-change captures; explicit pre-discard / post-call captures
-    // still go through (they're rarer and the count can be transient at
-    // those moments).
+    // The state-change cadence shows AtkValuesCount in three buckets (50/73/109); only 109 carries gameplay signal.
     internal const int MinAtkValuesForStateChangeDump = 100;
 
-    private const int AddonDumpBytes = 0x300 + 0x1000; // header + 4 KB tail (covers all 4 seat blocks)
-    // Root node: header + ~0x300 of live region. The full 0x1000 we used to
-    // capture is mostly a static AtkNode tree on the released build — a
-    // 77-min capture (461e8ece, 2026-05-10) found two real signal bytes
-    // (~0x310, ~0x3F0) and a long lockstep-pointer cluster at 0x280..0x3B0
-    // that only flips on UI re-allocation. Past 0x400 was 95%+ dead.
+    private const int AddonDumpBytes = 0x300 + 0x1000;
     private const int RootDumpBytes = 0x400;
     private const int SeatPoolDumpBytes = 0x1000;
     private const int MaxAtkValues = 1024;
     private const long FileRolloverBytes = 1024 * 1024;
 
-    // AgentEmj dump bytes. 2026-05-19 inspection found that opponent discard
-    // tile arrays are NOT in the AtkUnitBase memory range we already capture:
-    // diffs between clean +1 discard transitions show only the count byte
-    // mutating, no array writes within the seat block. The per-seat tile
-    // history therefore lives in the agent, which exposes the per-round
-    // dealer state, hand history, and discard piles. 0x2000 is the size
-    // BaseEmjVariant.DumpAgentEmj reads for its diagnostic file; matching it
-    // here keeps the offline analyzers' coordinates aligned.
+    // Opponent discard arrays live in AgentEmj, not the AtkUnitBase range — the addon's per-seat block only mutates the count byte.
     private const int AgentDumpBytes = 0x2000;
-    // AgentEmj's stable agent id. FFXIVClientStructs assigns 5 to the
-    // mahjong agent (verified empirically in BaseEmjVariant.DumpAgentEmj
-    // diagnostic and surviving across the 2026-05 patch window).
     private const int AgentEmjId = 5;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -131,21 +71,7 @@ public sealed class MemoryDumpRecorder : IDisposable
 
     public void Dispose() => disposed = true;
 
-    /// <summary>
-    /// Capture a snapshot tagged with <paramref name="reason"/>. Standard
-    /// reasons are <c>"state-change"</c> (the high-frequency cadence,
-    /// gated on <c>AtkValuesCount</c>) and the input-bracket pair
-    /// <c>"input-pre"</c> / <c>"input-post"</c> (fired around every
-    /// FireCallback against the Mahjong addon — used during RE sessions to
-    /// diff addon bytes that mutate in lockstep with click-driven
-    /// state). Pre/post captures bypass the atk_count gate so we never
-    /// miss the bracketing snapshots.
-    ///
-    /// <para>Safe to call from any thread; the heavy work (memcpy +
-    /// hashing + JSON serialize) runs on the calling thread, and
-    /// bad-pointer reads are caught and surfaced through the error
-    /// sink.</para>
-    /// </summary>
+    /// <summary>"state-change" is gated on AtkValuesCount; "input-pre" / "input-post" bypass the gate.</summary>
     public unsafe void Record(string reason)
     {
         if (disposed)
@@ -159,22 +85,13 @@ public sealed class MemoryDumpRecorder : IDisposable
 
             var unit = (AtkUnitBase*)obs.Address;
 
-            // Gate the high-frequency state-change cadence on AtkValuesCount.
-            // Other reasons (input-pre / input-post bracketing FireCallback
-            // events) are coarse, rare, and useful even mid-transition — let
-            // them through unconditionally so we never miss a labeled pair.
             bool isStateChange = reason == "state-change";
             if (isStateChange && unit->AtkValuesCount < MinAtkValuesForStateChangeDump)
                 return;
 
             var entry = BuildEntry(reason, unit);
 
-            // Hash-dedup the high-frequency state-change cadence so the same
-            // byte layout doesn't ship twice per session. Explicit-reason
-            // dumps (input-pre / input-post and any future tagged reasons)
-            // skip dedup: the value of those captures is precisely the
-            // (reason, t, hash) tuple — collapsing two clicks that happened
-            // to land on the same memory layout would defeat the bracket.
+            // Dedup only state-change — input-pre/post need the bracket even on identical layouts.
             if (isStateChange)
             {
                 if (seenHashes.Contains(entry.Hash))
@@ -194,10 +111,6 @@ public sealed class MemoryDumpRecorder : IDisposable
     {
         var addonBytes = SafeReadBytes((nint)unit, AddonDumpBytes);
 
-        // RootNode dump — useful for node-id RE since the tree layout
-        // varies across client variants. Bounded to RootDumpBytes; deeper
-        // nodes can be reconstructed offline from the address graph in the
-        // addon dump itself.
         byte[]? rootBytes = null;
         nint rootAddr = 0;
         if (unit->RootNode != null)
@@ -206,9 +119,6 @@ public sealed class MemoryDumpRecorder : IDisposable
             rootBytes = SafeReadBytes(rootAddr, RootDumpBytes);
         }
 
-        // AtkValues — addon's parameter array. Bounded at MaxAtkValues
-        // entries (each 0x10 bytes) to prevent runaway dumps if the
-        // addon reports an absurd count due to memory corruption.
         int atkCount = Math.Min((int)unit->AtkValuesCount, MaxAtkValues);
         byte[]? atkBytes = null;
         nint atkAddr = 0;
@@ -230,9 +140,6 @@ public sealed class MemoryDumpRecorder : IDisposable
                 BytesB64: Convert.ToBase64String(poolBytes)));
         }
 
-        // AgentEmj dump. Resolved via the global AgentModule, not stored —
-        // the agent pointer can move between sessions and the dump is the
-        // value, not the address. AccessViolation-safe via SafeReadBytes.
         byte[]? agentBytes = null;
         nint agentAddr = 0;
         try
@@ -250,19 +157,12 @@ public sealed class MemoryDumpRecorder : IDisposable
         }
         catch (Exception ex)
         {
-            // AgentModule.Instance() can return a stale pointer immediately
-            // after a zone change. Surface but don't fail the whole dump —
-            // the agent capture is additive, the rest of the snapshot stays
-            // useful even without it.
+            // AgentModule pointer can be stale after a zone change; additive capture, don't fail the dump.
             errors.RecordException("MemoryDumpRecorder.AgentDump", ex);
         }
 
         var hash = ComputeHash(addonBytes, rootBytes, atkBytes, pools, agentBytes);
 
-        // Layout-aware metadata. Both fields stay null until the variant
-        // selector has resolved a layout this session — pre-resolution
-        // snapshots (rare; only the first few ticks of a session) ship
-        // without them and analyzers can fall back to addon-name lookup.
         var layout = reader.ActiveLayout;
         var seatOffsets = layout is null ? null : new AddonSeatOffsets(
             SelfCount: layout.Offsets.SelfDiscardCountByte,
@@ -295,12 +195,7 @@ public sealed class MemoryDumpRecorder : IDisposable
             Hash: hash);
     }
 
-    /// <summary>
-    /// Memcpy a managed byte[] from an arbitrary address. Bad pointers
-    /// (unmapped, freed, or just garbage) raise AccessViolationException
-    /// from native code — we catch and return null so the snapshot still
-    /// emits with the reachable parts.
-    /// </summary>
+    /// <summary>Bad pointers raise AccessViolationException from native code; catch and return null so the rest of the snapshot still ships.</summary>
     private static unsafe byte[]? SafeReadBytes(nint address, int length)
     {
         if (address == 0 || length <= 0)
@@ -385,26 +280,9 @@ public sealed class MemoryDumpRecorder : IDisposable
         [property: JsonPropertyName("atk_addr")] long AtkValuesAddress,
         [property: JsonPropertyName("atk_count")] int AtkValuesCount,
         [property: JsonPropertyName("atk_b64")] string? AtkValuesBytesB64,
-        // Null (and omitted via JsonIgnoreCondition.WhenWritingNull) when no
-        // seat-pool addresses have been observed this session — the typical
-        // case on the released build, where the asm-hook producer is offline.
-        // Keeping the field as nullable rather than ripping it out preserves
-        // forward compatibility for when the asm hook lands a verified sig.
         [property: JsonPropertyName("seat_pools")] List<SeatPoolDump>? SeatPools,
-        // AgentEmj dump — 0x2000 bytes of the mahjong agent's runtime state.
-        // The 2026-05-19 inspection of 11591 addon snapshots from install
-        // 461e8ece found that opponent discard arrays are NOT in `addon_b64`
-        // (clean +1 discard transitions show only the count byte mutating).
-        // The per-seat tile history therefore lives in the agent. Capturing
-        // it unlocks the find-discard-offset.mjs analyzer to actually pin
-        // the per-seat array starts. Address is 0 / b64 null when the agent
-        // module isn't available (zone-change transient).
         [property: JsonPropertyName("agent_addr")] long AgentAddress,
         [property: JsonPropertyName("agent_b64")] string? AgentBytesB64,
-        // Variant name ("Emj" / "EmjL" / ...) and per-seat byte offsets into
-        // the addon dump. Both null until the variant selector has resolved a
-        // layout this session. Lets offline analyzers slice the four seat
-        // blocks out of `addon_b64` without name-guessing the layout file.
         [property: JsonPropertyName("variant")] string? Variant,
         [property: JsonPropertyName("addon_seat_offsets")] AddonSeatOffsets? AddonSeatOffsets,
         [property: JsonPropertyName("hash")] string Hash);
@@ -413,12 +291,6 @@ public sealed class MemoryDumpRecorder : IDisposable
         [property: JsonPropertyName("addr")] long Address,
         [property: JsonPropertyName("b64")] string BytesB64);
 
-    /// <summary>
-    /// Per-seat byte offsets into the addon dump (<c>addon_b64</c>). The
-    /// score field is the start of a 4-byte int; the count_byte field is a
-    /// single byte two bytes before the score. Hand array is the player's
-    /// closed hand, 14 × 4-byte ints starting at <c>hand_array_start</c>.
-    /// </summary>
     private sealed record AddonSeatOffsets(
         [property: JsonPropertyName("self_count_byte")] int SelfCount,
         [property: JsonPropertyName("self_score")] int SelfScore,

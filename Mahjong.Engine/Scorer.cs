@@ -3,23 +3,7 @@ using Mahjong.Rules;
 namespace Mahjong.Engine;
 
 /// <summary>
-/// Top-level scoring orchestrator. Replaces the ScoreEvaluator + YakuDetector +
-/// FuCalculator + ScoreCalculator quadruple from before Phase 2.
-///
-/// Pipeline per hand:
-///   1. Enumerate all valid decompositions (HandDecomposer).
-///   2. For each decomposition:
-///      a. Run every IYakuRule, collect all hits.
-///      b. If any yakuman fires, drop non-yakuman hits.
-///      c. Apply declarative conflicts (e.g. Ryanpeikou removes Iipeiko).
-///      d. Add dora to han for non-yakuman hands.
-///      e. Reject if total han is below the rule set's MinHan.
-///      f. Compute fu (IFuRule), tier (IScoringRule), payments.
-///   3. Return the highest-paying valid decomposition.
-///
-/// The Scorer is stateless beyond the injected IRuleSet, so it's safe to share
-/// across threads as long as the rule set is immutable (which all built-in
-/// rule sets are).
+/// Stateless beyond the injected <see cref="IRuleSet"/>; thread-safe if the rules are immutable.
 /// </summary>
 public sealed class Scorer
 {
@@ -75,11 +59,6 @@ public sealed class Scorer
         return new ScoreResult(d, hits, han, fu, tier.BasePoints, payments, tier.Name);
     }
 
-    /// <summary>
-    /// Run the rule set's yaku detection pipeline (collect + yakuman shortcircuit
-    /// + conflict resolution) without doing the rest of the scoring pipeline.
-    /// Useful for tests and tooling that want to assert on yaku presence.
-    /// </summary>
     public IReadOnlyList<YakuHit> DetectYaku(Decomposition d, WinContext ctx)
         => DetectYakuInternal(d, ctx);
 
@@ -138,12 +117,6 @@ public sealed class Scorer
                 count += counts[rules.DoraRule.Next(indicator).Id];
         }
 
-        // Akadora: red 5m/5p/5s each count as +1 han when present in the hand.
-        // Sourced from WinContext.AkaDora because Tile carries only the
-        // 34-tile id with no IsRed bit. The variant reader counts reds during
-        // hand-decode (raw indices 34/35/36 past the texture base) and ships
-        // the total in the snapshot. Yakuman is already gated above, so
-        // akadora cannot inflate a yakuman win.
         count += ctx.AkaDora;
 
         return count;

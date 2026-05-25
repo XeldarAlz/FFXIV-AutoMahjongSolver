@@ -1,27 +1,20 @@
 namespace Mahjong.Core;
 
 /// <summary>
-/// Publicly-visible state of one seat at the mahjong table — our own or an opponent.
-/// Every field here is derivable from legal game observations (discard pool, open melds,
-/// riichi declaration, ippatsu flag). Closed hands of opponents are NOT represented here
-/// — they belong in the opponent-model belief state, not the observable snapshot.
-///
-/// Defensive-copies its list inputs at construction.
+/// Public state of one seat. Closed hands of opponents are NOT here — they belong in the
+/// opponent-model belief state. <paramref name="DiscardCount"/> is authoritative when the
+/// tile-pool resolution fails and <paramref name="Discards"/> ends up empty; prefer it over
+/// <c>Discards.Count</c> in policy code.
 /// </summary>
 public sealed record SeatView(
     IReadOnlyList<Tile> Discards,
-    IReadOnlyList<bool> DiscardIsTedashi,   // parallel to Discards
+    IReadOnlyList<bool> DiscardIsTedashi,
     IReadOnlyList<Meld> Melds,
     bool Riichi,
-    int RiichiDiscardIndex,                 // -1 if not riichi'd
+    int RiichiDiscardIndex,
     bool Ippatsu,
     bool IsTenpaiCalled,
-    int DiscardCount = 0)                   // authoritative count even when Discards is empty
-                                            // (UI-tree walk pinned the per-seat count byte;
-                                            // the tile pool itself lives behind a stale static
-                                            // offset, so we track count-only for now). Prefer
-                                            // this over Discards.Count in policy code — the
-                                            // latter is 0 when the pool couldn't be resolved.
+    int DiscardCount = 0)
 {
     public IReadOnlyList<Tile> Discards { get; init; } = [.. Discards];
     public IReadOnlyList<bool> DiscardIsTedashi { get; init; } = [.. DiscardIsTedashi];
@@ -29,64 +22,41 @@ public sealed record SeatView(
 }
 
 /// <summary>
-/// An immutable description of the current table state from our perspective.
-/// Produced by the addon reader on every meaningful UI change. Consumed by
-/// the opponent model, the policy pipeline, and the debug overlay.
-///
-/// Every list input is defensive-copied at construction.
-///
-/// <see cref="SchemaVersion"/> is bumped whenever the shape of this record (or any
-/// nested record) changes; the state aggregator rejects snapshots that don't match
-/// the expected version.
+/// Immutable table state from our perspective. <see cref="SchemaVersion"/> is bumped on any
+/// shape change; the aggregator rejects mismatched snapshots. Seats: 0=E, 1=S, 2=W, 3=N.
 /// </summary>
+/// <param name="SeatInfoKnown">
+/// False when OurSeat/RoundWind are defaults — yakuhai-on-winds must gate on this since an
+/// unconfirmed seat wind biases the policy toward keeping useless winds.
+/// </param>
+/// <param name="AkaDora">
+/// Red-5 count in the closed hand. Side-channel so Tile stays 1-byte; Scorer adds to dora.
+/// </param>
+/// <param name="AddonStateCode">
+/// Raw addon state code (-1 = unknown). Disambiguates dispatch contexts the Legal enum can't —
+/// e.g. state-6 self-declare popup vs. state-30 classic discard, both Legal=Discard.
+/// </param>
 public sealed record StateSnapshot(
-    // Self
     IReadOnlyList<Tile> Hand,
     IReadOnlyList<Meld> OurMelds,
-    int OurSeat,                            // 0=E, 1=S, 2=W, 3=N
+    int OurSeat,
     bool OurRiichi,
     bool OurIppatsu,
     bool OurDoubleRiichi,
-
-    // Table
-    int RoundWind,                          // 0=E, 1=S (hanchan)
+    int RoundWind,
     int Honba,
     int RiichiSticks,
-    IReadOnlyList<int> Scores,              // length 4
+    IReadOnlyList<int> Scores,
     IReadOnlyList<Tile> DoraIndicators,
     IReadOnlyList<Tile> UraDoraIndicators,
     int WallRemaining,
     int TurnIndex,
     int DealerSeat,
-
-    IReadOnlyList<SeatView> Seats,          // length 4, indexed by seat (self included)
-
+    IReadOnlyList<SeatView> Seats,
     LegalActions Legal,
     int SchemaVersion,
-
-    // True when OurSeat (absolute E/S/W/N) and RoundWind are sourced from the
-    // game; false when they're at their defaults (both 0). Yakuhai-on-winds
-    // logic must gate on this — without confirmed seat info, treating any
-    // particular wind as "your seat wind" is ~75% wrong and biases the policy
-    // toward keeping useless wind tiles.
     bool SeatInfoKnown = false,
-
-    // Akadora (red 5m/5p/5s) count in the player's closed hand. Side-channel
-    // rather than a per-Tile flag so Tile stays a 1-byte primitive. Plumbed
-    // into WinContext.AkaDora when the policy evaluates a hand value; Scorer
-    // adds it to the dora total (gated off yakuman by existing logic).
     int AkaDora = 0,
-
-    // Raw addon state code read from AtkValues[stateCode index] at snapshot
-    // time. -1 means "unknown / not read" (variant doesn't expose, or the
-    // addon isn't loaded). Doman uses codes like 6 (SelfDeclareList),
-    // 15 (CallPrompt), 28 (CallPromptList), 30 (OurTurnDiscard) plus
-    // transient codes 5/9/12/17/19/22 that we surface in telemetry without
-    // routing on. Game-stream consumers (analyzers, replay-harness) use
-    // this to distinguish dispatch contexts that the high-level Legal
-    // enum can't tell apart (e.g. state-6 hand=14 self-declare popup vs.
-    // state-30 hand=14 classic discard surface — both have legal=Discard
-    // but need different dispatch shapes).
     int AddonStateCode = -1)
 {
     public const int CurrentSchemaVersion = 4;

@@ -3,11 +3,6 @@ using Serilog.Events;
 
 namespace Mahjong.Plugin.Dalamud.Tests.Stubs;
 
-/// <summary>
-/// Silent <see cref="IPluginLog"/> stub. Records nothing — its only job is to
-/// satisfy constructors that need a log without spamming the test runner.
-/// Tests that want to assert on log output use <see cref="RecordingPluginLog"/>.
-/// </summary>
 public sealed class StubPluginLog : IPluginLog
 {
     public LogEventLevel MinimumLogLevel { get; set; } = LogEventLevel.Verbose;
@@ -30,11 +25,6 @@ public sealed class StubPluginLog : IPluginLog
     public void Write(LogEventLevel level, Exception? exception, string messageTemplate, params object[] values) { }
 }
 
-/// <summary>
-/// Recording <see cref="IPluginLog"/>. Captures every entry into
-/// <see cref="Entries"/> for tests that want to assert "this code logged
-/// the right thing at the right severity".
-/// </summary>
 public sealed class RecordingPluginLog : IPluginLog
 {
     public LogEventLevel MinimumLogLevel { get; set; } = LogEventLevel.Verbose;

@@ -2,18 +2,6 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Efficiency;
 
-/// <summary>
-/// Heuristic <see cref="IRiichiPolicy"/>. Declares riichi when:
-/// <list type="bullet">
-///   <item>Hand is closed (ankan does not break menzen).</item>
-///   <item>Hand reaches tenpai after the planned discard.</item>
-///   <item>Score ≥ 1000 (riichi stick cost).</item>
-///   <item>Wall ≥ 4 — at least one chance to draw the win.</item>
-///   <item>Weighted ukeire ≥ 4 live tiles after the discard.</item>
-/// </list>
-/// Damaten preference is owed: when a value estimator lands, declare-riichi
-/// gates against "would already score mangan+ without it."
-/// </summary>
 public sealed class HeuristicRiichiPolicy : IRiichiPolicy
 {
     private const int MinScore = 1000;

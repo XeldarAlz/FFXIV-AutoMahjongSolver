@@ -30,9 +30,6 @@ public class TelemetryEnvelopeTests
     [Fact]
     public void Build_resolves_a_plugin_version()
     {
-        // Plugin version comes from the assembly metadata; fallback is
-        // "0.0.0". Either way, the field is non-empty and the SafeGet
-        // wrapper guarantees the build never throws.
         var env = TelemetryEnvelope.Build(Guid.NewGuid(), ClientLanguage.English);
         Assert.False(string.IsNullOrEmpty(env.PluginVersion));
     }
@@ -42,7 +39,6 @@ public class TelemetryEnvelopeTests
     {
         var env = TelemetryEnvelope.Build(Guid.NewGuid(), ClientLanguage.English);
         Assert.False(string.IsNullOrEmpty(env.PluginHash));
-        // Hash is either "unknown" or a 16-char hex prefix.
         Assert.True(env.PluginHash == "unknown" || env.PluginHash.Length == 16);
     }
 

@@ -29,11 +29,8 @@ public class PathRedactorTests
     [Fact]
     public void Falls_back_to_trailing_two_segments_for_dev_clones()
     {
-        // No XIVLauncher / .xlcore / Roaming token → keep the last two
-        // segments. Drops everything before, including the username.
         var redacted = PathRedactor.Redact(
             @"C:\Users\kamot\Documents\GitHub\FFXIV-DomanMahjongSolver\Mahjong.Plugin.Dalamud\bin\x64\Debug\layouts");
-        // "Documents" is a generic root; trim from there.
         Assert.Equal(
             @"Documents\GitHub\FFXIV-DomanMahjongSolver\Mahjong.Plugin.Dalamud\bin\x64\Debug\layouts",
             redacted);

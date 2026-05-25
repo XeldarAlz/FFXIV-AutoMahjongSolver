@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Honroutou (2 han). All terminals + honors. No simples, no runs anywhere.
-/// </summary>
 public sealed class HonroutouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(
@@ -13,7 +10,6 @@ public sealed class HonroutouRule : IYakuRule
 
     public IReadOnlyList<YakuHit> Detect(Decomposition d, WinContext ctx)
     {
-        // Runs always contain a simple, so any run disqualifies.
         foreach (var g in d.Groups)
         {
             if (g.Kind == GroupKind.Run)

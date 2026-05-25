@@ -8,24 +8,6 @@ using Mahjong.Plugin.Dalamud.GameState;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Append-only NDJSON log of every FireCallback dispatched to the Mahjong
-/// addon: one line per click on the in-game UI (discard, pon, chi, kan,
-/// riichi, pass, etc.). The addon's int values capture the action opcode
-/// plus its option index, so this stream is what downstream ML / input
-/// replay tooling consumes for training.
-///
-/// <para>Distinct from the diagnostic <c>emj-events.log</c> that
-/// <see cref="InputEventLogger"/> writes when its <c>Enabled</c> flag is on:
-/// that file is verbose RE text. This one is structured NDJSON shipped via
-/// the <c>inputs</c> telemetry stream, daily roll under
-/// <c>pluginConfigs/&lt;plugin&gt;/inputs/inputs-yyyyMMdd.ndjson</c>.</para>
-///
-/// <para>Subscribes to <see cref="InputEventLogger.CallbackObserved"/>, which
-/// fires after the original game callback runs and is filtered to Mahjong
-/// addons. Always-on regardless of the diagnostic flag. IO failures are
-/// swallowed — telemetry must never break the input pipeline.</para>
-/// </summary>
 public sealed class InputRecorder : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -87,7 +69,6 @@ public sealed class InputRecorder : IDisposable
         }
         catch
         {
-            // Never throw from a logger.
         }
     }
 

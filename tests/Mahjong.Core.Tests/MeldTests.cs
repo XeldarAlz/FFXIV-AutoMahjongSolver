@@ -5,7 +5,7 @@ public class MeldTests
     [Fact]
     public void Chi_factory_lays_out_consecutive_run()
     {
-        var meld = Meld.Chi(Tile.FromId(2), Tile.FromId(3), fromSeat: 1);   // 3m chi'd onto a 3-4-5m run
+        var meld = Meld.Chi(Tile.FromId(2), Tile.FromId(3), fromSeat: 1);
 
         Assert.Equal(MeldKind.Chi, meld.Kind);
         Assert.Equal([2, 3, 4], meld.Tiles.Select(t => (int)t.Id));
@@ -61,7 +61,6 @@ public class MeldTests
     [Fact]
     public void FromAcceptedCandidate_for_chi_anchors_to_lowest_tile()
     {
-        // Hand has 3m and 4m, opponent discards 5m → run is 3-4-5m, anchor 3m.
         var candidate = new MeldCandidate(
             Kind: MeldKind.Chi,
             ClaimedTile: Tile.FromId(4),

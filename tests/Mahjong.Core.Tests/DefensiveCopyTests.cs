@@ -1,10 +1,5 @@
 namespace Mahjong.Core.Tests;
 
-/// <summary>
-/// Every record type in Mahjong.Core that takes a list-typed input must
-/// defensive-copy at construction so the snapshot can't be corrupted by a
-/// caller who keeps mutating their buffer. These tests pin that contract.
-/// </summary>
 public class DefensiveCopyTests
 {
     [Fact]

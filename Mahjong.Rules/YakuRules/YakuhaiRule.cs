@@ -1,23 +1,14 @@
 namespace Mahjong.Rules.YakuRules;
 
 /// <summary>
-/// Yakuhai (1 han per qualifying triplet/kan).
-///
-/// Emits up to five hits per hand:
-///   * Haku, Hatsu, Chun (dragons)
-///   * Round wind triplet
-///   * Seat wind triplet
-///
-/// One physical group can contribute two hits (e.g. a triplet of East when both
-/// the round wind and the seat wind are East — a "double East").
-///
-/// The Definition's <see cref="YakuDefinition.Id"/> is a placeholder; each emitted
-/// hit carries the specific yaku id (YakuhaiHaku / YakuhaiSeat / etc.).
+/// Up to five hits per hand (dragons + round + seat). A double East triplet (round=seat=E)
+/// contributes two hits from one group. Each hit carries the specific yaku id; Definition.Id
+/// is just a representative.
 /// </summary>
 public sealed class YakuhaiRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(
-        Id: Mahjong.Core.Yaku.YakuhaiHaku,    // representative; rule emits the right id per hit
+        Id: Mahjong.Core.Yaku.YakuhaiHaku,
         Name: "Yakuhai",
         ClosedHan: 1,
         OpenHan: 1);

@@ -5,27 +5,6 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Hooks.Strategies;
 
-/// <summary>
-/// Fallback <see cref="IDiscardCapture"/> strategy. Activates when the native
-/// asm hook can't (typically a patched binary the sigscan doesn't grok).
-///
-/// <para>Diffs each seat's discard list against the previous snapshot every
-/// time <see cref="OnSnapshotChanged"/> is invoked — typically wired up to
-/// <c>StateAggregator.Changed</c> in <see cref="Plugin"/>. Every newly-appended
-/// tile fires a <see cref="DiscardObserved"/> event with the seat attached —
-/// strictly more information than the native strategy provides.</para>
-///
-/// <para>Trade-off vs. native: events fire one snapshot tick (~16ms) later
-/// than the actual game write, and a dropped snapshot can paper over a
-/// transient discard. For opponent-model bookkeeping that's acceptable —
-/// the policy pipeline already consumes <see cref="StateSnapshot"/> with the
-/// same latency profile.</para>
-///
-/// <para>The strategy doesn't subscribe to anything itself — the wiring lives
-/// at the composition root. That seam keeps the class testable without
-/// having to fabricate a real StateAggregator (and its IFramework /
-/// AddonEmjReader dependencies).</para>
-/// </summary>
 public sealed class AddonPollDiscardCapture : IDiscardCapture
 {
     public const string Name = "addon-poll";
@@ -50,11 +29,7 @@ public sealed class AddonPollDiscardCapture : IDiscardCapture
             "StateAggregator snapshots (native asm hook unavailable).");
     }
 
-    /// <summary>
-    /// Diff the prior per-seat discard counts against the new snapshot. The
-    /// first snapshot primes the counters — we don't want to flood the event
-    /// with the entire pre-existing pool when the plugin loads mid-hand.
-    /// </summary>
+    /// <summary>First snapshot primes the counters to avoid flooding on a mid-hand plugin load.</summary>
     public void OnSnapshotChanged(StateSnapshot snap)
     {
         ArgumentNullException.ThrowIfNull(snap);
@@ -77,7 +52,6 @@ public sealed class AddonPollDiscardCapture : IDiscardCapture
             int prev = lastDiscardCounts[seat];
             int curr = discards.Count;
 
-            // New hand — pool got smaller. Re-prime, don't fire events.
             if (curr < prev)
             {
                 lastDiscardCounts[seat] = curr;

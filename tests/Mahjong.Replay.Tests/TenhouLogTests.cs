@@ -5,16 +5,15 @@ public class TenhouLogTests
     [Fact]
     public void From136_maps_each_quad_to_same_34_id()
     {
-        // Each four-tile group of 136-IDs collapses to one 34-ID.
-        Assert.Equal(0, TenhouLog.From136(0).Id);   // 1m copy 0
-        Assert.Equal(0, TenhouLog.From136(3).Id);   // 1m copy 3
+        Assert.Equal(0, TenhouLog.From136(0).Id);
+        Assert.Equal(0, TenhouLog.From136(3).Id);
 
-        Assert.Equal(9, TenhouLog.From136(36).Id);  // 1p
+        Assert.Equal(9, TenhouLog.From136(36).Id);
         Assert.Equal(9, TenhouLog.From136(39).Id);
 
-        Assert.Equal(18, TenhouLog.From136(72).Id); // 1s
-        Assert.Equal(27, TenhouLog.From136(108).Id); // East
-        Assert.Equal(33, TenhouLog.From136(135).Id); // chun
+        Assert.Equal(18, TenhouLog.From136(72).Id);
+        Assert.Equal(27, TenhouLog.From136(108).Id);
+        Assert.Equal(33, TenhouLog.From136(135).Id);
     }
 
     [Theory]
@@ -31,14 +30,14 @@ public class TenhouLogTests
         Assert.True(TenhouLog.IsRed5(TenhouLog.RedFiveMan));
         Assert.True(TenhouLog.IsRed5(TenhouLog.RedFivePin));
         Assert.True(TenhouLog.IsRed5(TenhouLog.RedFiveSou));
-        Assert.False(TenhouLog.IsRed5(17));   // 5m copy 1, not the red one
+        Assert.False(TenhouLog.IsRed5(17));
     }
 
     [Theory]
-    [InlineData("r60", TenhouLog.EventKind.Riichi, 15)]   // 60/4 = 15 (7p)
-    [InlineData("c12", TenhouLog.EventKind.Chi, 3)]        // 12/4 = 3 (4m)
-    [InlineData("p44", TenhouLog.EventKind.Pon, 11)]       // 44/4 = 11 (3p)
-    [InlineData("k108", TenhouLog.EventKind.Kan, 27)]      // 108/4 = 27 (East)
+    [InlineData("r60", TenhouLog.EventKind.Riichi, 15)]
+    [InlineData("c12", TenhouLog.EventKind.Chi, 3)]
+    [InlineData("p44", TenhouLog.EventKind.Pon, 11)]
+    [InlineData("k108", TenhouLog.EventKind.Kan, 27)]
     public void ParseEventTag_extracts_kind_and_tile_id(string tag, TenhouLog.EventKind kind, int expectedId)
     {
         var (k, id) = TenhouLog.ParseEventTag(tag);
@@ -92,7 +91,6 @@ public class TenhouLogTests
         Assert.Equal(4, k.StartingHands.Length);
         Assert.Equal(13, k.StartingHands[0].Length);
 
-        // Seat 0 held ids 0..12 → 4 copies of 1m..3m, 1 of 4m = 13 tiles.
         Assert.Equal(0, k.StartingHands[0][0].Id);
         Assert.Equal(3, k.StartingHands[0][12].Id);
     }

@@ -136,12 +136,9 @@ public class JsonLayoutProfileLoaderTests
     [Fact]
     public void Real_emj_layout_loads_from_the_repo_data_dir()
     {
-        // Sanity check: the actual data/layouts/emj.json that ships in the repo
-        // parses cleanly into the same expected texture base. If this fails,
-        // either the JSON or the loader has drifted.
         var path = ResolveRepoFile("data", "layouts", "emj.json");
         if (path is null)
-            return;   // running outside the repo (CI artifact extraction etc.) — skip.
+            return;
 
         var profile = JsonLayoutProfileLoader.Load(path);
         Assert.Equal("Emj", profile.Name);

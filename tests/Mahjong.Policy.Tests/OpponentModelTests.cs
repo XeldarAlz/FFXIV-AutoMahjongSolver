@@ -31,21 +31,21 @@ public class OpponentModelTests
     {
         var seats = new[]
         {
-            new SeatView([], [], [], false, -1, false, false),   // self
-            new SeatView([], [], [], true, 5, false, false),     // shimocha — riichi declared
+            new SeatView([], [], [], false, -1, false, false),
+            new SeatView([], [], [], true, 5, false, false),
             new SeatView([], [], [], false, -1, false, false),
             new SeatView([], [], [], false, -1, false, false),
         };
         var s = BaseState(seats: seats);
         var m = new OpponentModel();
         m.Update(s);
-        Assert.Equal(1.0, m.TenpaiProb[0]);  // shimocha (riichi) → 100%
+        Assert.Equal(1.0, m.TenpaiProb[0]);
     }
 
     [Fact]
     public void Early_game_low_tenpai_prob()
     {
-        var s = BaseState(wallRemaining: 68);    // very early
+        var s = BaseState(wallRemaining: 68);
         var m = new OpponentModel();
         m.Update(s);
         foreach (var p in m.TenpaiProb)
@@ -55,7 +55,7 @@ public class OpponentModelTests
     [Fact]
     public void Late_game_higher_tenpai_prob()
     {
-        var s = BaseState(wallRemaining: 10);    // near wall exhaust
+        var s = BaseState(wallRemaining: 10);
         var m = new OpponentModel();
         m.Update(s);
         foreach (var p in m.TenpaiProb)
@@ -65,24 +65,23 @@ public class OpponentModelTests
     [Fact]
     public void Opponent_discarded_tile_has_zero_danger_genbutsu()
     {
-        var discards = new[] { Tile.FromId(5) };   // 6m
+        var discards = new[] { Tile.FromId(5) };
         var seats = new[]
         {
             new SeatView([], [], [], false, -1, false, false),
-            new SeatView(discards, [false], [], false, -1, false, false),  // shimocha discarded 6m
+            new SeatView(discards, [false], [], false, -1, false, false),
             new SeatView([], [], [], false, -1, false, false),
             new SeatView([], [], [], false, -1, false, false),
         };
         var s = BaseState(seats: seats);
         var m = new OpponentModel();
         m.Update(s);
-        Assert.Equal(0.0, m.DangerMap[0][5]);   // shimocha can't ron on 6m (genbutsu)
+        Assert.Equal(0.0, m.DangerMap[0][5]);
     }
 
     [Fact]
     public void Kabe_zero_live_tiles_means_zero_danger()
     {
-        // All 4 copies of 5z accounted for by our hand — nobody can wait on 5z.
         var hand = new[]
         {
             Tile.FromId(31), Tile.FromId(31), Tile.FromId(31), Tile.FromId(31),
@@ -108,7 +107,7 @@ public class OpponentModelTests
         var s = BaseState(seats: seats);
         var m = new OpponentModel();
         m.Update(s);
-        Assert.Equal(0.0, m.HandMarginal[0][0]);   // shimocha can't be holding 1m (discarded)
+        Assert.Equal(0.0, m.HandMarginal[0][0]);
     }
 
     [Fact]
@@ -117,8 +116,6 @@ public class OpponentModelTests
         var s = BaseState();
         var m = new OpponentModel();
         m.Update(s);
-        // With no riichi and early game, all three opponents have similar danger.
-        // Cost is DangerMap × 4000 summed.
         double cost = m.ExpectedDealInCost(0);
         Assert.True(cost >= 0.0);
         Assert.True(cost <= 3 * 4000);

@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Sankantsu (2 han). Three kans of any kind — open, added, or concealed.
-/// </summary>
 public sealed class SankantsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

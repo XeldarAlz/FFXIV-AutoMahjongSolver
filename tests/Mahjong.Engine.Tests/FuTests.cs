@@ -42,60 +42,47 @@ public class FuTests
     [Fact]
     public void Menzen_ron_adds_ten_fu()
     {
-        // Closed hand, ron, no pinfu. Expect base 20 + 10 menzen kafu + group fu, rounded up.
-        // Use a hand where completing group is a simple run (ryanmen) — no wait fu.
-        // Hand: 234m 456p 678s 111z 55p, ron on 2m.
         var ctx = Ron("2m");
         var d = Decomp("234m456p678s111z55p", ctx);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 10 menzen kafu + 0 tsumo + 111z closed triplet terminal = 8 + 0 wait = 38 → 40.
         Assert.Equal(40, fu);
     }
 
     [Fact]
     public void Closed_triplet_simple_is_four_fu()
     {
-        // 222p closed triplet + 3 runs + pair, tsumo (so 2 fu + base 20), no menzen kafu.
         var ctx = Tsumo("5z");
         var d = Decomp("234m222p789s234s55z", ctx);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 2 tsumo + 4 (222p closed simple triplet) + 2 (55z pair haku/yakuhai) = 28 → 30.
         Assert.Equal(30, fu);
     }
 
     [Fact]
     public void Closed_kan_terminal_is_32_fu()
     {
-        var ankan = Meld.AnKan(Tile.FromId(0));  // 1m ankan
+        var ankan = Meld.AnKan(Tile.FromId(0));
         var ctx = Tsumo("4m");
         var hand = Hand.FromNotation("234m456p789s44m", [ankan]);
         var d = HandDecomposer.Enumerate(hand, ctx).First(x => x.Form == DecompositionForm.Standard);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 2 tsumo + 32 (1m ankan terminal) = 54 → 60
         Assert.Equal(60, fu);
     }
 
     [Fact]
     public void Tanki_wait_adds_two_fu()
     {
-        // Closed hand, tsumo, pair-wait on 5z.
         var ctx = Tsumo("5z");
-        // 3 runs + 1 closed triplet + pair tanki
         var d = Decomp("234m456p789s111z55z", ctx);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 2 tsumo + 8 (111z closed terminal triplet) + 2 (5z haku yakuhai pair) + 2 tanki = 34 → 40
         Assert.Equal(40, fu);
     }
 
     [Fact]
     public void Kanchan_wait_adds_two_fu()
     {
-        // Winning on 5m completing 4-5-6m from 4m-6m kanchan.
         var ctx = Tsumo("5m");
-        // 4m-5m-6m run (kanchan wait on 5m), plus 3 more sets + pair.
         var d = Decomp("456m789m234p234s55z", ctx);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 2 tsumo + 2 (55z pair yakuhai haku) + 2 kanchan = 26 → 30
         Assert.Equal(30, fu);
     }
 
@@ -105,21 +92,18 @@ public class FuTests
         var ctx = Tsumo("2m");
         var d = Decomp("234m456p789s234s55z", ctx);
         int fu = TestRules.Fu(d, ctx);
-        // 20 base + 2 tsumo + 2 (55z haku pair) = 24 → 30. No wait-fu bonus for ryanmen.
         Assert.Equal(30, fu);
     }
 
     [Fact]
     public void Double_wind_pair_doubles_yakuhai_fu()
     {
-        // Round wind = East (27), seat wind = East (27). Pair of East = +4 fu.
         var ctx = new WinContext(Tiles.Parse("2m")[0], WinKind.Tsumo,
                                   RoundWindTileId: 27, SeatWindTileId: 27);
         var hand = Hand.FromNotation("234m456p789s234s11z");
         var d = HandDecomposer.Enumerate(hand, ctx)
             .First(x => x.Form == DecompositionForm.Standard);
         int fu = TestRules.Fu(d, ctx);
-        // 20 + 2 tsumo + 4 (11z pair matches both winds) = 26 → 30
         Assert.Equal(30, fu);
     }
 }

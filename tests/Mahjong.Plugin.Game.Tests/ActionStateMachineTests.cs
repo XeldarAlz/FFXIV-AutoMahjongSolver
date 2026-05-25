@@ -128,8 +128,6 @@ public class ActionStateMachineTests
         fsm.BeginDispatch(DateTime.UtcNow, Ctx);
         fsm.CompleteDispatch();
 
-        // The latch is unaffected by dispatch begin/complete — only an explicit
-        // ClearRiichiConfirm or context loss clears it.
         Assert.True(fsm.IsRiichiConfirmPending);
     }
 
@@ -138,7 +136,6 @@ public class ActionStateMachineTests
     {
         var fsm = NewFsm();
         fsm.LatchRiichiConfirm();
-        // Within a hand the wall only ever decreases.
         fsm.ObserveWall(70);
         fsm.ObserveWall(45);
         fsm.ObserveWall(30);
@@ -152,7 +149,6 @@ public class ActionStateMachineTests
         var fsm = NewFsm();
         fsm.LatchRiichiConfirm();
         fsm.ObserveWall(20);
-        // Sharp upward jump = new hand dealt.
         fsm.ObserveWall(70);
         Assert.False(fsm.IsRiichiConfirmPending);
     }
@@ -163,7 +159,6 @@ public class ActionStateMachineTests
         var fsm = NewFsm();
         fsm.LatchRiichiConfirm();
         fsm.ObserveWall(20);
-        // ±5 tolerance — read glitches between addon ticks shouldn't trigger reset.
         fsm.ObserveWall(24);
         fsm.ObserveWall(22);
         Assert.True(fsm.IsRiichiConfirmPending);
@@ -183,9 +178,7 @@ public class ActionStateMachineTests
     [Fact]
     public void RiichiConfirm_subsequent_null_latch_keeps_original_tile()
     {
-        // The post-riichi yaku-preview popup re-fires the latch without a
-        // fresh policy decision (no probe verdict, just a confirm click).
-        // The originally-chosen tile must survive that re-latch.
+        // Pins that a re-latch with null tile keeps the original policy-chosen tile across the post-riichi yaku-preview confirm.
         var fsm = NewFsm();
         var tile = Tile.FromId(11);
         fsm.LatchRiichiConfirm(tile);
@@ -210,7 +203,7 @@ public class ActionStateMachineTests
         var fsm = NewFsm();
         fsm.LatchRiichiConfirm(Tile.FromId(7));
         fsm.ObserveWall(20);
-        fsm.ObserveWall(70); // new hand
+        fsm.ObserveWall(70);
 
         Assert.Null(fsm.RiichiConfirmTile);
     }
@@ -224,11 +217,9 @@ public class ActionStateMachineTests
         fsm.BeginDispatch(t0, Ctx);
         fsm.CompleteDispatch();
 
-        // Wait past the cooldown — now suppression returns false.
         var afterCooldown = t0 + RetryCooldown + TimeSpan.FromSeconds(1);
         Assert.False(fsm.ShouldSuppressForContext(Ctx, afterCooldown));
 
-        // Re-dispatch resets the cooldown clock.
         fsm.BeginDispatch(afterCooldown, Ctx);
         fsm.CompleteDispatch();
 

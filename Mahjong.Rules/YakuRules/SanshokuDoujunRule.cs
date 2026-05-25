@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Sanshoku Doujun (2 han closed / 1 han open). The same numerical run appears in
-/// all three suits — e.g. 234m + 234p + 234s.
-/// </summary>
 public sealed class SanshokuDoujunRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(
@@ -24,7 +20,6 @@ public sealed class SanshokuDoujunRule : IYakuRule
                 runStarts.Add(g.First.Id);
         }
 
-        // Run start ids: man=0..6, pin=9..15, sou=18..24. Match by intra-suit position.
         for (int n = 0; n < TileIds.SuitSize - 2; n++)
         {
             if (runStarts.Contains(TileIds.ManStart + n)

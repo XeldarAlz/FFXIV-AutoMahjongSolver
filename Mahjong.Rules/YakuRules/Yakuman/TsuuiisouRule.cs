@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules.Yakuman;
 
-/// <summary>
-/// Tsuuiisou (yakuman). All honors. Runs are impossible (honors can't sequence).
-/// </summary>
 public sealed class TsuuiisouRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

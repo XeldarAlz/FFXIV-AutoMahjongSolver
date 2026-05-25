@@ -16,24 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Mahjong.Plugin.Dalamud.Composition;
 
-/// <summary>
-/// Composition root for the plugin. Builds the Microsoft.Extensions.DependencyInjection
-/// container, registering:
-///   * Dalamud service adapters (<see cref="DalamudEventLog"/>, <see cref="DalamudFrameworkScheduler"/>)
-///   * <see cref="IRuleSet"/> + scoring/dora/fu rules
-///   * <see cref="IWeightProvider"/> + policy sub-policies
-///   * Top-level <see cref="IPolicy"/> bound to <see cref="EfficiencyPolicy"/>
-///
-/// Plugin.cs builds the container once at startup and disposes it on plugin
-/// unload — Dalamud's <see cref="System.Runtime.Loader.AssemblyLoadContext"/>
-/// gets cleaned up properly without leaks across plugin reloads.
-///
-/// Phase 7.A wires the container; Phase 7.B migrates the existing 40+ static
-/// <c>Plugin.X</c> accesses to constructor injection across the plugin layer.
-/// </summary>
 public static class PluginServices
 {
-    /// <summary>Build the configured service provider for a plugin instance.</summary>
     public static ServiceProvider Build(
         DalamudServices dalamud,
         Configuration configuration)
@@ -58,11 +42,6 @@ public static class PluginServices
         IDalamudPluginInterface pluginInterface,
         Configuration configuration)
     {
-        // The migration chain runs at plugin load — what we register here is
-        // the post-migration live config, the service that gates further
-        // edits, and the migrator catalog (kept registered so tests / future
-        // wiring can resolve them, even though Plugin.cs already applied
-        // them once at startup).
         services.AddSingleton<IConfigService<Configuration>>(
             new DalamudConfigService(pluginInterface.SavePluginConfig, configuration));
         services.AddSingleton<IConfigMigrator<Configuration>, ConfigMigratorV0ToV1>();
@@ -71,11 +50,6 @@ public static class PluginServices
     private static void RegisterDalamudAdapters(
         IServiceCollection services, DalamudServices dalamud)
     {
-        // Every Dalamud service the plugin uses is registered as a singleton
-        // — Dalamud hands us one instance per plugin lifetime and that's
-        // exactly what the container should hand back to collaborators.
-        // The bundle itself is also registered, so a class that needs more
-        // than two Dalamud services can take the whole record.
         services.AddSingleton(dalamud);
         services.AddSingleton(dalamud.Log);
         services.AddSingleton(dalamud.Framework);
@@ -94,17 +68,11 @@ public static class PluginServices
         services.AddSingleton<IFrameworkScheduler, DalamudFrameworkScheduler>();
         services.AddSingleton<IGameClientAdapter, DalamudGameClientAdapter>();
 
-        // The addon resolver caches `lastResolved` across calls; making it a
-        // singleton means every collaborator amortizes the same cache instead
-        // of each one paying the probe cost on its first call.
         services.AddSingleton<MahjongAddon>();
     }
 
     private static void RegisterRules(IServiceCollection services)
     {
-        // The live plugin runs against FFXIV's Doman client — Doman rules.
-        // (Tenhou replay code paths inject RiichiRuleSet directly when needed;
-        // they don't pull from this container.)
         services.AddSingleton<IRuleSet, DomanRuleSet>();
         services.AddSingleton<IScoringRule, StandardScoringRule>();
         services.AddSingleton<IDoraRule, StandardDoraRule>();
@@ -113,15 +81,11 @@ public static class PluginServices
 
     private static void RegisterWeights(IServiceCollection services)
     {
-        // Phase 7 ships with the hardcoded defaults. JsonWeightProvider can
-        // swap in once a weights.json shipping convention is finalized.
         services.AddSingleton<IWeightProvider, DefaultWeightProvider>();
     }
 
     private static void RegisterRandomness(IServiceCollection services)
     {
-        // Time-based seed for the live plugin. Tests / tuner replace this
-        // with a fixed seed via direct construction.
         services.AddSingleton<IRandomSource>(_ => new SeededRandomSource());
     }
 
@@ -138,11 +102,7 @@ public static class PluginServices
         services.AddSingleton<IRiichiPolicy, HeuristicRiichiPolicy>();
         services.AddSingleton<IPushFoldPolicy, HeuristicPushFoldPolicy>();
 
-        // Explicit factory pins the 5-arg DI constructor — `EfficiencyPolicy`
-        // also exposes an `IWeightProvider?`-only convenience ctor, and
-        // Microsoft.Extensions.DependencyInjection refuses to pick between
-        // two resolvable ctors (throws "ambiguous" at runtime). Naming the
-        // constructor here keeps `Mahjong.Policy` free of an MS.DI dep.
+        // Explicit factory pins the 5-arg ctor — EfficiencyPolicy also has a 1-arg ctor and MS.DI throws on ambiguous.
         services.AddSingleton<EfficiencyPolicy>(sp =>
             new EfficiencyPolicy(
                 sp.GetRequiredService<IOpponentModel>(),

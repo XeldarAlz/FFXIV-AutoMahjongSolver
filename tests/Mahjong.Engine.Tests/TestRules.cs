@@ -1,10 +1,5 @@
 namespace Mahjong.Engine.Tests;
 
-/// <summary>
-/// Shared rule-set fixture for Engine tests. Tests run against the standard
-/// <see cref="RiichiRuleSet"/> — Doman-specific behavior is tested separately
-/// in Mahjong.Rules.Tests.
-/// </summary>
 internal static class TestRules
 {
     public static readonly RiichiRuleSet RuleSet = new();

@@ -41,8 +41,7 @@ public class EndpointHolderTests
 
         holder.Set(null!);
 
-        // Null is treated as "ignore" — we don't want a transient resolver
-        // failure to nuke the live endpoint.
+        // Null is "ignore" so a transient resolver failure can't nuke the live endpoint.
         Assert.Same(initial, holder.Current);
     }
 

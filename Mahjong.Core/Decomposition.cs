@@ -2,10 +2,10 @@ namespace Mahjong.Core;
 
 public enum GroupKind : byte
 {
-    Run,       // three consecutive suited tiles (shuntsu)
-    Triplet,   // three of a kind (koutsu)
-    Kan,       // four of a kind
-    Pair,      // two of a kind (head)
+    Run,
+    Triplet,
+    Kan,
+    Pair,
 }
 
 public enum DecompositionForm : byte
@@ -15,11 +15,7 @@ public enum DecompositionForm : byte
     Kokushi,
 }
 
-/// <summary>
-/// A single group of tiles within a decomposition.
-/// <see cref="First"/> is the anchor — lowest tile for runs, the tile itself for
-/// triplets/kans/pairs.
-/// </summary>
+/// <summary><see cref="First"/> is the anchor — lowest tile of a run, the tile itself otherwise.</summary>
 public readonly record struct Group(
     GroupKind Kind,
     Tile First,
@@ -44,8 +40,6 @@ public readonly record struct Group(
         {
             if (Kind == GroupKind.Run)
             {
-                // A run contains a terminal iff it starts at 1 or ends at 9
-                // (i.e. contains the 1 or 9 of its suit).
                 int pos = First.Id % 9;
                 return pos == 0 || pos == 6;
             }
@@ -53,10 +47,7 @@ public readonly record struct Group(
         }
     }
 
-    /// <summary>
-    /// Runs always contain a simple tile (any 3-consecutive run hits 2,3,4,5,6,7 or 8),
-    /// so this is only ever true for non-run groups whose anchor is a terminal/honor.
-    /// </summary>
+    /// <summary>False for runs — any 3-consecutive run hits a simple in 2..8.</summary>
     public bool AllTerminalOrHonor => Kind != GroupKind.Run && First.IsTerminalOrHonor;
 
     public Tile[] Tiles => Kind switch
@@ -87,14 +78,8 @@ public readonly record struct Group(
 }
 
 /// <summary>
-/// One valid decomposition of a 14-tile winning hand.
-/// <list type="bullet">
-/// <item>Standard: 5 groups — 4 sets + 1 pair.</item>
-/// <item>Chiitoitsu: 7 pair groups.</item>
-/// <item>Kokushi: a single "pseudo" representation — Groups may be empty,
-///       relevant info lives on the source hand.</item>
-/// </list>
-/// Defensive-copies the supplied <paramref name="Groups"/> list at construction.
+/// Standard: 4 sets + 1 pair. Chiitoitsu: 7 pairs. Kokushi: pseudo — Groups may be empty,
+/// info lives on the source hand.
 /// </summary>
 public sealed record Decomposition(
     DecompositionForm Form,

@@ -4,24 +4,15 @@ using Mahjong.Policy.Tuning;
 namespace Mahjong.Tuner;
 
 /// <summary>
-/// Offline runner for the weight tuners. Self-plays N generations of
-/// head-to-head matches against the incumbent mean, prints per-generation
-/// progress, and writes the final tuned <see cref="WeightBundle"/> to a
-/// <c>data/weights/*.json</c> file that <see cref="JsonWeightProvider"/>
-/// loads at runtime.
-///
 /// Usage:
 ///   dotnet run --project Tuner -c Release -- [pop=8] [generations=10] [hands=50] [seed=42]
 ///   dotnet run --project Tuner -c Release -- coord [iters=30] [hands=200] [seed=4242]
 ///   dotnet run --project Tuner -c Release -- verify [hands=500] [seed=1234]
-///
-/// All numeric args are optional; defaults match the tuner-specific Settings.
 /// </summary>
 public static class Program
 {
     public static int Main(string[] args)
     {
-        // Pin formatting to invariant — JSON output must be culture-neutral.
         System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
             System.Globalization.CultureInfo.InvariantCulture;
 
@@ -32,10 +23,6 @@ public static class Program
 
         return RunEvolutionary(args);
     }
-
-    // ---------------------------------------------------------------------
-    // Evolutionary tuner (default mode)
-    // ---------------------------------------------------------------------
 
     private static int RunEvolutionary(string[] args)
     {
@@ -93,10 +80,6 @@ public static class Program
         return 0;
     }
 
-    // ---------------------------------------------------------------------
-    // Coordinate-descent tuner (`coord` subcommand)
-    // ---------------------------------------------------------------------
-
     private static int RunCoord(string[] args)
     {
         int iterations = ParseArg(args, 0, 30);
@@ -140,15 +123,8 @@ public static class Program
         return 0;
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
     private static string WriteWeightsJson(WeightBundle bundle, string prefix)
     {
-        // Output to data/weights/{prefix}-{timestamp}.json at the repo root.
-        // The Tuner is invoked from the repo root via `dotnet run --project Tuner`,
-        // so the working directory is the repo root.
         var outputDir = Path.Combine("data", "weights");
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
         var outPath = Path.Combine(outputDir, $"{prefix}-{stamp}.json");

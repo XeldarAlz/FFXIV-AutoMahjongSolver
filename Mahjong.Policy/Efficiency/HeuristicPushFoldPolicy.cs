@@ -2,18 +2,6 @@ using Mahjong.Engine;
 
 namespace Mahjong.Policy.Efficiency;
 
-/// <summary>
-/// Heuristic <see cref="IPushFoldPolicy"/>. Without a full P(win) × winValue
-/// estimator, applies a pragmatic ladder:
-/// <list type="bullet">
-///   <item>Tenpai: push unless the planned discard's deal-in cost exceeds a
-///         tenpai-baseline value (~3000).</item>
-///   <item>1-shanten: push unless an opponent has declared riichi <em>and</em>
-///         the cut is meaningfully dangerous.</item>
-///   <item>≥ 2-shanten: fold when the round is late, anyone is riichi, or any
-///         opponent's tenpai probability ≥ 0.7.</item>
-/// </list>
-/// </summary>
 public sealed class HeuristicPushFoldPolicy : IPushFoldPolicy
 {
     private const int TenpaiDealInCap = 3000;

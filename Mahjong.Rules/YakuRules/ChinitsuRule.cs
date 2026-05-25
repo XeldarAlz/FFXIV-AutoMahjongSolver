@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Chinitsu (6 han closed / 5 han open). Single suit, no honors.
-/// Supersedes Honitsu.
-/// </summary>
 public sealed class ChinitsuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

@@ -1,15 +1,8 @@
 namespace Mahjong.Replay;
 
 /// <summary>
-/// Replays a parsed Tenhou kyoku turn-by-turn for one seat, reconstructing the
-/// observable state at each discard decision, asking the supplied <see cref="IPolicy"/>
-/// for its choice, and comparing against the recorded discard. Yields per-decision
-/// metrics for policy validation and weight tuning.
-///
-/// Simplifications: draws and discards are interleaved strictly in seat order,
-/// starting with the dealer; calls are not replayed (calls break the simple
-/// sequence — a full replay needs the event stream with tags, which the MVP
-/// parser doesn't extract yet).
+/// MVP replay: calls aren't replayed (would need the tagged event stream), so the line is
+/// taken at face value and divergences are blamed on the policy.
 /// </summary>
 public static class TenhouReplay
 {
@@ -50,7 +43,6 @@ public static class TenhouReplay
 
             decisions.Add(new Decision(turn, actual, policyPick, policyPick.Id == actual.Id));
 
-            // Apply the *actual* discard so subsequent turns match the recorded line.
             counts[actual.Id]--;
             publicDiscards[seat].Add(actual);
         }
@@ -79,7 +71,7 @@ public static class TenhouReplay
     private static void ApplyDraw(int[] counts, int drawId)
     {
         if (drawId < 0)
-            return;        // event-only slot (tsumo declaration etc.) — nothing to add to hand
+            return;
         counts[drawId]++;
     }
 

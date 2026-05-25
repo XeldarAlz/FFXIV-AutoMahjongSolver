@@ -1,15 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Pinfu (1 han, closed only). All sequences, valueless pair, two-sided (ryanmen) wait,
-/// no fu beyond the base.
-///
-/// Detection breaks down to four checks:
-///   1. Standard form, closed.
-///   2. Every non-pair group is a sequence (no triplets / kans).
-///   3. The pair is not yakuhai (round wind, seat wind, or dragon).
-///   4. The wait that completed the hand is ryanmen — kanchan / penchan reject.
-/// </summary>
 public sealed class PinfuRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(
@@ -73,15 +63,15 @@ public sealed class PinfuRule : IYakuRule
             return false;
 
         var run = completing.Value;
-        int offset = ctx.WinningTile.Id - run.First.Id;       // 0, 1, or 2
+        int offset = ctx.WinningTile.Id - run.First.Id;
         int firstMod = run.First.Id % TileIds.SuitSize;
 
         if (offset == 1)
-            return false;                                  // kanchan
+            return false;
         if (offset == 2 && firstMod == 0)
-            return false;                  // penchan 12 → 3
+            return false;
         if (offset == 0 && firstMod == TileIds.SuitSize - 3)
-            return false; // penchan 89 → 7
+            return false;
         return true;
     }
 }

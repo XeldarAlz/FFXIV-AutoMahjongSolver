@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.Tests;
 
-/// <summary>
-/// Boundary tests for the scoring tiers — verify that han thresholds map to
-/// the right base-point bucket and that payments split correctly.
-/// </summary>
 public class ScoringRuleTests
 {
     private static readonly StandardScoringRule Rule = new();
@@ -29,7 +25,6 @@ public class ScoringRuleTests
     [Fact]
     public void Low_han_low_fu_caps_at_mangan()
     {
-        // 4 han × 60 fu = 240 × 64 = 15360, but mangan caps base at 2000.
         var tier = Rule.ResolveTier(han: 4, fu: 60, isYakuman: false);
         Assert.Equal(2000, tier.BasePoints);
         Assert.Equal("mangan", tier.Name);
@@ -46,11 +41,11 @@ public class ScoringRuleTests
     [Fact]
     public void Non_dealer_ron_pays_base_times_four_rounded_up()
     {
-        var tier = new ScoringTier("test", 960);  // 1 han × 30 fu equivalent
+        var tier = new ScoringTier("test", 960);
         var pay = Rule.Pay(tier, isDealer: false, WinKind.Ron);
         Assert.Equal(0, pay.DealerPay);
         Assert.Equal(0, pay.NonDealerPay);
-        Assert.Equal(3900, pay.RonTotal);          // 960 × 4 = 3840 → 3900
+        Assert.Equal(3900, pay.RonTotal);
     }
 
     [Fact]
@@ -58,7 +53,7 @@ public class ScoringRuleTests
     {
         var tier = new ScoringTier("test", 960);
         var pay = Rule.Pay(tier, isDealer: true, WinKind.Ron);
-        Assert.Equal(5800, pay.RonTotal);          // 960 × 6 = 5760 → 5800
+        Assert.Equal(5800, pay.RonTotal);
     }
 
     [Fact]

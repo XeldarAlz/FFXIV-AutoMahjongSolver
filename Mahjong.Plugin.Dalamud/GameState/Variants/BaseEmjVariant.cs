@@ -8,16 +8,6 @@ using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 namespace Mahjong.Plugin.Dalamud.GameState.Variants;
 
-/// <summary>
-/// Profile-driven reader for the Mahjong-addon family. One instance per
-/// loaded <see cref="LayoutProfile"/> — adding a new client variant (JP, OC)
-/// is a JSON file in <c>data/layouts/</c> plus a one-line registration, never
-/// a code change here.
-///
-/// Pre-Phase-6: this class was abstract with two subclasses (Emj and EmjL)
-/// supplying only a tile texture base each. The abstract hierarchy is gone;
-/// every variant-specific constant comes from the injected profile.
-/// </summary>
 internal sealed class BaseEmjVariant : IEmjVariant
 {
     private readonly LayoutProfile profile;
@@ -38,23 +28,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
     public string PreferredAddonName => profile.AddonName;
     public LayoutProfile Profile => profile;
 
-    // Log de-dupe state for diagnostic dumps. Scoped per-variant so each
-    // variant handles its own state-code convention without cross-talk.
     private int lastLoggedCallPromptState = -1;
     private int lastLoggedMeldHandCount = -1;
 
-    /// <summary>
-    /// Fingerprint check. Passes when:
-    ///   1. self-score word is in the plausible mahjong range
-    ///   2. call-modal host node exists
-    ///   3. populated hand slots mostly decode to valid tile_ids under the
-    ///      profile's <see cref="LayoutProfile.TileTextureBase"/> — tolerating
-    ///      up to <see cref="LayoutSanityLimits.MaxAkadoraSlots"/> unknown slots.
-    ///
-    /// Check (3) is what distinguishes Emj from EmjL on a live hand: tile
-    /// encodings use non-overlapping texture ranges, so a hand populated
-    /// with one variant's textures fails the other variant's probe.
-    /// </summary>
     public unsafe bool Probe(AtkUnitBase* unit)
     {
         if (unit == null || unit->RootNode == null)
@@ -81,14 +57,12 @@ internal sealed class BaseEmjVariant : IEmjVariant
             else
                 unknown++;
         }
-        // Empty-hand frame (startup / between rounds): no tile evidence.
-        // Pass so the selector can fall back to the name tiebreaker.
+        // Empty hand: no tile evidence — fall through to the name tiebreaker.
         if (valid == 0 && unknown == 0)
             return true;
         return valid >= 1 && unknown <= profile.Limits.MaxAkadoraSlots;
     }
 
-    /// <inheritdoc />
     public unsafe StateSnapshot? TryBuildSnapshot(AtkUnitBase* unit, VariantReadContext ctx)
     {
         nint addr = (nint)unit;
@@ -115,18 +89,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
         MaybeLogCallPromptTransition(ctx, addr, stateCode, atkValues, atkCount, hand, legal);
         MaybeLogMeldTransition(ctx, addr, stateCode, hand);
 
-        // Resolve our own open melds. The addon's on-disk meld struct is still
-        // un-mapped; instead the MeldTracker infers each meld from closed-hand
-        // deltas observed tick-by-tick. ObserveSnapshot runs the inference
-        // before we read Melds so a meld that just landed this tick is
-        // already in the list. ObserveWall provides the hand-boundary reset.
         ctx.MeldTracker.ObserveWall(wallRemaining);
         ctx.MeldTracker.ObserveSnapshot(hand, discardCounts, ourSeat: 0, currentAkadora: akaDora);
         var ourMelds = ctx.MeldTracker.Melds.ToArray();
-        // Total akadora = current closed hand + reds that already moved
-        // into open melds. The scorer adds the snapshot's AkaDora to dora
-        // han at win time, so we need the full tile-pool count, not just
-        // the closed-hand slice.
         int totalAkadora = akaDora + ctx.MeldTracker.MeldAkadora;
 
         return StateSnapshot.Empty with
@@ -138,19 +103,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             WallRemaining = wallRemaining,
             DoraIndicators = doraIndicators,
             Legal = legal,
-            // Solo Doman is a tonpuusen — East-round-only, four hands. Round
-            // wind = East always; player starts as East-seat dealer at the
-            // first hand of any session. Both pin to 0 and we mark seat info
-            // known so round-wind yakuhai detection (always East) and
-            // hand-1-seat-wind yakuhai (also East) start firing in
-            // CountYakuhai and YakuPotential. For hands 2-4 of a tonpuusen,
-            // dealer rotation makes our true seat wind shift to N→W→S — the
-            // round-wind term stays correct but the seat-wind term ends up
-            // weighting East tiles when N/W/S would be right. Net still a
-            // win vs the prior "everything off, both terms 0" baseline.
-            // Tracking DealerSeat from the addon would let us derive OurSeat
-            // mid-game; the candidate offsets identified by tools/find_seat_offsets.py
-            // (+0x130, +0x1248, +0x12BC) need a multi-session sample to validate.
+            // Solo Doman is tonpuusen — pin to East-seat East-round; seat wind ends up wrong for hands 2-4 but round wind stays correct.
             OurSeat = 0,
             RoundWind = 0,
             SeatInfoKnown = true,
@@ -177,14 +130,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return hand;
     }
 
-    // Doman tags akadora 5m/5p/5s as raw indices 34/35/36 past TileTextureBase.
-    // Fold them into the plain tile id; without this the drawn akadora gets
-    // dropped from the closed hand and auto-play freezes (BuildLegalActions
-    // sees hand.Count % 3 != 2 and reports None even though it's our turn).
-    //
-    // Overload that drops the isRed bit for callers that don't care about
-    // akadora (probe checks, candidate derivation when red-vs-plain doesn't
-    // affect the call decision).
+    // Doman akadora 5m/5p/5s sit at raw indices 34/35/36 past TileTextureBase; fold them into the plain tile id.
     private int DecodeTileId(int raw) => DecodeTileId(raw, out _);
 
     private int DecodeTileId(int raw, out bool isRed)
@@ -197,13 +143,13 @@ internal sealed class BaseEmjVariant : IEmjVariant
         {
             case 34:
                 isRed = true;
-                return 4;   // red 5m
+                return 4;
             case 35:
                 isRed = true;
-                return 13;  // red 5p
+                return 13;
             case 36:
                 isRed = true;
-                return 22;  // red 5s
+                return 22;
             default:
                 return -1;
         }
@@ -245,8 +191,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
             basePtr[profile.Offsets.ToimenDiscardCountByte],
             basePtr[profile.Offsets.KamichaDiscardCountByte],
         };
-        // Reject implausible per-seat values rather than zeroing the whole array.
-        // Each seat discards up to ~24 times in a 70-wall round.
         int cap = profile.Limits.DiscardCountSanityMax;
         for (int i = 0; i < counts.Length; i++)
             if (counts[i] > cap)
@@ -262,19 +206,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return v.Type == ValueType.Int ? v.Int : -1;
     }
 
-    // wall_remaining ≈ initial_live_wall − total_discards (each discard follows
-    // a draw). Ignores kan draws from the dead wall, a minor under-estimate.
-    //
-    // Pre-2026-05-11 this also trusted atkValues[WallCount] when stateCode ==
-    // PostDrawIdle. That value uses a different baseline — +6 higher than the
-    // discard-derived count, consistent with kan-reserve accounting — and
-    // flipped on every CallPrompt→PostDrawIdle transition. The +6 mode-switch
-    // beat MaybeRollHand's +5 tolerance and rolled a fresh hand file on every
-    // call-modal close. Confirmed in the 2026-05-11 telemetry, install
-    // 6a4a0a70: 5 spurious hand rolls in 30 s with byte-identical addon dumps
-    // (see .local/by-date/2026-05-11/.../RESTART-CLUSTER-ANALYSIS.md). The
-    // discard-derived value was monotonic and correct in every cluster
-    // snapshot, so we use it unconditionally.
+    // wall_remaining = initial_live_wall − total_discards. Ignores kan dead-wall draws (minor under-estimate). atkValues[WallCount] uses a different baseline and flips at state transitions, breaking hand-roll detection.
     private int ResolveWallRemaining(int[] discardCounts)
     {
         int totalDiscards = 0;
@@ -310,18 +242,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return seats;
     }
 
-    /// <summary>
-    /// Read up to <paramref name="reportedCount"/> tiles from a per-seat discard
-    /// array. Returns empty when the offset isn't configured for the active
-    /// variant (the default, pre-RE) so SeatView.Discards stays empty without
-    /// needing a null-check at every consumer.
-    ///
-    /// <para>Tedashi tracking (tsumogiri vs in-hand) is not yet wired — the
-    /// addon publishes per-tile tedashi bits at a separate offset that hasn't
-    /// been mapped. For now every discard is reported as tedashi (the more
-    /// conservative assumption for the opponent model: treats every discard
-    /// as deliberate signal).</para>
-    /// </summary>
+    /// <summary>Every discard is reported as tedashi — per-tile tedashi bits aren't mapped yet.</summary>
     private unsafe IReadOnlyList<Tile> ReadDiscardArray(byte* basePtr, int? offset, int reportedCount)
     {
         if (offset is not int off || reportedCount <= 0)
@@ -341,28 +262,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return tiles;
     }
 
-    /// <summary>
-    /// Build the LegalActions record from the current state code. Three cases:
-    /// <list type="bullet">
-    ///   <item>Call-prompt state (CallPrompt / CallPromptList / SelfDeclareList): scan
-    ///         AtkValues strings for button labels, then derive candidates.</item>
-    ///   <item>Hand count satisfies <c>% 3 == 2</c> (14/11/8/5/2): plain discard.</item>
-    ///   <item>Otherwise: no actions.</item>
-    /// </list>
-    ///
-    /// <para><b>SelfDeclareList post-call gate:</b> state-6 (SelfDeclareList) is
-    /// dual-use. At <c>hand.Count == 14</c> it's the genuine self-declare popup
-    /// (Riichi/Tsumo/AnKan offered after a draw). At <c>hand.Count != 14</c> with
-    /// <c>hand.Count % 3 == 2</c> (typically 11 after a pon, 8 after a second
-    /// pon/chi, etc.) it's the post-call <i>discard-from-list</i> popup — the
-    /// same UI shell, but the visible list items are the player's closed hand
-    /// asking which tile to discard. Without this gate the variant decoder
-    /// reports <c>legal=Pon, Pass</c> on that popup (residual "Pon" string in
-    /// AtkValues from the just-resolved pon prompt) and the auto-loop spins
-    /// forever passing on a popup that actually wants a discard click — the
-    /// "stuck after pon, 11 tiles in hand" freeze observed 2026-05-09.
-    /// Fall through to the regular discard fallback in that case.</para>
-    /// </summary>
+    /// <summary>State-6 (SelfDeclareList) is dual-use: hand=14 is the self-declare popup, hand!=14 with %3==2 is the post-call discard-from-list popup — gate on hand=14 or stale "Pon" labels strand the loop.</summary>
     private unsafe LegalActions BuildLegalActions(
         AtkUnitBase* unit, int stateCode, List<Tile> hand, AtkValue* atkValues, int atkCount)
     {
@@ -390,23 +290,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
                 scanned = BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
             }
 
-            // State-6 hand=14 popup is dual-purpose: it offers Riichi/Tsumo/AnKan
-            // AND the closed hand stays clickable as a regular discard surface.
-            // If the policy declines the call (chooses Pass), the right behavior
-            // is to discard a tile — clicking the addon's "Pass" via opcode-11
-            // doesn't dismiss this popup (it expects a tile click to advance).
-            // Live-confirmed 2026-05-23T15:03 on a Riichi/Pass popup: the bot
-            // looped `auto-pass[opt=1] → Ok` every 3 s without the popup ever
-            // closing because that path isn't how the addon advances state-6.
-            //
-            // The fix: at state-6 hand=14 we always ALSO surface Discard as a
-            // legal action, so EfficiencyPolicy.Choose can pick a tile through
-            // its normal discard pipeline (which evaluates Riichi via the
-            // RiichiPolicy + the existing dispatcher route in
-            // AutoPlayLoop.DispatchCallChoice that re-routes Discard/Riichi
-            // through the tile-click handshake). Other call-prompt states
-            // (CallPrompt=15 after opp discard, CallPromptList=28) keep their
-            // current behavior — the closed hand isn't clickable there.
+            // State-6 hand=14 popup also exposes the closed hand as a discard surface; surface Discard here so policy.Choose can pick a tile when Pass is the call verdict.
             bool isSelfDeclarePopup =
                 stateCode == states.SelfDeclareList && hand.Count == 14;
             if (isSelfDeclarePopup)
@@ -416,14 +300,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             return scanned;
         }
 
-        // "Our turn to discard" = 14 tiles with 0 melds, 11 with 1 meld, 8 with 2, etc. —
-        // all satisfy hand % 3 == 2. (Equivalent for shanten purposes to
-        // closed + 3*melds.Count == 14.) Mid-transition states like post-
-        // minkan-pre-rinshan-draw (closed=10 with 1 minkan, shanten total
-        // == 13) are intentionally NOT discard-eligible here — DiscardScorer
-        // can't score them and waiting for the rinshan tile is the right
-        // behavior. EfficiencyPolicy's exception guard handles any residual
-        // bad-state slip-through gracefully without crashing the dispatch.
+        // Our turn = hand % 3 == 2 (14/11/8/5/2). Post-minkan-pre-rinshan (closed=10 with 1 minkan) is intentionally not discard-eligible.
         if (hand.Count > 0 && hand.Count % 3 == 2)
             return new LegalActions(ActionFlags.Discard, [], [], [], []);
 
@@ -437,9 +314,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var host = unit->GetNodeById(profile.NodeIds.CallModalHost);
         if (host == null)
             return false;
-        // Type-check before casting — component node types are ≥ 1000; native
-        // types are single-digit. If a future patch renumbers the host id to a
-        // non-component node, the cast would dereference the wrong struct.
+        // Component node types are >= 1000; type-check guards against a future patch renumbering host to a native node.
         if ((int)host->Type < 1000)
             return false;
         var comp = ((AtkComponentNode*)host)->Component;
@@ -461,9 +336,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var chis = new List<MeldCandidate>();
         var kans = new List<MeldCandidate>();
 
-        // Ron / Riichi / Tsumo: flag-only — no candidate derivation. The policy
-        // already handles agari declarations top of Choose, and Riichi just gets
-        // confirmed by AutoPlayLoop with option 0.
         if (labels.OffersRon)
             flags |= ActionFlags.Ron;
         if (labels.OffersRiichi)
@@ -478,32 +350,19 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (labels.OffersPon)
         {
             flags |= ActionFlags.Pon;
-            // Prefer the discarded tile from AtkValues — Doman exposes it as a
-            // consecutive duplicate in [16..21]. Falls back to the unique-pair
-            // heuristic when the addon-side data isn't available (e.g. unit tests
-            // or a future variant where the duplicate signal moves).
+            // Doman exposes the discarded tile as a consecutive duplicate in [16..21]; fall back to unique-pair heuristic.
             if (atkValues != null)
                 AppendPonCandidateFromAtkValues(hand, counts, atkValues, atkCount, pons);
             if (pons.Count == 0)
                 AppendPonCandidate(hand, counts, pons);
         }
 
-        // MinKan: emit a candidate when triplet is unambiguous. Prior to the
-        // accept-button-index fix in AutoPlayLoop.ComputeAcceptIndex we used
-        // to skip this when pon was also on the row, because DispatchCall
-        // hardcoded option 0 (Pon-as-leftmost) and emitting a Kan candidate
-        // would have caused a misfire. With the fix in place the dispatcher
-        // routes to the correct button per ActionKind, so all candidates can
-        // safely coexist and the call policy gets to pick the best by shanten
-        // delta + yaku reachability.
         if (labels.OffersKan)
         {
             flags |= ActionFlags.MinKan;
             AppendKanCandidate(hand, counts, kans);
         }
 
-        // Chi: claimed tile is at the configured AtkValue index (chi-claim slot).
-        // Emitted simultaneously with pon now — see comment above.
         if (labels.OffersChi)
         {
             flags |= ActionFlags.Chi;
@@ -513,20 +372,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return new LegalActions(flags, [], pons, chis, kans);
     }
 
-    /// <summary>
-    /// Fallback when <see cref="AppendPonCandidateFromAtkValues"/> didn't find
-    /// the claim tile in the AtkValue scan. Enumerate every pair we hold and
-    /// emit a Pon candidate per pair — the call policy picks the best by
-    /// shanten gain, and the click itself is just opcode-11 / option-0
-    /// (the game forms whichever tile is actually being claimed, regardless
-    /// of which candidate the policy reasoned about).
-    ///
-    /// <para>The earlier "unique pair only" rule silently dropped Pon prompts
-    /// whenever the hand carried two-or-more pairs — observed 2026-05-09 09:54
-    /// where a 3-pair hand declined every Pon offer with "no call candidates
-    /// offered" because the unique-pair check returned ambiguous and never
-    /// emitted anything.</para>
-    /// </summary>
     private void AppendPonCandidate(List<Tile> hand, int[] counts, List<MeldCandidate> pons)
     {
         for (int id = 0; id < Tile.Count34; id++)
@@ -539,23 +384,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    /// <summary>
-    /// Read the discarded tile that triggered the pon prompt directly from the
-    /// addon's AtkValues. Doman publishes it as a consecutive duplicate Int in
-    /// the [16..21] range — verified empirically against two distinct pon
-    /// captures on 2026-05-08:
-    /// <list type="bullet">
-    ///   <item>Hand <c>44669m289p28s77z</c> ponning Red dragon: duplicate 76074
-    ///   at [20][21], decodes to tile_id 33.</item>
-    ///   <item>Hand <c>2233m5p1133s45z</c> ponning 3s: duplicate 76061 at
-    ///   [19][20], decodes to tile_id 20.</item>
-    /// </list>
-    /// The duplicate slot floats inside the range — neither a fixed index like
-    /// <c>chiClaimedTile</c> nor a count-based heuristic — so we scan and pick
-    /// the tile_id that appears at least twice. The user must also have ≥ 2 of
-    /// it (otherwise pon couldn't have been offered); the count check protects
-    /// against a future Doman patch repurposing this slot.
-    /// </summary>
+    /// <summary>The pon-triggering tile is published as a consecutive duplicate Int in [16..21]; scan and pick the tile_id appearing >= 2 times.</summary>
     private unsafe void AppendPonCandidateFromAtkValues(
         List<Tile> hand, int[] counts, AtkValue* atkValues, int atkCount, List<MeldCandidate> pons)
     {
@@ -584,15 +413,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
     private void AppendKanCandidate(List<Tile> hand, int[] counts, List<MeldCandidate> kans)
     {
-        // Emit one MinKan candidate per triplet we hold. The unique-triplet
-        // gate that lived here pre-fix returned no candidate at all when the
-        // hand had two-or-more triplets, leading to "no call candidates
-        // offered" declines on legitimate kan prompts. Field corpus shows
-        // 24 such declines across 4 days (2026-05-20..23). Match the
-        // existing AppendPonCandidate pattern: enumerate every triplet,
-        // let the policy pick the best by shanten/yaku, and trust the
-        // opcode-11 / accept-button-index path to commit whichever
-        // candidate the game is actually offering.
         for (int id = 0; id < Tile.Count34; id++)
         {
             if (counts[id] < 3)
@@ -603,57 +423,18 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    /// <summary>
-    /// Resolve the chi-claimed tile from AtkValues. The configured slot
-    /// (<see cref="LayoutAtkValueIndices.ChiClaimedTile"/>, default 19) is
-    /// correct for some prompts — confirmed by the successful 2026-05-09
-    /// 10:06 chi accept where atk[19]=9s lined up with the user's 7s+8s.
-    /// But it's not consistent: at 2026-05-09 09:54 atk[19]=East across a
-    /// dozen back-to-back chi prompts, derivation always returned zero
-    /// (chi can't be on honors), and we declined every chi the game
-    /// offered — most of the post-fix call-decline volume.
-    ///
-    /// <para>Strategy: try the configured slot first; if it produces a
-    /// derivable chi, use it. Otherwise scan a wider window for any int
-    /// slot whose tile id, treated as a chi claim, yields ≥1 valid
-    /// sequence with the current hand. Take the first match. The candidate
-    /// is only used by the call policy's evaluator — the click itself
-    /// is just opcode-11 / option-0, and the game forms whichever
-    /// chi-variant matches the actual offer.</para>
-    /// </summary>
+    /// <summary>Try the configured chi-claim slot first; if it yields no derivable chi, scan a bounded window for any int slot that does and stop at first match.</summary>
     private unsafe void AppendChiCandidate(
         List<Tile> hand, AtkValue* atkValues, int atkCount, List<MeldCandidate> chis)
     {
         if (atkValues == null)
             return;
 
-        // The game's chi prompt is always for the ONE tile the opponent just
-        // discarded. We need to find that tile id in the AtkValues array, NOT
-        // enumerate every chi shape our hand could form against any tile.
-        //
-        // An earlier brute-force fallback iterated all 27 suited tiles and
-        // emitted candidates for every shape the hand could form — this
-        // catastrophically inflated <c>ChiCandidates.Count</c>, which
-        // <c>AutoPlayLoop.ComputePassIndex</c> uses to compute the Pass-button
-        // index. A 7-candidate emission for a 2-button [Chi][Pass] prompt sent
-        // <c>FireCallback([11, 7])</c> as Pass, which hits no button at all and
-        // the prompt sits open forever. Live-confirmed 2026-05-23T14:39 — bot
-        // looped <c>auto-pass[opt=7] → Ok</c> every 3 s without dismissing the
-        // popup.
-        //
-        // Strategy: try the configured slot first; if that doesn't yield a
-        // valid chi, scan a bounded window of int-typed slots and stop at the
-        // FIRST match. At most one claim tile is in play per prompt.
+        // Exactly one claim tile per prompt — finding extra candidates inflates ChiCandidates.Count and corrupts the Pass-button index derived from it.
         int configuredIdx = profile.AtkValues.ChiClaimedTile;
         if (TryDeriveChiFromSlot(hand, atkValues, atkCount, configuredIdx, chis))
             return;
 
-        // Configured slot didn't yield a chi. Scan the [0..ChiFallbackScanLimit]
-        // window for any suited tile whose claim derives ≥1 chi against the
-        // current hand, and STOP AT THE FIRST MATCH. Bounded scan because
-        // beyond the limit the array tends to carry unrelated payloads (seat
-        // scores, discard piles further upstream) that would produce false-
-        // positive candidates.
         int scanLimit = Math.Min(atkCount, profile.AtkValues.ChiFallbackScanLimit);
         for (int i = 0; i < scanLimit; i++)
         {
@@ -685,11 +466,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return true;
     }
 
-    /// <summary>
-    /// Find the tile id whose count meets <paramref name="minCount"/> when exactly
-    /// one such tile exists. Returns null when zero or multiple qualify — the
-    /// caller emits no candidate, which lets the call evaluator pass.
-    /// </summary>
     private static int? TryFindUniqueRunOrTriplet(int[] counts, int minCount)
     {
         int matchCount = 0;
@@ -721,9 +497,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return scan;
     }
 
-    /// <summary>
-    /// Tracks which call-prompt buttons we saw while scanning the AtkValues array.
-    /// </summary>
     private struct ButtonLabelScan
     {
         public bool OffersPon;
@@ -763,20 +536,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    /// <summary>
-    /// Build LegalActions for an AtkComponentList-based call prompt (state 28 today).
-    /// Reads each visible ListItemRenderer child of the modal shell and maps its
-    /// text label to an <see cref="ActionFlags"/> bit, then derives Pon/Chi/Kan
-    /// candidates from the hand so the call policy has actual choices to evaluate.
-    ///
-    /// <para>Pre-2026-05-19 this path returned <c>(flags, [], [], [], [])</c> — no
-    /// candidates. The call policy then declined every state-28 prompt with
-    /// <c>"no call candidates offered"</c>, so novice-table players saw the
-    /// plugin silently pass on every chi/pon/kan opportunity. Derivation here
-    /// uses the same hand-scan helpers as the state-15 path; the AtkValues
-    /// pointer is passed through so the chi-claim lookup can still scan when
-    /// the addon happens to expose it on a list-widget prompt.</para>
-    /// </summary>
     private unsafe LegalActions BuildCallPromptLegalFromListItems(
         AtkUnitBase* unit, IReadOnlyList<Tile> hand, AtkValue* atkValues, int atkCount)
     {
@@ -807,8 +566,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
                 case "Tsumo":
                     flags |= ActionFlags.Tsumo;
                     break;
-                    // "Pass" / "Cancel" contribute no accept flag — AutoPlayLoop derives
-                    // the pass option index from the count of accept flags set.
             }
         }
 
@@ -873,6 +630,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
         // Top-to-bottom: the game's FireCallback option index for a list click
         // follows visual order (opt 0 = top button).
+        // Top-to-bottom order matches FireCallback option index (opt 0 = top button).
         items.Sort((a, b) => a.y.CompareTo(b.y));
         foreach (var (_, t) in items)
             labels.Add(t);
@@ -899,12 +657,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return null;
     }
 
-    // -----------------------------------------------------------------
-    // Diagnostic dumps. Hardcoded memory ranges are debug-only — these
-    // get inspected when reverse-engineering new variants and aren't
-    // part of the runtime data path.
-    // -----------------------------------------------------------------
-
     private unsafe void MaybeLogCallPromptTransition(
         VariantReadContext ctx, nint addonBase, int stateCode, AtkValue* atkValues, int atkCount,
         IReadOnlyList<Tile> hand, LegalActions legal)
@@ -927,9 +679,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (atkValues == null)
             return;
 
-        // Always-on managed event: snapshot AtkValues + decoded candidates and
-        // fire so GameLogger ships them via the games stream. The diagnostic
-        // file write below stays gated on EventLogger.Enabled (verbose RE log).
         var ints = SnapshotAtkInts(atkValues, atkCount, max: 24);
         ctx.EventLogger.RaiseCallPrompt(new CallPromptEvent(
             ObservedAtUtc: DateTime.UtcNow,

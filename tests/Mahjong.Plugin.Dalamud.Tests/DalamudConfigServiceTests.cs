@@ -44,10 +44,7 @@ public class DalamudConfigServiceTests
         Configuration? observedAfterSwap = null;
         DalamudConfigService? svc = null;
 
-        // The save callback fires while the lock is still held — Current
-        // should still point at the OLD instance at that moment, so the
-        // contract "persist first, swap second" is observable from inside
-        // the persist hook.
+        // Pins the persist-first-swap-second ordering: save callback observes Current still at the pre-mutate value.
         svc = new DalamudConfigService(
             c =>
             {
@@ -72,7 +69,6 @@ public class DalamudConfigServiceTests
         Assert.Throws<InvalidOperationException>(() =>
             svc.Update(c => c with { TosAccepted = true }));
 
-        // The live reference stays at the last good value when persistence fails.
         Assert.Same(initial, svc.Current);
         Assert.False(svc.Current.TosAccepted);
     }

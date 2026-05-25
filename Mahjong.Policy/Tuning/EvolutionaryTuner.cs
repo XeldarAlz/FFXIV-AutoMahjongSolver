@@ -5,17 +5,7 @@ using Mahjong.Policy.Efficiency;
 
 namespace Mahjong.Policy.Tuning;
 
-/// <summary>
-/// (μ/μ, λ)-ES with diagonal-covariance Gaussian proposals. Simpler than full CMA-ES
-/// but escapes local optima that trap coordinate descent. Per generation:
-///   1. Sample λ candidates as mean + σ ⊙ N(0, I)
-///   2. Evaluate each vs baseline (top-μ survive)
-///   3. Recompute mean as weighted average of survivors
-///   4. Shrink/grow σ based on how well survivors beat the baseline
-///
-/// Intended for offline runs (100s of generations). Baseline is the previous
-/// mean, which lets the population race against the incumbent.
-/// </summary>
+/// <summary>(μ/μ, λ)-ES with diagonal-covariance Gaussian proposals.</summary>
 public sealed class EvolutionaryTuner
 {
     public sealed record Settings(
@@ -23,15 +13,9 @@ public sealed class EvolutionaryTuner
         int Survivors = 4,
         int Generations = 10,
         int HandsPerEvaluation = 50,
-        double InitialSigma = 0.3,       // multiplicative scale on each weight
+        double InitialSigma = 0.3,
         double SigmaUp = 1.2,
         double SigmaDown = 0.85,
-        // Cap σ to prevent runaway drift. Without it, several "winning" gens in
-        // a row (×1.2 each) compound exponentially; combined with the score
-        // function being scale-invariant once one term dominates, the search
-        // can drift into a regime where Dora/Yakuhai/Iso reach 10⁹+ and the
-        // Shanten=100 progression penalty becomes invisible. Bounded run from
-        // 2026-04-26 confirmed this collapses the policy (51% ryuukyoku rate).
         double MaxSigma = 0.5,
         int Seed = 42)
     {
@@ -87,15 +71,11 @@ public sealed class EvolutionaryTuner
                 candidates[i] = new Candidate(perturbed, delta);
             }
 
-            // Sort survivors by delta (descending).
             Array.Sort(candidates, (a, b) => b.NetDelta.CompareTo(a.NetDelta));
             var survivors = candidates.Take(s.Survivors).ToArray();
 
-            // Update mean: average of survivors.
             mean = AverageWeights(survivors.Select(c => c.Weights));
 
-            // Adapt sigma: grow if >half survivors beat baseline, shrink otherwise.
-            // Then clamp to MaxSigma so we don't spiral into the runaway-drift regime.
             int beating = survivors.Count(c => c.NetDelta > 0);
             double factor2 = beating * 2 > survivors.Length ? s.SigmaUp : s.SigmaDown;
             for (int f = 0; f < sigma.Length; f++)
@@ -109,7 +89,6 @@ public sealed class EvolutionaryTuner
 
     private static double Gaussian(IRandomSource rng)
     {
-        // Box-Muller
         double u1 = 1.0 - rng.NextDouble();
         double u2 = 1.0 - rng.NextDouble();
         return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);

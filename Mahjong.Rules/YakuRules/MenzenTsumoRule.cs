@@ -1,8 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Menzen Tsumo (1 han, closed only). Self-draw winning tile on a closed hand.
-/// </summary>
 public sealed class MenzenTsumoRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

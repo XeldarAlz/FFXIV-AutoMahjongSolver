@@ -1,9 +1,5 @@
 namespace Mahjong.Rules.YakuRules;
 
-/// <summary>
-/// Chankan (1 han). Robbing a kan — win on a tile an opponent is upgrading
-/// from pon to kan.
-/// </summary>
 public sealed class ChankanRule : IYakuRule
 {
     public YakuDefinition Definition { get; } = new(

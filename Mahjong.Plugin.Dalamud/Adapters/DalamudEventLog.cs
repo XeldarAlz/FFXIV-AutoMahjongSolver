@@ -2,15 +2,6 @@ using Dalamud.Plugin.Services;
 
 namespace Mahjong.Plugin.Dalamud.Adapters;
 
-/// <summary>
-/// Bridges <see cref="IEventLog"/> onto Dalamud's <see cref="IPluginLog"/>.
-/// Every plugin component that wants to log can take <see cref="IEventLog"/>
-/// in its constructor and stay testable — production wires this adapter,
-/// tests substitute an in-memory fake.
-///
-/// The category prefix lets log readers grep by component
-/// (e.g. <c>[AutoPlay] ...</c>, <c>[AddonReader] ...</c>).
-/// </summary>
 internal sealed class DalamudEventLog : IEventLog
 {
     private readonly IPluginLog log;

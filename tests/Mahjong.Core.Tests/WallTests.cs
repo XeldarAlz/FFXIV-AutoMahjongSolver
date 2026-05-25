@@ -90,7 +90,6 @@ public class WallTests
         Assert.NotSame(snap1, snap2);
         Assert.Equal(snap1, snap2);
 
-        // Mutating the snapshot must not affect future snapshots.
         snap1[0] = 99;
         int[] snap3 = wall.LiveSnapshot();
         Assert.Equal(Tile.CopiesPerKind - 1, snap3[0]);

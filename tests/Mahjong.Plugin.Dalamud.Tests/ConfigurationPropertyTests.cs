@@ -1,10 +1,5 @@
 namespace Mahjong.Plugin.Dalamud.Tests;
 
-/// <summary>
-/// Per-property "with-expression updates exactly that field, leaves others
-/// alone" tests. Catches mistakes where a future Configuration field forgets
-/// to participate in record equality.
-/// </summary>
 public class ConfigurationPropertyTests
 {
     private static Configuration NonDefault() => new()
@@ -70,10 +65,7 @@ public class ConfigurationPropertyTests
     [Fact]
     public void All_boolean_defaults_match_documented_intent()
     {
-        // Pin defaults that user-facing copy depends on. AutomationArmed
-        // must default to false (off-by-default for ToS reasons),
-        // SuggestionOnly defaults to true (hints, not auto-play),
-        // EnableGameLogging defaults on (training corpus collection).
+        // Pins documented defaults: AutomationArmed off (ToS), SuggestionOnly on (hints only), EnableGameLogging on (training corpus).
         var c = new Configuration();
         Assert.False(c.AutomationArmed);
         Assert.True(c.SuggestionOnly);

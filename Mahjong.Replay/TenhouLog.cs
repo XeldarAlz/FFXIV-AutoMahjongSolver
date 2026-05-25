@@ -3,22 +3,8 @@ using System.Text.Json;
 namespace Mahjong.Replay;
 
 /// <summary>
-/// Tenhou 6-format log parser. Maps Tenhou's 136-tile IDs to our 34-tile IDs,
-/// extracts per-kyoku starting state and discards. Scope is intentionally small:
-/// enough to replay hands against our policies and compare decisions. Riichi,
-/// calls, and agari detail parsing are TODO — for weight tuning the starting
-/// hand + wall order is the core signal.
-///
-/// Tenhou 136-ID encoding: <c>id = suit_base + number * 4 + copy_index</c>
-/// <list type="bullet">
-///   <item><c>0..35</c>   = man  (1m..9m, 4 copies each)</item>
-///   <item><c>36..71</c>  = pin</item>
-///   <item><c>72..107</c> = sou</item>
-///   <item><c>108..135</c> = honors (E, S, W, N, haku, hatsu, chun in order, 4 copies each)</item>
-/// </list>
-/// Red-5 (aka) = copy 0 at id 16 (5m), 52 (5p), 88 (5s). The aka bit is lost
-/// when mapping to 34-space — that's acceptable for ukeire/shanten but drops
-/// a dora point.
+/// Tenhou 136-id = suit_base + number*4 + copy_index. Red-5 (aka) is copy 0 at ids 16/52/88;
+/// the aka bit is lost when mapped to 34-space — acceptable for ukeire/shanten, drops a dora.
 /// </summary>
 public static class TenhouLog
 {
@@ -45,24 +31,14 @@ public static class TenhouLog
         int Dealer,
         int Honba,
         int RiichiSticks,
-        int[] StartScores,           // length 4
+        int[] StartScores,
         Tile[] DoraIndicators,
-        Tile[][] StartingHands,      // [seat][tile]
-        int[][] DrawTiles,           // [seat][draw order] → 34-space id
-        int[][] DiscardTiles,        // [seat][discard order] → 34-space id
-        Event[][] DrawEvents,        // [seat][draw order] → event (parallel to DrawTiles)
-        Event[][] DiscardEvents);    // [seat][discard order] → event (parallel to DiscardTiles)
+        Tile[][] StartingHands,
+        int[][] DrawTiles,
+        int[][] DiscardTiles,
+        Event[][] DrawEvents,
+        Event[][] DiscardEvents);
 
-    /// <summary>
-    /// Parse a single-kyoku Tenhou JSON array (one element of the root "log" array).
-    /// Format (from tenhou.net/6 logs):
-    ///   <c>[round_info, scores, dora_indicators, ura_dora_indicators,
-    ///       seat0_hand, seat0_draws, seat0_discards,
-    ///       seat1_hand, seat1_draws, seat1_discards,
-    ///       seat2_hand, seat2_draws, seat2_discards,
-    ///       seat3_hand, seat3_draws, seat3_discards,
-    ///       result]</c>
-    /// </summary>
     public static Kyoku ParseKyoku(JsonElement kyoku)
     {
         if (kyoku.ValueKind != JsonValueKind.Array)
@@ -99,10 +75,6 @@ public static class TenhouLog
             DiscardEvents: discardEvents);
     }
 
-    /// <summary>
-    /// Parse a full Tenhou JSON document. Expected shape: root is an object with
-    /// a "log" field whose value is an array of kyoku arrays.
-    /// </summary>
     public static Kyoku[] ParseDocument(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -144,13 +116,8 @@ public static class TenhouLog
     }
 
     /// <summary>
-    /// Parse a draw-or-discard slot array. Numbers are plain tile IDs; strings are
-    /// event tags ("r60" = riichi discard, "p..." = pon call, "c..." = chi call,
-    /// "m..."/"k..."/"a..." = kan variants). Each string carries a 136-ID suffix
-    /// where applicable.
-    ///
-    /// The output arrays are parallel: <c>tiles[i]</c> is the tile at position i,
-    /// and <c>events[i]</c> is the event type and raw tag (Kind=None for plain tiles).
+    /// Tags: "r60"=riichi discard, "p..."=pon, "c..."=chi, "m"/"k"/"a..."=kan variants.
+    /// Numbers are plain tile IDs.
     /// </summary>
     private static (int[] tiles, Event[] events) ParseEventArray(JsonElement arr)
     {

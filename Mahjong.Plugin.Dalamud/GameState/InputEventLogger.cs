@@ -11,23 +11,9 @@ using Mahjong.Engine;
 
 namespace Mahjong.Plugin.Dalamud.GameState;
 
-/// <summary>
-/// Records every <c>PostReceiveEvent</c> the Emj addon sees into a rolling log file.
-/// Used to reverse-engineer the click-dispatch API: once a human plays a move
-/// (discard tile, pon, pass, riichi, etc.), the log captures the addon's callback
-/// arguments so we can replay them programmatically in M6.
-///
-/// Output: <c>%AppData%\XIVLauncher\pluginConfigs\Mahjong.Plugin.Dalamud\emj-events.log</c>.
-/// Each line: <c>UTC  event=X  param=Y  args=[...]  hand=...</c>.
-///
-/// Enable/disable via <see cref="Enabled"/>. Off by default so we don't spam the log
-/// during normal play; flip it on when doing RE sessions.
-/// </summary>
 public sealed class InputEventLogger : IDisposable
 {
-    // AtkUnitBase::FireCallback — signature from FFXIVClientStructs:
-    //   bool FireCallback(uint valueCount, AtkValue* values, bool close)
-    // Sig covers the callsite; Dalamud's HookFromSignature follows the E8 to the real function.
+    // Sig covers the callsite; HookFromSignature follows the E8 to the real FireCallback.
     private const string FireCallbackSig = "E8 ?? ?? ?? ?? 0F B6 E8 8B 44 24 20";
     private unsafe delegate bool FireCallbackDelegate(AtkUnitBase* addon, uint valueCount, AtkValue* values, byte close);
 
@@ -44,17 +30,10 @@ public sealed class InputEventLogger : IDisposable
     private bool disposed;
     private unsafe Hook<FireCallbackDelegate>? fireCallbackHook;
 
-    /// <summary>Backing field for <see cref="PendingCaptureLabel"/>. Use the public
-    /// property — its getter expires stale labels lazily so the user-facing status
-    /// matches the actual capture behavior.</summary>
     private string? pendingCaptureLabel;
     private DateTime captureArmedAt;
 
-    /// <summary>Label of the next FireCallback to record verbatim into the dedicated
-    /// capture log, or null if not armed / expired. Cleared after one capture, on
-    /// timeout (lazy — the getter clears stale labels on access), or via
-    /// <see cref="DisarmCapture"/>. Used to RE the click payload for actions whose
-    /// opcodes we don't yet know (riichi, tsumo, ron, ankan, shouminkan).</summary>
+    /// <summary>Getter expires stale labels lazily.</summary>
     public string? PendingCaptureLabel
     {
         get
@@ -72,47 +51,13 @@ public sealed class InputEventLogger : IDisposable
 
     public string CaptureLogPath => capturePath;
 
-    /// <summary>
-    /// Fires once per FireCallback the Mahjong addon receives, AFTER the
-    /// original game callback runs (so subscribers see the post-call result).
-    /// Values are snapshot to a managed array before firing, so subscribers
-    /// can safely persist/log them without worrying about pointer lifetimes.
-    /// Always-on regardless of <see cref="Enabled"/> — that flag only gates
-    /// the verbose RE log.
-    /// </summary>
+    /// <summary>Fires after the original FireCallback; always-on, Enabled only gates the verbose RE log.</summary>
     public event Action<InputCallbackEvent>? CallbackObserved;
 
-    /// <summary>
-    /// Fires once per FireCallback the Mahjong addon receives, BEFORE the
-    /// original game callback runs. Carries only the addon name — addon
-    /// state is still pre-mutation when the event fires, so subscribers
-    /// (e.g. <see cref="Telemetry.MemoryDumpRecorder"/>) can read the live
-    /// addon directly to capture at-click context. Always-on regardless of
-    /// <see cref="Enabled"/>.
-    ///
-    /// <para>Paired with <see cref="CallbackObserved"/>: a subscriber
-    /// recording on both gets a clean (pre, post) bracket around every
-    /// click for offline diff analysis. We use this in RE sessions to find
-    /// addon byte offsets that mutate in lockstep with discard count etc.</para>
-    /// </summary>
+    /// <summary>Fires before the original FireCallback so subscribers see pre-click addon state.</summary>
     public event Action<string>? BeforeFireCallback;
 
-    /// <summary>
-    /// Fires once per call-prompt transition observed by a variant — i.e.
-    /// when the addon enters its CallPrompt state code with at least one
-    /// actionable flag (pon/chi/kan/ron/riichi/tsumo). The variant raises
-    /// it from inside <c>TryBuildSnapshot</c> after AtkValues have been
-    /// snapshot to a managed array. Always-on regardless of
-    /// <see cref="Enabled"/>; the diagnostic file write inside the variant
-    /// is the only thing the flag still gates.
-    ///
-    /// <para>GameLogger subscribes and emits a <c>call-prompt</c> NDJSON
-    /// event into the active hand file, so the games stream carries the
-    /// raw AtkValues window alongside the decoded candidate list — that
-    /// pair is what we need to debug variant-decode bugs (e.g. the chi
-    /// claim tile in #34) from uploaded telemetry rather than asking
-    /// users to grab manual captures.</para>
-    /// </summary>
+    /// <summary>Fires on every call-prompt transition observed by a variant.</summary>
     public event Action<CallPromptEvent>? CallPromptObserved;
 
     internal void RaiseCallPrompt(CallPromptEvent evt)
@@ -151,7 +96,6 @@ public sealed class InputEventLogger : IDisposable
 
         addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, MahjongAddon.CandidateNames, OnReceiveEvent);
 
-        // Install a global FireCallback hook; we filter by addon name inside the detour.
         try
         {
             fireCallbackHook = gameInterop.HookFromSignature<FireCallbackDelegate>(
@@ -180,20 +124,12 @@ public sealed class InputEventLogger : IDisposable
 
     public string LogPath => logPath;
 
-    /// <summary>
-    /// Arm a one-shot capture: the next FireCallback fired against the Emj addon will
-    /// be appended verbatim to <c>emj-captures.log</c> under <paramref name="label"/>.
-    /// Auto-clears after one capture or after <see cref="CaptureTimeoutSeconds"/>
-    /// seconds with no click — so a stray UI interaction days later won't be tagged.
-    /// Re-arming overwrites any pending label.
-    /// </summary>
     public void ArmCapture(string label)
     {
         pendingCaptureLabel = label;
         captureArmedAt = DateTime.UtcNow;
     }
 
-    /// <summary>Cancel a pending capture without recording anything.</summary>
     public void DisarmCapture()
     {
         pendingCaptureLabel = null;
@@ -216,19 +152,7 @@ public sealed class InputEventLogger : IDisposable
 
     private unsafe bool FireCallbackDetour(AtkUnitBase* addon, uint valueCount, AtkValue* values, byte close)
     {
-        // Meld recording is no longer driven from FireCallback. The earlier
-        // opcode-11/option-0 + Legal.{Pon,Chi,Kan}Candidates[0] heuristic missed
-        // multi-variant chi, pon+chi simultaneous prompts, state-28 list-widget
-        // chi, and #34's wrong-tile-id-at-AtkValues[19] case. MeldTracker now
-        // infers melds from closed-hand deltas inside the snapshot reader
-        // (BaseEmjVariant.BuildSnapshot → MeldTracker.ObserveSnapshot), which
-        // is variant-agnostic and click-payload-agnostic.
-
-        // Capture snapshot — must run BEFORE the original FireCallback. The original may
-        // mutate addon state (close a modal, refresh AtkValues), so reading post-call
-        // would record post-click state instead of the at-click context we want for RE.
-        // Both the addon AtkValues and the fire_args are formatted into managed strings
-        // here so the captured payload stays valid even if the caller's buffers move.
+        // Capture snapshot must run BEFORE the original FireCallback — the original may mutate the addon (close modal, refresh AtkValues).
         string? captureLabel = null;
         string? captureHand = null;
         string[]? captureFireArgs = null;
@@ -246,10 +170,7 @@ public sealed class InputEventLogger : IDisposable
                 captureHand = Tiles.Render(preSnap.Hand);
         }
 
-        // Fire the pre-original event for Mahjong-addon callbacks. Subscribers
-        // (memdump recorder during RE sessions) read addon state synchronously
-        // here, so it still reflects pre-click memory. Wrapped in try so a
-        // misbehaving subscriber can never block the original FireCallback.
+        // Subscribers read addon state synchronously here so it still reflects pre-click memory.
         if (BeforeFireCallback is { } preObservers
             && addon != null && MahjongAddon.IsMahjongAddon(addon->NameString))
         {
@@ -259,12 +180,9 @@ public sealed class InputEventLogger : IDisposable
             { log.Error($"BeforeFireCallback subscriber error: {ex.Message}"); }
         }
 
-        // Always call the original FIRST so game logic is unaffected regardless of logger state.
+        // Call original FIRST so game logic is unaffected regardless of logger state.
         bool result = fireCallbackHook!.Original(addon, valueCount, values, close);
 
-        // Always-on managed event for telemetry subscribers (InputRecorder ships
-        // these to the inputs/ stream). Snapshot int values now so the subscriber
-        // never sees the unmanaged AtkValue pointer.
         if (CallbackObserved is { } observers
             && addon != null && MahjongAddon.IsMahjongAddon(addon->NameString))
         {
@@ -340,9 +258,6 @@ public sealed class InputEventLogger : IDisposable
             log.Error($"FireCallback log error: {ex.Message}");
         }
 
-        // One-shot capture: write out the pre-call snapshot (taken above) plus the
-        // now-known result, then disarm. Used for opcode RE — the user runs
-        // `/mjauto capture riichi`, clicks the riichi button, and gets a labeled entry.
         if (captureLabel is not null)
         {
             try
@@ -383,7 +298,6 @@ public sealed class InputEventLogger : IDisposable
             sb.Append($"  type={rea.AtkEventType}  param={rea.EventParam}");
         }
 
-        // Snapshot hand so we can correlate a click with the hand shape at click time.
         var snap = reader.TryBuildSnapshot();
         if (snap is not null && snap.Hand.Count > 0)
         {
@@ -391,7 +305,6 @@ public sealed class InputEventLogger : IDisposable
             sb.Append(Tiles.Render(snap.Hand));
         }
 
-        // Dump the first few AtkValues — some addons push context through here.
         var unit = (AtkUnitBase*)addr;
         int valueCount = Math.Min((int)unit->AtkValuesCount, 8);
         if (valueCount > 0)
@@ -425,13 +338,6 @@ public sealed class InputEventLogger : IDisposable
         writer?.WriteLine(sb.ToString());
     }
 
-    /// <summary>
-    /// Append a single annotated capture entry from a pre-call snapshot. The lines for
-    /// fire_args and addon AtkValues are formatted by <see cref="SnapshotValues"/>
-    /// before the original FireCallback runs, so they reflect the at-click state even
-    /// if the original mutates the addon. File is grep-friendly: each entry starts
-    /// with a <c># label=...</c> header.
-    /// </summary>
     private void WriteCaptureEntry(
         string label, string? hand, string[] fireArgs, uint fireArgCount,
         string[] atkValues, int atkCount, byte close, bool result)
@@ -462,12 +368,6 @@ public sealed class InputEventLogger : IDisposable
             $"[capture] recorded label={label} (result={result}) → {capturePath}");
     }
 
-    /// <summary>
-    /// Format up to <paramref name="max"/> AtkValues into managed strings while we
-    /// still have valid pointers. Strings are decoded eagerly so the captured payload
-    /// stays correct after the original FireCallback returns and the source memory may
-    /// have been reused. Returns an empty array if <paramref name="values"/> is null.
-    /// </summary>
     private static unsafe string[] SnapshotValues(AtkValue* values, int count, int max)
     {
         if (values == null || count <= 0)
@@ -479,15 +379,6 @@ public sealed class InputEventLogger : IDisposable
         return result;
     }
 
-    /// <summary>
-    /// Snapshot up to <paramref name="max"/> AtkValues into an int?[] for the
-    /// always-on telemetry path. Non-numeric AtkValue types serialize as null
-    /// so the subscriber doesn't have to know about AtkValueType at all —
-    /// what we care about for input recording is the action opcode + option
-    /// pair (always Int) plus the call-claim slots Doman packs into the
-    /// [16..21] range (chiClaimedTile at 19, pon-duplicate scan range 16..21,
-    /// kanClaimedTile follow-up). Strings/floats are dropped intentionally.
-    /// </summary>
     private static unsafe int?[] SnapshotInts(AtkValue* values, int count, int max)
     {
         if (values == null || count <= 0)
@@ -531,13 +422,6 @@ public sealed class InputEventLogger : IDisposable
     }
 }
 
-/// <summary>
-/// Managed snapshot of one FireCallback dispatched to the Mahjong addon.
-/// Fired by <see cref="InputEventLogger.CallbackObserved"/> after the original
-/// game callback runs. Only int-coercible AtkValues survive the snapshot —
-/// the action opcode + option pair is always int-typed, and that's what
-/// downstream consumers (input telemetry, ML training data) care about.
-/// </summary>
 public sealed record InputCallbackEvent(
     DateTime ObservedAtUtc,
     string AddonName,
@@ -546,21 +430,12 @@ public sealed record InputCallbackEvent(
     bool Result,
     int?[] IntValues);
 
-/// <summary>
-/// Managed snapshot of one call-prompt transition observed by a variant —
-/// when the addon enters its CallPrompt state code with at least one
-/// actionable flag (pon/chi/kan/ron/riichi/tsumo). Carries both the raw
-/// AtkValues window the variant decoded *from* and the candidate tile-id
-/// arrays it decoded *to*, so any divergence (e.g. AtkValues[19] holding a
-/// tile id that doesn't match the resulting ChiCandidates entry) is
-/// reconstructible from telemetry alone.
-/// </summary>
 public sealed record CallPromptEvent(
     DateTime ObservedAtUtc,
     string AddonName,
     int StateCode,
-    int Flags,                       // (int)LegalActions.Flags at the prompt
+    int Flags,
     int[] PonClaimedTileIds,
     int[] ChiClaimedTileIds,
     int[] KanClaimedTileIds,
-    int?[] IntValues);               // [0..N) raw AtkValue ints, capped same as InputCallbackEvent
+    int?[] IntValues);
