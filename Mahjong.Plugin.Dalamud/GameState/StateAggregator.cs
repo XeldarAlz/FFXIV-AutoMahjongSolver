@@ -66,7 +66,18 @@ public sealed class StateAggregator : IDisposable
         // Always call TryBuildSnapshot: it observes MeldTracker and pins ActiveLayout.
         var next = reader.TryBuildSnapshot();
         if (next is null)
+        {
+            // Addon gone (player left the table) — drop cached state so the UI reverts to the "waiting" empty state.
+            if (Latest is not null)
+            {
+                Latest = null;
+                LastScored = null;
+                LastChoice = null;
+                LastScorerError = null;
+                hasContentHash = false;
+            }
             return;
+        }
         if (next.SchemaVersion != StateSnapshot.CurrentSchemaVersion)
             return;
 
