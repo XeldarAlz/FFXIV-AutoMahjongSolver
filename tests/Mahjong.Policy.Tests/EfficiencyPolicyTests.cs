@@ -102,4 +102,37 @@ public class EfficiencyPolicyTests
         var thirteenTile = s with { Hand = Tiles.Parse("123m456p789s234s5z") };
         Assert.Throws<ArgumentException>(() => DiscardScorer.Score(thirteenTile));
     }
+
+    /// <summary>State-6 SelfDeclareList popup (hand=14, Kan + Discard both legal). Declining the kan must fall through to discard scoring — returning Pass softlocks the addon (no Pass button on the list widget). Reproduces 2026-05-26 log capture: hand 223679m 88p 118888s, addon offered MinKan flag for AnKan on 8s.</summary>
+    [Fact]
+    public void Declined_kan_at_state_6_returns_discard_not_pass()
+    {
+        var hand = Tiles.Parse("223679m88p118888s");
+        var seats = new SeatView[4];
+        for (int i = 0; i < 4; i++)
+            seats[i] = new SeatView([], [], [], false, -1, false, false);
+
+        var kanCand = new MeldCandidate(
+            MeldKind.AnKan,
+            Tile.FromId(25),
+            [Tile.FromId(25), Tile.FromId(25), Tile.FromId(25)],
+            FromSeat: 0);
+
+        var s = StateSnapshot.Empty with
+        {
+            Hand = hand,
+            Seats = seats,
+            Legal = new LegalActions(
+                Flags: ActionFlags.Discard | ActionFlags.MinKan | ActionFlags.Pass,
+                DiscardableTiles: [],
+                PonCandidates: [],
+                ChiCandidates: [],
+                KanCandidates: [kanCand]),
+        };
+
+        var choice = Policy.Choose(s);
+        Assert.NotEqual(ActionKind.Pass, choice.Kind);
+        Assert.True(choice.Kind is ActionKind.Discard or ActionKind.AnKan,
+            $"expected Discard or AnKan, got {choice.Kind} (reason: {choice.Reasoning})");
+    }
 }

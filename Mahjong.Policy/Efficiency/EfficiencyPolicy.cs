@@ -75,7 +75,8 @@ public sealed class EfficiencyPolicy : IPolicy
             steps.Add(callDecision.Reason);
             if (callDecision.Accept && callDecision.Value is { } accepted)
                 return BuildCallChoice(accepted, callDecision.Reason, steps);
-            if (legal.Can(ActionFlags.Pass))
+            // At state-6 SelfDeclareList (Discard legal alongside the kan offer), declining the kan means "discard normally" — there is no Pass button on the list widget, so falling through to discard scoring is the only path that progresses the hand. Returning Pass here softlocked the bot on auto-pass[opt=1] no-ops (2026-05-26).
+            if (legal.Can(ActionFlags.Pass) && !legal.Can(ActionFlags.Discard))
                 return ActionChoice.Pass($"pass: {callDecision.Reason.Display}", steps);
         }
 
