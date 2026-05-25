@@ -77,7 +77,7 @@ foreach ($x in $dotXs) {
   $g.FillEllipse($teal, ($x - $dotR), (44 - $dotR), ($dotR * 2), ($dotR * 2))
 }
 
-$outPath = Join-Path $PSScriptRoot '..\Mahjong.Plugin.Dalamud\images\icon.png'
+$outPath = Join-Path $PSScriptRoot '..\Mahjong.Plugin.Dalamud\Images\Icon.png'
 $outDir = Split-Path $outPath -Parent
 if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
 $bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)

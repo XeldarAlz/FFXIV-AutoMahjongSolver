@@ -1,4 +1,4 @@
-# Patch the DalamudPackager-built latest.zip with images/icon.png
+# Patch the DalamudPackager-built latest.zip with Images/Icon.png
 # Invoked from the csproj BundleIcon target.
 param(
   [Parameter(Mandatory=$true)][string]$ZipPath,
@@ -19,10 +19,11 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::Open($ZipPath, 'Update')
 try {
   # Remove any existing entry at the target path so re-runs stay idempotent.
-  $existing = @($zip.Entries | Where-Object { $_.FullName -eq 'images/icon.png' })
+  # Also clean up the legacy lowercase `images/icon.png` entry from older builds.
+  $existing = @($zip.Entries | Where-Object { $_.FullName -eq 'Images/Icon.png' -or $_.FullName -eq 'images/icon.png' })
   foreach ($e in $existing) { $e.Delete() }
 
-  [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $IconPath, 'images/icon.png')
+  [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $IconPath, 'Images/Icon.png')
   Write-Host "bundled icon into $ZipPath"
 } finally {
   $zip.Dispose()

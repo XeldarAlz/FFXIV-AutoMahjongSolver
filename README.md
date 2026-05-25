@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Mahjong.Plugin.Dalamud/images/icon.png" width="120" alt="Doman Mahjong Solver icon">
+  <img src="Mahjong.Plugin.Dalamud/Images/Icon.png" width="120" alt="Doman Mahjong Solver icon">
 </p>
 
 <h1 align="center">Doman Mahjong Solver</h1>

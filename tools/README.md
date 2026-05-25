@@ -11,7 +11,7 @@ to find offsets, AtkValue indices, and node IDs.
 | `analyze_snaps.py` | Walk a captured snapshot and surface candidate offsets | `emj-snapshot-*.txt` written by `/mjauto findtiles` |
 | `scan_tiles.py` | Find tile-id encoding in a snapshot — pins the texture base | `emj-snapshot-*.txt` |
 | `diff_nodes.py` | Diff two `/mjauto walknodes` captures to spot visibility / id changes between states | Two `emj-walknodes-*.txt` files |
-| `gen_icon.ps1` | Generate the plugin's `images/icon.png` from a source SVG | `images/icon.svg` |
+| `gen_icon.ps1` | Generate the plugin's `Images/Icon.png` from a source SVG | `Images/Icon.svg` |
 | `sync-corpus.ps1` | Mirror the R2 telemetry corpus to local `corpus/`, gunzipping as it arrives | `wrangler` + Cloudflare credentials |
 
 ## Workflow for a new variant

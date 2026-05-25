@@ -5,7 +5,7 @@
     "Description": "A helper for Doman Mahjong. Shows you hints or plays it for you.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
-    "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/images/icon.png",
+    "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",
     "Tags": [
         "mahjong",
         "doman",

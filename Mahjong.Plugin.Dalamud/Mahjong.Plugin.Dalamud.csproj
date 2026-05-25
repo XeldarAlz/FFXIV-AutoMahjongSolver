@@ -46,7 +46,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="images\icon.png">
+    <Content Include="Images\Icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!--
@@ -68,7 +68,7 @@
           Condition="'$(Configuration)' == 'Release'">
     <PropertyGroup>
       <ZipPath>$(ProjectDir)$(OutputPath)$(AssemblyName)\latest.zip</ZipPath>
-      <IconPath>$(ProjectDir)images\icon.png</IconPath>
+      <IconPath>$(ProjectDir)Images\Icon.png</IconPath>
     </PropertyGroup>
     <Exec WorkingDirectory="$(ProjectDir)"
           Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)bundle_icon.ps1&quot; -ZipPath &quot;$(ZipPath)&quot; -IconPath &quot;$(IconPath)&quot;"
