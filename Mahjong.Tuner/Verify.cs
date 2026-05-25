@@ -1,11 +1,12 @@
 using Mahjong.Policy.Efficiency;
 using Mahjong.Policy.Tuning;
+using Mahjong.Rules;
 
 namespace Mahjong.Tuner;
 
 public static class Verify
 {
-    public static int RunVerify(string[] args)
+    public static int RunVerify(string[] args, IRuleSet rules)
     {
         System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
             System.Globalization.CultureInfo.InvariantCulture;
@@ -32,9 +33,9 @@ public static class Verify
         int seed = args.Length > 1 && int.TryParse(args[1], out var s) ? s : 1234;
 
         var vs = vsOriginal ? "original-handpicked" : "current-default";
-        Console.WriteLine($"verify: coord-tuned vs {vs}, {hands} hands, seed={seed}");
+        Console.WriteLine($"verify: coord-tuned vs {vs}, {hands} hands, seed={seed}, rules={rules.Name}");
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var result = WeightTuner.Evaluate(tuned, baseline, hands, seed);
+        var result = WeightTuner.Evaluate(tuned, baseline, hands, seed, rules);
         sw.Stop();
 
         Console.WriteLine();

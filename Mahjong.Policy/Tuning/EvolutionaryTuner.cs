@@ -40,7 +40,7 @@ public sealed class EvolutionaryTuner
     private static readonly string[] Fields =
         { "UkeireKinds", "UkeireWeighted", "Dora", "Yakuhai", "IsolatedTerminal", "DealInCost" };
 
-    public TuningRun Tune(DiscardWeights start, Settings? settings = null)
+    public TuningRun Tune(DiscardWeights start, Settings? settings = null, IRuleSet? rules = null)
     {
         var s = settings ?? Settings.Default;
         if (s.Survivors <= 0 || s.Survivors > s.Population)
@@ -66,7 +66,7 @@ public sealed class EvolutionaryTuner
                     perturbed = SetField(perturbed, Fields[f], oldVal * factor);
                 }
 
-                var eval = WeightTuner.Evaluate(perturbed, mean, s.HandsPerEvaluation, evalSeed + i);
+                var eval = WeightTuner.Evaluate(perturbed, mean, s.HandsPerEvaluation, evalSeed + i, rules);
                 long delta = eval.CandidateScoreDelta - eval.BaselineScoreDelta;
                 candidates[i] = new Candidate(perturbed, delta);
             }

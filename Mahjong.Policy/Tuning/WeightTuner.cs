@@ -37,12 +37,13 @@ public sealed class WeightTuner
         DiscardWeights FinalWeights,
         List<TuningStep> Steps);
 
-    /// <summary>Candidate plays seats 0/2; baseline plays 1/3.</summary>
+    /// <summary>Candidate plays seats 0/2; baseline plays 1/3. Ruleset defaults to <see cref="RiichiRuleSet"/>.</summary>
     public static EvaluationResult Evaluate(
         DiscardWeights candidate,
         DiscardWeights baseline,
         int hands,
-        int seed)
+        int seed,
+        IRuleSet? rules = null)
     {
         var policies = new IPolicy[]
         {
@@ -51,7 +52,7 @@ public sealed class WeightTuner
             new EfficiencyPolicy(candidate),
             new EfficiencyPolicy(baseline),
         };
-        var runner = new SelfPlayRunner(new RiichiRuleSet(), seed);
+        var runner = new SelfPlayRunner(rules ?? new RiichiRuleSet(), seed);
         var stats = runner.Run(policies, hands);
 
         long candDelta = stats.TotalScoreDelta[0] + stats.TotalScoreDelta[2];
@@ -63,7 +64,7 @@ public sealed class WeightTuner
             stats.RyuukyokuCount, stats.AbortCount);
     }
 
-    public TuningRun Tune(DiscardWeights start, Settings? settings = null)
+    public TuningRun Tune(DiscardWeights start, Settings? settings = null, IRuleSet? rules = null)
     {
         var s = settings ?? Settings.Default;
         var rng = new SeededRandomSource(s.Seed);
@@ -81,8 +82,8 @@ public sealed class WeightTuner
             var down = SetField(current, field, oldVal / s.PerturbFactor);
 
             int evalSeed = rng.Next();
-            var upEval = Evaluate(up, current, s.HandsPerEvaluation, evalSeed);
-            var downEval = Evaluate(down, current, s.HandsPerEvaluation, evalSeed + 1);
+            var upEval = Evaluate(up, current, s.HandsPerEvaluation, evalSeed, rules);
+            var downEval = Evaluate(down, current, s.HandsPerEvaluation, evalSeed + 1, rules);
 
             long upDelta = upEval.CandidateScoreDelta - upEval.BaselineScoreDelta;
             long downDelta = downEval.CandidateScoreDelta - downEval.BaselineScoreDelta;

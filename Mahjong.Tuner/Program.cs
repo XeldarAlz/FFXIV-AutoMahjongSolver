@@ -1,5 +1,7 @@
 using Mahjong.Policy.Efficiency;
 using Mahjong.Policy.Tuning;
+using Mahjong.Rules;
+using Mahjong.Rules.Rulesets;
 
 namespace Mahjong.Tuner;
 
@@ -8,6 +10,8 @@ namespace Mahjong.Tuner;
 ///   dotnet run --project Tuner -c Release -- [pop=8] [generations=10] [hands=50] [seed=42]
 ///   dotnet run --project Tuner -c Release -- coord [iters=30] [hands=200] [seed=4242]
 ///   dotnet run --project Tuner -c Release -- verify [hands=500] [seed=1234]
+///
+/// Default ruleset is Doman (MinHan=2). Pass --riichi to score under standard riichi rules.
 /// </summary>
 public static class Program
 {
@@ -16,15 +20,20 @@ public static class Program
         System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
             System.Globalization.CultureInfo.InvariantCulture;
 
-        if (args.Length > 0 && args[0] == "verify")
-            return Verify.RunVerify(args.Skip(1).ToArray());
-        if (args.Length > 0 && args[0] == "coord")
-            return RunCoord(args.Skip(1).ToArray());
+        bool useRiichi = args.Contains("--riichi");
+        args = args.Where(a => a != "--riichi").ToArray();
 
-        return RunEvolutionary(args);
+        IRuleSet rules = useRiichi ? new RiichiRuleSet() : new DomanRuleSet();
+
+        if (args.Length > 0 && args[0] == "verify")
+            return Verify.RunVerify(args.Skip(1).ToArray(), rules);
+        if (args.Length > 0 && args[0] == "coord")
+            return RunCoord(args.Skip(1).ToArray(), rules);
+
+        return RunEvolutionary(args, rules);
     }
 
-    private static int RunEvolutionary(string[] args)
+    private static int RunEvolutionary(string[] args, IRuleSet rules)
     {
         int population = ParseArg(args, 0, 8);
         int generations = ParseArg(args, 1, 10);
@@ -32,7 +41,7 @@ public static class Program
         int seed = ParseArg(args, 3, 42);
         int sigmaPct = ParseArg(args, 4, 30);
 
-        Console.WriteLine($"Doman Mahjong evolutionary tuner");
+        Console.WriteLine($"Doman Mahjong evolutionary tuner (rules={rules.Name})");
         Console.WriteLine($"  population={population}  generations={generations}  hands/eval={hands}  seed={seed}  sigma={sigmaPct / 100.0:F2}");
         Console.WriteLine($"  start = {FormatDiscard(DiscardWeights.Default)}");
         Console.WriteLine();
@@ -47,7 +56,7 @@ public static class Program
 
         var tuner = new EvolutionaryTuner();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var run = tuner.Tune(DiscardWeights.Default, settings);
+        var run = tuner.Tune(DiscardWeights.Default, settings, rules);
         sw.Stop();
 
         Console.WriteLine($"== complete in {sw.Elapsed.TotalSeconds:F1}s ==");
@@ -80,7 +89,7 @@ public static class Program
         return 0;
     }
 
-    private static int RunCoord(string[] args)
+    private static int RunCoord(string[] args, IRuleSet rules)
     {
         int iterations = ParseArg(args, 0, 30);
         int hands = ParseArg(args, 1, 200);
@@ -88,7 +97,7 @@ public static class Program
         int perturbPct = ParseArg(args, 3, 30);
         double perturbFactor = 1.0 + perturbPct / 100.0;
 
-        Console.WriteLine("Doman Mahjong coordinate-descent tuner");
+        Console.WriteLine($"Doman Mahjong coordinate-descent tuner (rules={rules.Name})");
         Console.WriteLine($"  iterations={iterations}  hands/eval={hands}  seed={seed}  perturb={perturbFactor:F2}");
         Console.WriteLine($"  start = {FormatDiscard(DiscardWeights.Default)}");
         Console.WriteLine();
@@ -101,7 +110,7 @@ public static class Program
 
         var tuner = new WeightTuner();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var run = tuner.Tune(DiscardWeights.Default, settings);
+        var run = tuner.Tune(DiscardWeights.Default, settings, rules);
         sw.Stop();
 
         Console.WriteLine($"== complete in {sw.Elapsed.TotalSeconds:F1}s ==");
