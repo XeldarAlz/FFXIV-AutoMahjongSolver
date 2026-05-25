@@ -35,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+    [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
 
     public readonly WindowSystem WindowSystem = new("Mahjong.Plugin.Dalamud");
 
@@ -179,7 +180,7 @@ public sealed class Plugin : IDalamudPlugin
         EventLogger.CallbackObserved += _ => MemoryDumpRecorder.Record("input-post");
 
         MainWindow = new MainWindow(this);
-        AboutWindow = new AboutWindow(Log);
+        AboutWindow = new AboutWindow(Log, PluginInterface, TextureProvider);
         SettingsWindow = new SettingsWindow(this);
         DebugOverlay = new DebugOverlay(this, Framework, CommandManager, mahjongAddon);
         HandOverlay = new HandOverlay(this, PluginInterface, mahjongAddon);
