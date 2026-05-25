@@ -4,8 +4,10 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Mahjong.Engine;
 using Mahjong.Plugin.Dalamud.GameState;
+using Mahjong.Plugin.Dalamud.GameState.Variants;
 using Mahjong.Plugin.Dalamud.Logging;
 using Mahjong.Policy;
+using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 namespace Mahjong.Plugin.Dalamud.Actions;
 
@@ -433,13 +435,108 @@ public sealed class AutoPlayLoop : IDisposable
                 LastActionDescription = $"variant aborted: state moved {ChiVariantSelectStateCode}→{currentState}";
                 return;
             }
-            var result = plugin.Dispatcher.DispatchCallOption(0);
-            LastActionDescription = $"auto-variant[opt=0] → {result}";
+
+            int bestIdx = 0;
+            string scoreNote = "default(opt=0)";
+            var variants = TryReadChiVariants();
+            var snap = plugin.AddonReader.TryBuildSnapshot();
+            if (variants is { Count: > 1 } && snap is not null)
+                bestIdx = PickBestChiVariantIndex(variants, snap, out scoreNote);
+
+            var result = plugin.Dispatcher.DispatchChiVariant(bestIdx);
+            LastActionDescription = $"auto-variant[opt={bestIdx}] → {result} ({scoreNote})";
             log.Info($"[AutoPlayLoop] variant dispatch: {LastActionDescription}");
-            plugin.GameLogger.RecordAction(ActionKind.Chi, null, 0, result.ToString(), "chi-variant");
-            EmitDispatchFinding("chi-variant", result, option: 0, state: currentState,
-                snap: plugin.AddonReader.TryBuildSnapshot());
+            plugin.GameLogger.RecordAction(ActionKind.Chi, null, bestIdx, result.ToString(), $"chi-variant: {scoreNote}");
+            EmitDispatchFinding("chi-variant", result, option: bestIdx, state: currentState, snap: snap);
         });
+    }
+
+    /// <summary>Reads the chi-variant tile triples from AtkValues at the chi-variant-select popup. Capture 2026-05-25: atk[3]=variant_count, then 4 ints per variant (3 tile-IDs + 1 sentinel = textureBase).</summary>
+    private unsafe IReadOnlyList<int[]>? TryReadChiVariants()
+    {
+        if (!addon.TryGet(out var unit, out _))
+            return null;
+        if (!unit->IsVisible || unit->AtkValues == null)
+            return null;
+
+        int atkCount = unit->AtkValuesCount;
+        if (atkCount < 4)
+            return null;
+
+        var atk = unit->AtkValues;
+        if (atk[3].Type != AtkValueType.Int)
+            return null;
+        int variantCount = atk[3].Int;
+        if (variantCount is < 1 or > 8)
+            return null;
+
+        int textureBase = plugin.AddonReader.ActiveLayout?.TileTextureBase ?? 0;
+        if (textureBase == 0)
+            return null;
+
+        int needed = 4 + variantCount * 4;
+        if (atkCount < needed)
+            return null;
+
+        var variants = new List<int[]>(variantCount);
+        for (int i = 0; i < variantCount; i++)
+        {
+            int baseIdx = 4 + i * 4;
+            var tileIds = new int[3];
+            for (int j = 0; j < 3; j++)
+            {
+                if (atk[baseIdx + j].Type != AtkValueType.Int)
+                    return null;
+                int id = HandArrayDecoder.DecodeTileId(atk[baseIdx + j].Int, textureBase, out _);
+                if (id < 0)
+                    return null;
+                tileIds[j] = id;
+            }
+            variants.Add(tileIds);
+        }
+        return variants;
+    }
+
+    /// <summary>Picks the chi variant whose post-call closed hand has the lowest shanten. Tries all 3 (claim, hand-pair) splits per variant since the claimed tile isn't explicitly marked in AtkValues. Ties resolve to the lower variant index.</summary>
+    private static int PickBestChiVariantIndex(IReadOnlyList<int[]> variants, StateSnapshot snap, out string note)
+    {
+        var counts = new int[Mahjong.Core.Tile.Count34];
+        foreach (var t in snap.Hand)
+            counts[t.Id]++;
+        int meldsAfter = snap.OurMelds.Count + 1;
+
+        int bestIdx = 0;
+        int bestShanten = int.MaxValue;
+        for (int v = 0; v < variants.Count; v++)
+        {
+            var tiles = variants[v];
+            int? variantShanten = null;
+            for (int claimSlot = 0; claimSlot < 3; claimSlot++)
+            {
+                int h1 = tiles[(claimSlot + 1) % 3];
+                int h2 = tiles[(claimSlot + 2) % 3];
+                if (counts[h1] < 1) continue;
+                counts[h1]--;
+                if (counts[h2] < 1) { counts[h1]++; continue; }
+                counts[h2]--;
+                int sh = Mahjong.Engine.ShantenCalculator.Standard(counts, meldsAfter);
+                counts[h1]++;
+                counts[h2]++;
+                if (variantShanten is null || sh < variantShanten)
+                    variantShanten = sh;
+            }
+            if (variantShanten is null) continue;
+            if (variantShanten < bestShanten)
+            {
+                bestShanten = variantShanten.Value;
+                bestIdx = v;
+            }
+        }
+
+        note = bestShanten == int.MaxValue
+            ? $"no formable variant, default(opt=0) of {variants.Count}"
+            : $"shanten={bestShanten} across {variants.Count} variants";
+        return bestIdx;
     }
 
     private void ScheduleDiscard(DispatchContext context)
