@@ -56,13 +56,25 @@ public sealed class OpponentModel : IOpponentModel
             double discardCount = seat.DiscardCount > 0 ? seat.DiscardCount : seat.Discards.Count;
             double meldCount = seat.Melds.Count;
             int turnsElapsed = 70 - state.WallRemaining;
+            int lateTedashi = CountLateTedashi(seat);
 
             double z = weights.TenpaiIntercept
                      + weights.TenpaiDiscardCount * discardCount
                      + weights.TenpaiMeldCount * meldCount
-                     + weights.TenpaiTurnsElapsed * turnsElapsed;
+                     + weights.TenpaiTurnsElapsed * turnsElapsed
+                     + weights.TenpaiLateTedashi * lateTedashi;
             TenpaiProb[opp] = Sigmoid(z);
         }
+    }
+
+    private static int CountLateTedashi(SeatView seat)
+    {
+        int count = 0;
+        int n = Math.Min(seat.Discards.Count, seat.DiscardIsTedashi.Count);
+        for (int i = 6; i < n; i++)
+            if (seat.DiscardIsTedashi[i])
+                count++;
+        return count;
     }
 
     private void UpdateHandMarginals(StateSnapshot state)
@@ -96,6 +108,7 @@ public sealed class OpponentModel : IOpponentModel
     private void UpdateDangerMap(StateSnapshot state)
     {
         ComputeLiveTileCounts(state, out var live);
+        UpdateExpectedHandValues(state);
 
         for (int opp = 0; opp < OpponentCountConst; opp++)
         {
@@ -108,19 +121,89 @@ public sealed class OpponentModel : IOpponentModel
         }
     }
 
+    private void UpdateExpectedHandValues(StateSnapshot state)
+    {
+        var doraTileIds = new HashSet<int>();
+        foreach (var ind in state.DoraIndicators)
+            doraTileIds.Add(DoraNextId(ind.Id));
+
+        for (int opp = 0; opp < OpponentCountConst; opp++)
+        {
+            int absSeat = (state.OurSeat + 1 + opp) % 4;
+            var seat = state.Seats[absSeat];
+
+            int visibleDora = 0;
+            foreach (var m in seat.Melds)
+                foreach (var t in m.Tiles)
+                    if (doraTileIds.Contains(t.Id))
+                        visibleDora++;
+
+            double bump = weights.ExpectedHandValuePerVisibleDora * visibleDora;
+            if (seat.Riichi)
+                bump += 1000.0;
+            ExpectedHandValue[opp] = weights.ExpectedHandValue + bump;
+        }
+    }
+
+    private static int DoraNextId(int id)
+    {
+        if (id < 27)
+            return (id / 9) * 9 + (id % 9 + 1) % 9;
+        if (id <= 30)
+            return 27 + (id - 27 + 1) % 4;
+        return 31 + (id - 31 + 1) % 3;
+    }
+
     private double ComputeDealInRisk(int tileId, double tenpai, SeatView seat, int[] live)
     {
         if (ContainsTile(seat.Discards, tileId))
             return 0.0;
-
         if (live[tileId] == 0)
             return 0.0;
 
         double risk = tenpai * weights.TenpaiBaseDealInRate;
         if (HasSujiBlock(tileId, seat))
             risk *= weights.SujiDiscount;
+        if (HasKabeBlock(tileId, live))
+            risk *= weights.KabeDiscount;
+        if (IsKanchanBlocked(tileId, live))
+            risk *= weights.KanchanBlockDiscount;
+        if (IsNoChance(tileId, live))
+            risk *= weights.NoChanceDiscount;
 
         return Math.Clamp(risk, 0.0, 1.0);
+    }
+
+    /// <summary>Adjacent number-tile fully visible — collapses some ryanmen and kanchan waits onto T.</summary>
+    private static bool HasKabeBlock(int tileId, int[] live)
+    {
+        if (tileId >= 27) return false;
+        int pos = tileId % 9;
+        int suitBase = (tileId / 9) * 9;
+        if (pos > 0 && live[suitBase + pos - 1] == 0) return true;
+        if (pos < 8 && live[suitBase + pos + 1] == 0) return true;
+        return false;
+    }
+
+    /// <summary>Kanchan-on-T impossible when at least one bridge tile (T-1 or T+1) is dead.</summary>
+    private static bool IsKanchanBlocked(int tileId, int[] live)
+    {
+        if (tileId >= 27) return false;
+        int pos = tileId % 9;
+        if (pos == 0 || pos == 8) return false;
+        int suitBase = (tileId / 9) * 9;
+        return live[suitBase + pos - 1] == 0 || live[suitBase + pos + 1] == 0;
+    }
+
+    /// <summary>Both ryanmen sides dead (T-2 and T+2 unreachable) — only shanpon/tanki/kanchan-pair remain.</summary>
+    private static bool IsNoChance(int tileId, int[] live)
+    {
+        if (tileId >= 27) return false;
+        int pos = tileId % 9;
+        int suitBase = (tileId / 9) * 9;
+        bool lowSideDead = pos < 2 || live[suitBase + pos - 2] == 0;
+        bool highSideDead = pos > 6 || live[suitBase + pos + 2] == 0;
+        return lowSideDead && highSideDead;
     }
 
     private static bool HasSujiBlock(int tileId, SeatView seat)
