@@ -23,6 +23,9 @@ server/dist/
 # memory blobs can carry player-name strings.
 .local/
 
+# Tuner output (evolutionary / coordinate-descent weight runs).
+data/weights/
+
 # Defense-in-depth for credential files. Convention is to keep them under
 # .local/secrets.ps1 (already covered above), but a stray .env or .secrets
 # anywhere else in the tree should never be tracked either.
