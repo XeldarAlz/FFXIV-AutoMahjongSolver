@@ -648,6 +648,13 @@ public sealed class AutoPlayLoop : IDisposable
             return;
         }
 
+        if (choice.Kind == ActionKind.Pass && IsHandOutOfSyncReason(choice.Reasoning)
+            && snap.Legal.Can(ActionFlags.Discard))
+        {
+            DispatchOutOfSyncTsumogiri(snap, choice);
+            return;
+        }
+
         if (choice.Kind != ActionKind.Discard && choice.Kind != ActionKind.Riichi)
         {
             LastActionDescription = $"policy returned {choice.Kind} — not dispatching";
@@ -660,6 +667,54 @@ public sealed class AutoPlayLoop : IDisposable
         }
 
         DispatchDiscardOrRiichi(snap, choice);
+    }
+
+    /// <summary>
+    /// Matches <c>EfficiencyPolicy.TsumogiriFallback</c>'s pause reason. When the meld tracker
+    /// has fallen behind (typically post-ShouMinKan or a missed pon/chi inference race), the
+    /// policy refuses to score a hand whose closed+meld arithmetic ≠ 14. Without a recovery
+    /// path the autoplay loop debounces forever on the same Pass and the bot softlocks.
+    /// </summary>
+    private static bool IsHandOutOfSyncReason(string? reasoning) =>
+        reasoning is not null
+        && reasoning.StartsWith("hand state out of sync", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Blind tsumogiri at slot 13 — the addon parks the just-drawn tile there even under the
+    /// post-call sparse layout (HandArrayDecoder.cs:7). Safer than guessing a real discard
+    /// off an incomplete view, and keeps the hand moving instead of softlocking.
+    /// </summary>
+    private void DispatchOutOfSyncTsumogiri(StateSnapshot snap, ActionChoice passChoice)
+    {
+        if (snap.Hand.Count == 0)
+        {
+            LastActionDescription = "oos-tsumogiri aborted: empty hand";
+            log.Warning($"[AutoPlayLoop] {LastActionDescription}");
+            return;
+        }
+
+        // Hand[^1] mirrors the slot-13-preferred decode order in HandArrayDecoder.ReadHand
+        // (scans 0..len-1, so the highest occupied slot ends up last). FindAddonSlotOfTile
+        // resolves it back to slot 13 when the tile sits there, otherwise to its actual slot.
+        Tile drawn = snap.Hand[^1];
+        int slot = plugin.AddonReader.FindAddonSlotOfTile(drawn);
+        if (slot < 0)
+        {
+            LastActionDescription = $"oos-tsumogiri aborted: drawn tile {drawn} not in addon hand";
+            log.Warning($"[AutoPlayLoop] {LastActionDescription}");
+            return;
+        }
+
+        var result = plugin.Dispatcher.DispatchDiscard(slot);
+        LastActionDescription = $"oos-tsumogiri recovery {drawn} slot={slot} → {result}";
+        log.Warning(
+            $"[AutoPlayLoop] {LastActionDescription} " +
+            $"(policy reason: {passChoice.Reasoning})");
+        plugin.GameLogger.RecordAction(
+            ActionKind.Discard, drawn, slot, result.ToString(),
+            $"oos-tsumogiri: {passChoice.Reasoning}");
+        EmitDispatchFinding("oos-tsumogiri", result, tile: drawn, slot: slot, snap: snap);
+        ClearRetryDebounceIfHookFailed(result);
     }
 
     private void DispatchAnkan(StateSnapshot snap, ActionChoice choice, Tile kanTile)
@@ -789,6 +844,16 @@ public sealed class AutoPlayLoop : IDisposable
         // Yaku-preview confirm popup shares the Riichi-flag signature — latch to prevent retry-dispatch and carry the probe's chosen discard.
         if (acceptRiichiPopup)
             fsm.LatchRiichiConfirm(riichiProbeTile);
+
+        // ShouMinKan: addon shrinks the closed hand by 1 and the existing pon ought to grow to a kan,
+        // but ObserveSnapshot can't infer that from a delta=1. Upgrade the meld in-place so meld-tile
+        // arithmetic stays at 14 and the policy doesn't fall into out-of-sync Pass.
+        if (result2 == InputDispatcher.DispatchResult.Ok
+            && choice.Kind == ActionKind.ShouMinKan
+            && choice.Call is { } shouCand)
+        {
+            plugin.MeldTracker.UpgradeToShouMinKan(shouCand.ClaimedTile);
+        }
     }
 
     private void DispatchPass(StateSnapshot snap, ActionChoice choice, LegalActions legal, string? reasonOverride = null)

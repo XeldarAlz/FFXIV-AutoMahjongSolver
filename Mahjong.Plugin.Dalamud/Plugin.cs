@@ -130,8 +130,12 @@ public sealed class Plugin : IDalamudPlugin
         SigprobeLog = new SigprobeLog(configDir);
         mirroredLog.AttachSink(ErrorSink);
 
+        // Surface silent meld-tracker drops: the inference loop gives up after MaxDeferralTicks
+        // and rebaselines, which is the failure mode behind the post-call out-of-sync stuck
+        // state. Without this, the only signal is the downstream "hand state out of sync" pause.
+        MeldTracker.DeferralTimedOut += OnMeldTrackerDeferralTimedOut;
+
         var mahjongAddon = Services.GetRequiredService<MahjongAddon>();
-        Dispatcher = new InputDispatcher(mahjongAddon);
 
         // IDalamudPluginInterface.AssemblyLocation is the only reliable sibling-file lookup — Assembly.Location is empty inside Dalamud's ALC.
         var pluginAssemblyDir = PluginInterface.AssemblyLocation.DirectoryName ?? configDir;
@@ -139,6 +143,8 @@ public sealed class Plugin : IDalamudPlugin
 
         AddonReader = new AddonEmjReader(
             AddonLifecycle, Log, mahjongAddon, MeldTracker, configDir, layoutsDir, FindingsLog);
+        // Accessor closes over AddonReader so state codes and the hand-array offset follow the active variant. Constructed after AddonReader so the closure resolves to the live profile by the time DispatchDiscard runs.
+        Dispatcher = new InputDispatcher(mahjongAddon, () => AddonReader.ActiveLayout);
         Aggregator = new StateAggregator(AddonReader, Framework);
         EventLogger = new InputEventLogger(
             AddonReader, AddonLifecycle, GameInterop, Log, mahjongAddon, configDir);
@@ -200,8 +206,23 @@ public sealed class Plugin : IDalamudPlugin
         Log.Information($"Doman Mahjong Solver v{asmVersion} loaded.");
     }
 
+    private void OnMeldTrackerDeferralTimedOut(DeferralTimeoutEvent evt)
+    {
+        string removed = string.Join(",", evt.Removed.Select(t => t.ToString()));
+        Log.Warning(
+            $"[MeldTracker] deferral exhausted: dropping delta={evt.Delta} after {evt.DeferredTicks} ticks. " +
+            $"Removed=[{removed}]. Subsequent meld inferences may be off until the next hand.");
+        FindingsLog?.Record("meld_tracker_silent_drop", new Dictionary<string, object?>
+        {
+            ["delta"] = evt.Delta,
+            ["deferred_ticks"] = evt.DeferredTicks,
+            ["removed_tiles"] = removed,
+        });
+    }
+
     public void Dispose()
     {
+        MeldTracker.DeferralTimedOut -= OnMeldTrackerDeferralTimedOut;
         command.Dispose();
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;

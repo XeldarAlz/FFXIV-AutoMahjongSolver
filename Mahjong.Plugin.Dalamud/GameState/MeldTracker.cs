@@ -24,6 +24,15 @@ public sealed class MeldTracker
 
     public IReadOnlyList<Meld> Melds => melds;
 
+    /// <summary>
+    /// Raised when ObserveSnapshot has been deferring a chi/pon/minkan-shaped closed-hand
+    /// shrink for <see cref="MaxDeferralTicks"/> ticks without ever seeing the opp-discard
+    /// byte advance, then gives up and rebaselines. The meld is silently dropped from the
+    /// tracker's view — downstream the policy will report an out-of-sync hand. Subscribers
+    /// should log enough to debug the underlying race (delta + tile signature).
+    /// </summary>
+    public event Action<DeferralTimeoutEvent>? DeferralTimedOut;
+
     public MeldTrackerStateDto SerializeState() => new(
         Melds: melds.Count,
         DeferredTicks: deferredTicks,
@@ -36,6 +45,25 @@ public sealed class MeldTracker
 
     /// <summary>Reserved for self-declared AnKan/ShouMinKan; for called melds, prefer ObserveSnapshot.</summary>
     public void Record(Meld meld) => melds.Add(meld);
+
+    /// <summary>
+    /// Upgrades an existing Pon of <paramref name="kind"/> to ShouMinKan in-place. Self-declared
+    /// kans produce a closed-hand shrink of 1 (the added tile), which ObserveSnapshot ignores
+    /// (delta=1 falls through to rebaseline); without this call the pon stays at TileCount=3
+    /// and the 14-tile invariant breaks for the rest of the hand. Returns true if upgraded.
+    /// </summary>
+    public bool UpgradeToShouMinKan(Tile kind)
+    {
+        for (int i = 0; i < melds.Count; i++)
+        {
+            var m = melds[i];
+            if (m.Kind != MeldKind.Pon || m.Tiles[0].Id != kind.Id)
+                continue;
+            melds[i] = Meld.ShouMinKan(kind, kind, m.ClaimedFromSeat);
+            return true;
+        }
+        return false;
+    }
 
     public void Clear()
     {
@@ -124,6 +152,15 @@ public sealed class MeldTracker
                         // Closed hand shrunk in chi/pon/minkan shape but opp's discard-count byte hasn't propagated — retry next tick from the same baseline.
                         deferredTicks++;
                         return null;
+                    }
+                    else
+                    {
+                        // Deferral exhausted: surface the silent drop before the rebaseline at the end of the method swallows it.
+                        DeferralTimedOut?.Invoke(new DeferralTimeoutEvent(
+                            Delta: delta,
+                            DeferredTicks: deferredTicks,
+                            Removed: removed.ToArray()));
+                        deferredTicks = 0;
                     }
                 }
             }
@@ -219,6 +256,11 @@ public sealed class MeldTracker
         return null;
     }
 }
+
+public readonly record struct DeferralTimeoutEvent(
+    int Delta,
+    int DeferredTicks,
+    Tile[] Removed);
 
 public readonly record struct MeldTrackerStateDto(
     int Melds,
