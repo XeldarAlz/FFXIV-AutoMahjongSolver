@@ -116,6 +116,7 @@ public class ReplayFixtureTests
             return;
 
         var emj = JsonLayoutProfileLoader.Load(Path.Combine(TestPaths.LayoutsDir, "emj.json"));
+        var emjL = JsonLayoutProfileLoader.Load(Path.Combine(TestPaths.LayoutsDir, "emj_l.json"));
         var seedDir = Path.Combine(TestPaths.RepoRoot,
             "tests", "Mahjong.Plugin.Dalamud.Tests", "Replay", "fixtures");
         Directory.CreateDirectory(seedDir);
@@ -159,6 +160,37 @@ public class ReplayFixtureTests
         ponAtkValues[3] = new ReplayAtkValue { Type = "String", String = "Pass" };
         ponAtkValues[16] = new ReplayAtkValue { Type = "Int", Int = pon5mClaimedRaw };
         ponAtkValues[17] = new ReplayAtkValue { Type = "Int", Int = pon5mClaimedRaw };
+
+        // EmjL state-30 our-turn-discard. Shares state codes and offsets with Emj today; this fixture pins that they stay equal in the JSON, so a future JP/OC variant whose codes differ surfaces as a fixture failure rather than a silent in-game regression. Track 0 (#38) gates the data, #47 routes the dispatcher through this same layout.
+        WriteFixture(Path.Combine(seedDir, "state30_our_turn_emjl.json"), new ReplayFixture
+        {
+            Name = "state30_our_turn_emjl",
+            Description = "State-30 our-turn-discard on EmjL. Mirrors state30_our_turn_emj but loads the data/layouts/emj_l.json profile end-to-end.",
+            Variant = "EmjL",
+            AddonMemoryBase64 = Convert.ToBase64String(
+                new AddonMemoryBuilder(emjL)
+                    .WithScores(25000, 25000, 25000, 25000)
+                    .WithDiscardCounts(0, 0, 0, 0)
+                    .WithHand("1234m456p789s1234z")
+                    .WithDoraIndicator("5z")
+                    .Build()),
+            AtkValues = new List<ReplayAtkValue>
+            {
+                new() { Type = "Int", Int = 30 },
+                new() { Type = "Int", Int = 0 },
+            },
+            CallModalVisible = false,
+            Expected = new ReplayExpected
+            {
+                StateCode = 30,
+                Hand = "1234m456p789s1234z",
+                LegalFlags = new List<string> { "Discard" },
+                ScoreSelf = 25000,
+                WallRemaining = 70,
+                AkaDora = 0,
+                MeldCount = 0,
+            },
+        });
 
         WriteFixture(Path.Combine(seedDir, "state15_pon_offer_emj.json"), new ReplayFixture
         {
