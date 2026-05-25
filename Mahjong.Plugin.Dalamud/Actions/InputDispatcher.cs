@@ -1,6 +1,7 @@
 using System;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Mahjong.Plugin.Dalamud.GameState;
+using Mahjong.Plugin.Game.Variants;
 
 namespace Mahjong.Plugin.Dalamud.Actions;
 
@@ -18,13 +19,27 @@ namespace Mahjong.Plugin.Dalamud.Actions;
 /// </summary>
 public sealed class InputDispatcher
 {
-    private readonly MahjongAddon addon;
+    // Fallback values match data/layouts/{emj,emj_l}.json. Used when the layout accessor isn't wired (tests) or hasn't resolved yet (no addon attached).
+    private const int DefaultSelfDeclareListCode = 6;
+    private const int DefaultOurTurnDiscardCode = 30;
+    private const int DefaultHandArrayStartOffset = 0x0DB8;
 
-    public InputDispatcher(MahjongAddon addon)
+    private readonly MahjongAddon addon;
+    private readonly Func<LayoutProfile?>? layoutAccessor;
+
+    public InputDispatcher(MahjongAddon addon, Func<LayoutProfile?>? layoutAccessor = null)
     {
         ArgumentNullException.ThrowIfNull(addon);
         this.addon = addon;
+        this.layoutAccessor = layoutAccessor;
     }
+
+    private int SelfDeclareListCode =>
+        layoutAccessor?.Invoke()?.StateCodes.SelfDeclareList ?? DefaultSelfDeclareListCode;
+    private int OurTurnDiscardCode =>
+        layoutAccessor?.Invoke()?.StateCodes.OurTurnDiscard ?? DefaultOurTurnDiscardCode;
+    private int HandArrayStartOffset =>
+        layoutAccessor?.Invoke()?.Offsets.HandArrayStart ?? DefaultHandArrayStartOffset;
 
     public enum DispatchResult
     {
@@ -118,8 +133,8 @@ public sealed class InputDispatcher
         //     selects, opcode-7 commits.
         bool isTileClickDiscard = handCount > 0
             && handCount % 3 == 2
-            && (stateCode == StateCodeSelfDeclareList
-                || stateCode == StateCodeOurTurnDiscard);
+            && (stateCode == SelfDeclareListCode
+                || stateCode == OurTurnDiscardCode);
         if (isTileClickDiscard)
         {
             int raw = ReadHandSlotRaw(unit, slotIndex);
@@ -164,18 +179,6 @@ public sealed class InputDispatcher
         return ok ? DispatchResult.Ok : DispatchResult.HookFailed;
     }
 
-    // State code constants from the Emj/EmjL layout profiles. Hardcoded
-    // here rather than threaded through from LayoutProfile because the
-    // dispatcher's only state-aware branch needs the values at exactly two
-    // points and they've been stable across both shipping variants
-    // (data/layouts/{emj,emj_l}.json both set selfDeclareList=6, ourTurnDiscard=30).
-    private const int StateCodeSelfDeclareList = 6;
-    private const int StateCodeOurTurnDiscard = 30;
-
-    // Hand-array byte offset, identical across Emj and EmjL (verified
-    // 2026-05-18). Each tile is a 4-byte texture-relative int.
-    private const int HandArrayStartOffset = 0x0DB8;
-
     private static unsafe int ReadStateCode(AtkUnitBase* unit)
     {
         if (unit->AtkValues == null || unit->AtkValuesCount == 0)
@@ -184,7 +187,7 @@ public sealed class InputDispatcher
         return v.Type == FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int ? v.Int : -1;
     }
 
-    private static unsafe int ReadHandSlotRaw(AtkUnitBase* unit, int slotIndex)
+    private unsafe int ReadHandSlotRaw(AtkUnitBase* unit, int slotIndex)
     {
         if (slotIndex is < 0 or > 13)
             return 0;
@@ -192,14 +195,15 @@ public sealed class InputDispatcher
         return *(int*)(basePtr + HandArrayStartOffset + slotIndex * 4);
     }
 
-    /// <summary>Counts non-zero hand-array slots (0..14). Scans the full array — post-call layouts park the claimed tile at slot 13 with [10..12] empty, so zero-terminating would miscount.</summary>
-    private static unsafe int ReadCurrentHandCount(AtkUnitBase* unit)
+    /// <summary>Counts non-zero hand-array slots (0..14). Scans the full array since post-call layouts park the claimed tile at slot 13 with [10..12] empty, so zero-terminating would miscount.</summary>
+    private unsafe int ReadCurrentHandCount(AtkUnitBase* unit)
     {
         byte* basePtr = (byte*)unit;
+        int offset = HandArrayStartOffset;
         int count = 0;
         for (int i = 0; i < 14; i++)
         {
-            int raw = *(int*)(basePtr + HandArrayStartOffset + i * 4);
+            int raw = *(int*)(basePtr + offset + i * 4);
             if (raw != 0)
                 count++;
         }
