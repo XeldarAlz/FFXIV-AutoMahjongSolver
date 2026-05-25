@@ -1,6 +1,8 @@
 using Mahjong.Engine;
 using Mahjong.Policy.Opponents;
 using Mahjong.Policy.Placement;
+using Mahjong.Rules;
+using Mahjong.Rules.Rulesets;
 
 namespace Mahjong.Policy.Efficiency;
 
@@ -11,44 +13,55 @@ public sealed class EfficiencyPolicy : IPolicy
     private readonly ICallPolicy call;
     private readonly IRiichiPolicy riichi;
     private readonly IPushFoldPolicy pushFold;
+    private readonly IRuleSet ruleSet;
+    private readonly Scorer scorer;
 
     public EfficiencyPolicy(
         IOpponentModel opponentModel,
         IDiscardPolicy discard,
         ICallPolicy call,
         IRiichiPolicy riichi,
-        IPushFoldPolicy pushFold)
+        IPushFoldPolicy pushFold,
+        IRuleSet ruleSet)
     {
         ArgumentNullException.ThrowIfNull(opponentModel);
         ArgumentNullException.ThrowIfNull(discard);
         ArgumentNullException.ThrowIfNull(call);
         ArgumentNullException.ThrowIfNull(riichi);
         ArgumentNullException.ThrowIfNull(pushFold);
+        ArgumentNullException.ThrowIfNull(ruleSet);
         this.opponentModel = opponentModel;
         this.discard = discard;
         this.call = call;
         this.riichi = riichi;
         this.pushFold = pushFold;
+        this.ruleSet = ruleSet;
+        this.scorer = new Scorer(ruleSet);
     }
 
     public EfficiencyPolicy(IWeightProvider? weightProvider = null)
-        : this(BuildDefault(weightProvider ?? new DefaultWeightProvider()))
+        : this(BuildDefault(weightProvider ?? new DefaultWeightProvider(), new RiichiRuleSet()))
+    { }
+
+    public EfficiencyPolicy(IRuleSet ruleSet)
+        : this(BuildDefault(new DefaultWeightProvider(), ruleSet))
     { }
 
     public EfficiencyPolicy(DiscardWeights weights)
-        : this(BuildWithDiscardWeights(weights))
+        : this(BuildWithDiscardWeights(weights, new RiichiRuleSet()))
     { }
 
     private EfficiencyPolicy(EfficiencyPolicy template)
-        : this(template.opponentModel, template.discard, template.call, template.riichi, template.pushFold)
+        : this(template.opponentModel, template.discard, template.call, template.riichi, template.pushFold, template.ruleSet)
     { }
 
     public ActionChoice Choose(StateSnapshot state)
     {
         var legal = state.Legal;
 
-        if (legal.Can(ActionFlags.Tsumo))
-            return ActionChoice.DeclareTsumo("tsumo legal");
+        // Gate Tsumo on MinHan: addon flag alone softlocks Doman yakuless wins (#51).
+        if (legal.Can(ActionFlags.Tsumo) && TryDeclareTsumo(state) is { } tsumoChoice)
+            return tsumoChoice;
         if (legal.Can(ActionFlags.Ron))
             return ActionChoice.DeclareRon("ron legal");
 
@@ -165,7 +178,36 @@ public sealed class EfficiencyPolicy : IPolicy
         $"best={best.Discard} shanten={best.ShantenAfter} ukeire={best.UkeireKinds}kinds/{best.UkeireWeighted}w " +
         $"dora={best.DoraRetained} yakuhai={best.YakuhaiRetained} yaku-pot={best.YakuPotential:F2} score={best.Score:F1}";
 
-    private static EfficiencyPolicy BuildDefault(IWeightProvider provider)
+    /// <summary>Tsumo only when scorer clears MinHan.</summary>
+    private ActionChoice? TryDeclareTsumo(StateSnapshot state)
+    {
+        if (state.Hand.Count == 0)
+            return null;
+
+        var winningTile = state.Hand[^1];
+        var hand = Hand.FromTiles(state.Hand, state.OurMelds);
+        var ctx = new WinContext(
+            winningTile,
+            WinKind.Tsumo,
+            IsRiichi: state.OurRiichi,
+            IsDoubleRiichi: state.OurDoubleRiichi,
+            IsIppatsu: state.OurIppatsu,
+            IsHaitei: state.WallRemaining == 0,
+            RoundWindTileId: TileIds.FirstWind + state.RoundWind,
+            SeatWindTileId: TileIds.FirstWind + state.OurSeat,
+            DoraIndicators: state.DoraIndicators,
+            UraDoraIndicators: state.UraDoraIndicators,
+            IsDealer: state.OurSeat == state.DealerSeat,
+            AkaDora: state.AkaDora);
+
+        var result = scorer.Evaluate(hand, ctx);
+        if (result is null)
+            return null;
+
+        return ActionChoice.DeclareTsumo($"tsumo legal: {result.Han} han ({ruleSet.Name} MinHan={ruleSet.MinHan})");
+    }
+
+    private static EfficiencyPolicy BuildDefault(IWeightProvider provider, IRuleSet ruleSet)
     {
         var bundle = provider.Current;
         var opponent = new OpponentModel(bundle.Opponent);
@@ -173,15 +215,16 @@ public sealed class EfficiencyPolicy : IPolicy
         return new EfficiencyPolicy(
             opponent,
             new HeuristicDiscardPolicy(provider, opponent, placement),
-            new HeuristicCallPolicy(),
+            new HeuristicCallPolicy(ruleSet),
             new HeuristicRiichiPolicy(),
-            new HeuristicPushFoldPolicy());
+            new HeuristicPushFoldPolicy(),
+            ruleSet);
     }
 
-    private static EfficiencyPolicy BuildWithDiscardWeights(DiscardWeights weights)
+    private static EfficiencyPolicy BuildWithDiscardWeights(DiscardWeights weights, IRuleSet ruleSet)
     {
         var bundle = WeightBundle.Default with { Discard = weights };
-        return BuildDefault(new InMemoryWeightProvider(bundle));
+        return BuildDefault(new InMemoryWeightProvider(bundle), ruleSet);
     }
 
     private sealed class InMemoryWeightProvider : IWeightProvider

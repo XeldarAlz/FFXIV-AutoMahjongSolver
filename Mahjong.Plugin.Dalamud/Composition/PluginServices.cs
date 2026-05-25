@@ -102,14 +102,15 @@ public static class PluginServices
         services.AddSingleton<IRiichiPolicy, HeuristicRiichiPolicy>();
         services.AddSingleton<IPushFoldPolicy, HeuristicPushFoldPolicy>();
 
-        // Explicit factory pins the 5-arg ctor — EfficiencyPolicy also has a 1-arg ctor and MS.DI throws on ambiguous.
+        // Explicit factory pins the 6-arg ctor — EfficiencyPolicy also has a 1-arg ctor and MS.DI throws on ambiguous.
         services.AddSingleton<EfficiencyPolicy>(sp =>
             new EfficiencyPolicy(
                 sp.GetRequiredService<IOpponentModel>(),
                 sp.GetRequiredService<IDiscardPolicy>(),
                 sp.GetRequiredService<ICallPolicy>(),
                 sp.GetRequiredService<IRiichiPolicy>(),
-                sp.GetRequiredService<IPushFoldPolicy>()));
+                sp.GetRequiredService<IPushFoldPolicy>(),
+                sp.GetRequiredService<IRuleSet>()));
 
         services.AddSingleton<IPolicy>(sp => sp.GetRequiredService<EfficiencyPolicy>());
     }

@@ -1,5 +1,6 @@
 using Mahjong.Engine;
 using Mahjong.Policy.Efficiency;
+using Mahjong.Rules.Rulesets;
 using Xunit;
 
 namespace Mahjong.Policy.Tests;
@@ -9,11 +10,22 @@ public class EfficiencyPolicyTests
     private static readonly EfficiencyPolicy Policy = new();
 
     [Fact]
-    public void Tsumo_legal_returns_tsumo_without_scoring()
+    public void Tsumo_accepted_when_hand_clears_min_han()
     {
         var s = Snapshots.Closed14("123m456p789s11123p", ActionFlags.Tsumo | ActionFlags.Discard);
         var choice = Policy.Choose(s);
         Assert.Equal(ActionKind.Tsumo, choice.Kind);
+    }
+
+    [Fact]
+    public void Tsumo_declined_when_doman_min_han_not_met()
+    {
+        // Issue #51: yakuless complete shape under Doman MinHan=2.
+        var doman = new EfficiencyPolicy(new DomanRuleSet());
+        var s = Snapshots.Closed14("22666p123345s222z", ActionFlags.Tsumo | ActionFlags.Discard);
+        var choice = doman.Choose(s);
+        Assert.NotEqual(ActionKind.Tsumo, choice.Kind);
+        Assert.Equal(ActionKind.Discard, choice.Kind);
     }
 
     [Fact]
