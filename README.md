@@ -8,7 +8,7 @@
   <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/XeldarAlz/FFXIV-DomanMahjongSolver?style=flat-square&color=blue"></a>
   <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/XeldarAlz/FFXIV-DomanMahjongSolver/total?style=flat-square&color=blue"></a>
   <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/XeldarAlz/FFXIV-DomanMahjongSolver/ci.yml?style=flat-square"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square"></a>
+  <a href="LICENSE.md"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -84,8 +84,4 @@ Known edge cases that can stall the bot (manual click resumes play): post-MinKan
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build / test instructions, project layout, and release process. Roadmap lives in [docs/roadmap.md](docs/roadmap.md).
+AGPL-3.0-or-later. See [LICENSE.md](LICENSE.md).
