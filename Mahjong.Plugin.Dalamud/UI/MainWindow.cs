@@ -43,58 +43,11 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        DrawTopToolbar(cfg);
         DrawModeCard(cfg);
         ImGui.Dummy(new Vector2(0, 4));
         DrawLiveCard();
 
         DrawAutoPlayConfirmModal(cfg);
-    }
-
-    private void DrawTopToolbar(Configuration cfg)
-    {
-        var bugLabel = FontAwesomeIcon.Bug.ToIconString();
-        var infoLabel = FontAwesomeIcon.InfoCircle.ToIconString();
-        var gearLabel = FontAwesomeIcon.Cog.ToIconString();
-
-        bool bugClicked = false, infoClicked, gearClicked;
-        // Tooltips render outside the icon-font scope — they would use icon glyphs otherwise.
-        int hovered = -1;
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        {
-            var framePadX = ImGui.GetStyle().FramePadding.X;
-            var spacingX = ImGui.GetStyle().ItemSpacing.X;
-            var btnW = ImGui.CalcTextSize(gearLabel).X + framePadX * 2;
-
-            int slots = cfg.DevMode ? 3 : 2;
-            float totalW = btnW * slots + spacingX * (slots - 1);
-            float avail = ImGui.GetContentRegionAvail().X;
-            if (avail > totalW)
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + avail - totalW);
-
-            if (cfg.DevMode)
-            {
-                bugClicked = ImGui.Button(bugLabel + "##debug");
-                if (ImGui.IsItemHovered()) hovered = 0;
-                ImGui.SameLine();
-            }
-            infoClicked = ImGui.Button(infoLabel + "##about");
-            if (ImGui.IsItemHovered()) hovered = 1;
-            ImGui.SameLine();
-            gearClicked = ImGui.Button(gearLabel + "##settings");
-            if (ImGui.IsItemHovered()) hovered = 2;
-        }
-
-        switch (hovered)
-        {
-            case 0: ImGui.SetTooltip("Developer console"); break;
-            case 1: ImGui.SetTooltip("About"); break;
-            case 2: ImGui.SetTooltip("Settings"); break;
-        }
-
-        if (bugClicked) plugin.ToggleDebugOverlay();
-        if (infoClicked) plugin.ToggleAboutWindow();
-        if (gearClicked) plugin.ToggleSettingsWindow();
     }
 
     private void DrawTosGate(Configuration cfg)
@@ -143,17 +96,13 @@ public sealed class MainWindow : Window, IDisposable
     {
         using (Theme.BeginCard("mode"))
         {
-            // Header row: "Mode" label + right-aligned in-match / idle badge.
+            // Header row: "Mode" label + right-aligned icon actions.
+            ImGui.AlignTextToFramePadding();
             ImGui.PushStyleColor(ImGuiCol.Text, Theme.Header);
             ImGui.TextUnformatted("Mode");
             ImGui.PopStyleColor();
 
-            bool addonOk = plugin.AddonReader.Poll().Present;
-            string badgeText = addonOk ? "in match" : "idle";
-            var badgeTint = addonOk ? Theme.Accent : Theme.Muted;
-            float badgeW = ImGui.CalcTextSize(badgeText).X + 28;
-            Theme.RightAlign(badgeW, Theme.CardPadX);
-            Theme.Pill(badgeText, badgeTint, filled: false);
+            DrawHeaderIcons(cfg);
 
             var dl = ImGui.GetWindowDrawList();
             var p = ImGui.GetCursorScreenPos();
@@ -176,6 +125,49 @@ public sealed class MainWindow : Window, IDisposable
             if (ModePill("Auto-play", "Click for you", Theme.Accent, current == 2, size))
                 RequestMode(2, cfg);
         }
+    }
+
+    private void DrawHeaderIcons(Configuration cfg)
+    {
+        var bugLabel = FontAwesomeIcon.Bug.ToIconString();
+        var infoLabel = FontAwesomeIcon.InfoCircle.ToIconString();
+        var gearLabel = FontAwesomeIcon.Cog.ToIconString();
+
+        bool bugClicked = false, infoClicked, gearClicked;
+        // Tooltips render outside the icon-font scope — they would use icon glyphs otherwise.
+        int hovered = -1;
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            var framePadX = ImGui.GetStyle().FramePadding.X;
+            var spacingX = ImGui.GetStyle().ItemSpacing.X;
+            var btnW = ImGui.CalcTextSize(gearLabel).X + framePadX * 2;
+            int slots = cfg.DevMode ? 3 : 2;
+            float totalW = btnW * slots + spacingX * (slots - 1);
+            Theme.RightAlign(totalW, Theme.CardPadX);
+
+            if (cfg.DevMode)
+            {
+                bugClicked = ImGui.Button(bugLabel + "##debug");
+                if (ImGui.IsItemHovered()) hovered = 0;
+                ImGui.SameLine();
+            }
+            infoClicked = ImGui.Button(infoLabel + "##about");
+            if (ImGui.IsItemHovered()) hovered = 1;
+            ImGui.SameLine();
+            gearClicked = ImGui.Button(gearLabel + "##settings");
+            if (ImGui.IsItemHovered()) hovered = 2;
+        }
+
+        switch (hovered)
+        {
+            case 0: ImGui.SetTooltip("Developer console"); break;
+            case 1: ImGui.SetTooltip("About"); break;
+            case 2: ImGui.SetTooltip("Settings"); break;
+        }
+
+        if (bugClicked) plugin.ToggleDebugOverlay();
+        if (infoClicked) plugin.ToggleAboutWindow();
+        if (gearClicked) plugin.ToggleSettingsWindow();
     }
 
     private static bool ModePill(string title, string sub, Vector4 tint, bool selected, Vector2 size)
