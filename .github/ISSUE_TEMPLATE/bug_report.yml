@@ -42,6 +42,7 @@ body:
       label: Plugin version
       description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
       options:
+        - 0.1.1.1
         - 0.1.1.0
         - 0.1.0.12
         - 0.1.0.11
