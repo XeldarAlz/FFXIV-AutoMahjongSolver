@@ -3,32 +3,12 @@ using Dalamud.Configuration;
 
 namespace Mahjong.Plugin.Dalamud;
 
-/// <summary>
-/// Persisted plugin configuration. Immutable record — every change goes
-/// through <see cref="Mahjong.Plugin.Game.IConfigService{TConfig}.Update"/>,
-/// which produces a new instance via <c>with</c>, persists it through
-/// Dalamud, and atomically swaps the live reference. UI handlers and
-/// commands should never reach the underlying instance directly.
-///
-/// <para><see cref="Version"/> stays mutable because Dalamud's
-/// <see cref="IPluginConfiguration"/> interface declares it that way; the
-/// migration runner is the only legitimate writer (on load), so the rest
-/// of the plugin treats it as read-only.</para>
-/// </summary>
+/// <summary><see cref="Version"/> is mutable per the Dalamud interface; only the migration runner writes it.</summary>
 [Serializable]
 public sealed record Configuration : IPluginConfiguration
 {
-    /// <summary>
-    /// Schema version this code understands. Bump when fields are added,
-    /// removed, or change meaning, and add a matching <c>IConfigMigrator</c>
-    /// step.
-    /// </summary>
     public const int CurrentSchemaVersion = 2;
 
-    /// <summary>
-    /// Persisted schema version. Mutable per <see cref="IPluginConfiguration"/>
-    /// contract; only the migration runner should write to it.
-    /// </summary>
     public int Version { get; set; } = CurrentSchemaVersion;
 
     public bool AutomationArmed { get; init; } = false;
@@ -37,44 +17,60 @@ public sealed record Configuration : IPluginConfiguration
 
     public bool TosAccepted { get; init; } = false;
 
-    /// <summary>
-    /// When true, the MainWindow exposes a "Developer tools" section that opens
-    /// the debug overlay (live state, dispatch tests, memory dumps). End-user
-    /// builds leave this false.
-    /// </summary>
     public bool DevMode { get; init; } = false;
 
-    /// <summary>Target median delay (ms) between auto-play actions.</summary>
+    /// <summary>Median delay (ms) between auto-play actions.</summary>
     public int HumanizedDelayMs { get; init; } = 1200;
 
-    /// <summary>
-    /// Draw a colored box + arrow on the recommended discard tile directly in the
-    /// Doman Mahjong game UI. Intended as the primary cue in "Suggestions" mode so
-    /// users don't have to parse shanten/ukeire numbers.
-    /// </summary>
     public bool ShowInGameHighlight { get; init; } = true;
 
-    /// <summary>
-    /// When true, the main window shows the shanten / ukeire / score table under the
-    /// headline pick. Defaults off — most users just want the "discard X" cue.
-    /// </summary>
+    public HighlightStyle HighlightStyle { get; init; } = HighlightStyle.NeonGlow;
+
+    /// <summary>RGB color for hand-discard picks. Defaults to Theme.Accent.</summary>
+    public RgbColor HighlightColorDiscard { get; init; } = RgbColor.Defaults.Discard;
+
+    /// <summary>RGB color for tsumogiri (drawn-tile) picks. Defaults to Theme.Warn.</summary>
+    public RgbColor HighlightColorTsumogiri { get; init; } = RgbColor.Defaults.Tsumogiri;
+
+    /// <summary>Multiplier on overlay pulse alpha. 1.0 is default; 0.5 dims, 1.5 boosts.</summary>
+    public float HighlightIntensity { get; init; } = 1.0f;
+
     public bool ShowSuggestionDetails { get; init; } = false;
 
-    /// <summary>
-    /// Write per-hand NDJSON game logs under <c>pluginConfigs/Mahjong.Plugin.Dalamud/games/</c>.
-    /// Feeds the Doman-specific training corpus for later supervised policy learning.
-    /// On by default during development; opt-out for end-user builds that want to
-    /// skip the disk writes.
-    /// </summary>
+    /// <summary>Sticky once the user accepts the first-arming auto-play warning.</summary>
+    public bool AutoPlayConfirmed { get; init; } = false;
+
     public bool EnableGameLogging { get; init; } = true;
 
     /// <summary>
-    /// Stable, anonymous identifier for this install. Generated once on first
-    /// migration to v2 and never changes for the life of the plugin config.
-    /// Sent as <c>X-Install-Id</c> on every telemetry upload so the server can
-    /// dedupe and rate-limit per install without ever seeing a character or
-    /// Content ID. <see cref="Guid.Empty"/> means "not yet minted" — the
-    /// uploader treats that as a fatal init error and skips the upload.
+    /// Stable anonymous install identifier sent as <c>X-Install-Id</c>. <see cref="Guid.Empty"/>
+    /// = not yet minted; the uploader treats that as a fatal init error.
     /// </summary>
     public Guid InstallId { get; init; } = Guid.Empty;
+}
+
+/// <summary>Visual treatment for the in-game best-tile overlay.</summary>
+public enum HighlightStyle
+{
+    NeonGlow = 0,
+    Spotlight = 1,
+    Arrow = 2,
+}
+
+/// <summary>Init-only property record (not positional) so Newtonsoft.Json round-trips it cleanly.</summary>
+public sealed record RgbColor
+{
+    public float R { get; init; }
+    public float G { get; init; }
+    public float B { get; init; }
+
+    public System.Numerics.Vector3 ToVector3() => new(R, G, B);
+
+    public static RgbColor From(System.Numerics.Vector3 v) => new() { R = v.X, G = v.Y, B = v.Z };
+
+    public static class Defaults
+    {
+        public static readonly RgbColor Discard = new() { R = 0.28f, G = 0.82f, B = 0.62f };
+        public static readonly RgbColor Tsumogiri = new() { R = 0.98f, G = 0.80f, B = 0.30f };
+    }
 }

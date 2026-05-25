@@ -6,32 +6,23 @@ using Mahjong.Engine;
 
 namespace Mahjong.Plugin.Dalamud.UI;
 
-/// <summary>
-/// Shared styling primitives for MainWindow + DebugOverlay.
-/// Palette, surface cards, suit-colored tile rendering, pills, section headers.
-/// All helpers push/pop balanced state — safe for nesting within a single window.
-/// </summary>
 internal static class Theme
 {
-    // ---- Text / chrome ---------------------------------------------------
     public static readonly Vector4 Header = new(0.97f, 0.97f, 1.00f, 1f);
     public static readonly Vector4 Body = new(0.86f, 0.88f, 0.92f, 1f);
     public static readonly Vector4 Muted = new(0.62f, 0.62f, 0.66f, 1f);
     public static readonly Vector4 Faint = new(0.45f, 0.45f, 0.48f, 1f);
 
-    // ---- Semantic --------------------------------------------------------
     public static readonly Vector4 Accent = new(0.28f, 0.82f, 0.62f, 1f);
     public static readonly Vector4 Warn = new(0.98f, 0.80f, 0.30f, 1f);
     public static readonly Vector4 Danger = new(1.00f, 0.45f, 0.35f, 1f);
     public static readonly Vector4 Info = new(0.48f, 0.72f, 0.98f, 1f);
 
-    // ---- Surfaces --------------------------------------------------------
     public static readonly Vector4 Surface = new(0.10f, 0.11f, 0.13f, 0.90f);
     public static readonly Vector4 SurfaceAlt = new(0.13f, 0.14f, 0.16f, 0.90f);
     public static readonly Vector4 Divider = new(1f, 1f, 1f, 0.06f);
     public static readonly Vector4 Border = new(1f, 1f, 1f, 0.08f);
 
-    // ---- Tile face palette (mahjong-inspired ivory) ----------------------
     public static readonly Vector4 TileFace = new(0.95f, 0.92f, 0.84f, 1f);
     public static readonly Vector4 TileBorder = new(0.17f, 0.16f, 0.14f, 1f);
     public static readonly Vector4 TileShadow = new(0.00f, 0.00f, 0.00f, 0.35f);
@@ -49,7 +40,6 @@ internal static class Theme
         _ => HonorInk,
     };
 
-    // ---- Color packing ---------------------------------------------------
     public static uint Pack(Vector4 c)
     {
         uint r = (uint)(Math.Clamp(c.X, 0f, 1f) * 255f);
@@ -65,7 +55,6 @@ internal static class Theme
     public static Vector4 Fade(Vector4 c, float alpha)
         => new(c.X, c.Y, c.Z, alpha);
 
-    /// <summary>Sine-based attention pulse in [lo, hi]. Period in seconds.</summary>
     public static float Pulse(float period = 1.4f, float lo = 0.55f, float hi = 1.0f)
     {
         float t = (float)((DateTime.UtcNow.TimeOfDay.TotalSeconds % period) / period);
@@ -73,11 +62,7 @@ internal static class Theme
         return lo + (hi - lo) * s;
     }
 
-    // ---- Window-scope style (RAII) ---------------------------------------
-    /// <summary>
-    /// Push a consistent base style for both windows. Always pair with
-    /// <c>using var _s = Theme.PushWindowStyle();</c> at the top of Draw().
-    /// </summary>
+    /// <summary>Pair with `using var _s = Theme.PushWindowStyle();` at the top of Draw().</summary>
     public static StyleScope PushWindowStyle()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14, 12));
@@ -104,15 +89,10 @@ internal static class Theme
         }
     }
 
-    // ---- Card (surface panel via drawlist channel-split) -----------------
     public const float CardPadX = 12f;
     public const float CardPadY = 10f;
 
-    /// <summary>
-    /// Open a surface card that auto-fits its content. Uses drawlist
-    /// channel-split so the background paints behind content drawn inside
-    /// the <c>using</c> block, without needing a fixed height.
-    /// </summary>
+    /// <summary>Drawlist channel-split lets the background paint behind content without a fixed height.</summary>
     public static Card BeginCard(string id, bool alt = false)
         => new(new Vector2(CardPadX, CardPadY), alt ? SurfaceAlt : Surface, Border);
 
@@ -135,11 +115,7 @@ internal static class Theme
             dl.ChannelsSetCurrent(1);
             start = ImGui.GetCursorScreenPos();
             width = ImGui.GetContentRegionAvail().X;
-            // PushTextWrapPos takes a WINDOW-LOCAL X (ImGui internally adds
-            // window.Pos.x when wrap_pos_x > 0). GetCursorPosX is already
-            // window-local; using start.X (screen coord) here would push the
-            // wrap point ~window.Pos.x pixels too far right and the long
-            // TextWrapped lines wouldn't wrap inside the card.
+            // PushTextWrapPos expects a window-local X (ImGui adds window.Pos.x); using start.X (screen) would push the wrap right by window.Pos.x.
             float startLocalX = ImGui.GetCursorPosX();
             ImGui.Dummy(new Vector2(0, pad.Y));
             ImGui.Indent(pad.X);
@@ -161,7 +137,6 @@ internal static class Theme
         }
     }
 
-    // ---- Section header (accent text + thin rule) ------------------------
     public static void SectionHeader(string text)
     {
         ImGui.PushStyleColor(ImGuiCol.Text, Header);
@@ -188,7 +163,6 @@ internal static class Theme
         ImGui.PopStyleColor();
     }
 
-    // ---- Rounded pill with centered label --------------------------------
     public static void Pill(string label, Vector4 tint, bool filled)
     {
         const float padX = 14f;
@@ -208,12 +182,7 @@ internal static class Theme
         ImGui.Dummy(size);
     }
 
-    /// <summary>
-    /// Right-align the next item on the current line by shifting the cursor.
-    /// Inside a Card the right padding isn't reflected by ImGui's content region
-    /// (only <c>Indent</c> for the left is), so callers must pass the same right
-    /// inset (e.g. <see cref="CardPadX"/>) they want as visual margin.
-    /// </summary>
+    /// <summary>Inside a Card, ImGui's content region doesn't include right padding — pass it via rightMargin.</summary>
     public static void RightAlign(float itemWidth, float rightMargin = 0f)
     {
         ImGui.SameLine();
@@ -222,7 +191,6 @@ internal static class Theme
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + target);
     }
 
-    // ---- Tile rendering --------------------------------------------------
     public const float TileW = 26f;
     public const float TileH = 36f;
     public const float TileGap = 3f;
@@ -232,18 +200,42 @@ internal static class Theme
     public const float SmallTileW = 22f;
     public const float SmallTileH = 30f;
 
+    public static string TileFriendlyName(Tile tile)
+    {
+        string code = tile.ShortName;
+        string name = tile.Suit switch
+        {
+            TileSuit.Man => $"{tile.Number} Character",
+            TileSuit.Pin => $"{tile.Number} Dot",
+            TileSuit.Sou => $"{tile.Number} Bamboo",
+            TileSuit.Honor => tile.HonorNumber switch
+            {
+                1 => "East Wind",
+                2 => "South Wind",
+                3 => "West Wind",
+                4 => "North Wind",
+                5 => "White Dragon",
+                6 => "Green Dragon",
+                7 => "Red Dragon",
+                _ => code,
+            },
+            _ => code,
+        };
+        return $"{name}  ({code})";
+    }
+
     private static string TileNumberGlyph(Tile t) => t.Suit switch
     {
         TileSuit.Man or TileSuit.Pin or TileSuit.Sou => t.Number.ToString(),
         TileSuit.Honor => t.HonorNumber switch
         {
-            1 => "東", // East
-            2 => "南", // South
-            3 => "西", // West
-            4 => "北", // North
-            5 => "白", // Haku (White Dragon)
-            6 => "發", // Hatsu (Green Dragon)
-            7 => "中", // Chun (Red Dragon)
+            1 => "東",
+            2 => "南",
+            3 => "西",
+            4 => "北",
+            5 => "白",
+            6 => "發",
+            7 => "中",
             _ => "?",
         },
         _ => "?",
@@ -257,11 +249,6 @@ internal static class Theme
         _ => "",
     };
 
-    /// <summary>
-    /// Draw a single tile at the current cursor position and reserve its footprint.
-    /// <paramref name="emphasize"/> &gt; 0 paints an accent outline around the tile
-    /// (used for the best-move highlight and pulsed picks).
-    /// </summary>
     public static void DrawTile(Tile tile, Vector2 size, float emphasize = 0f)
     {
         var dl = ImGui.GetWindowDrawList();
@@ -302,12 +289,10 @@ internal static class Theme
         }
 
         ImGui.Dummy(size);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(TileFriendlyName(tile));
     }
 
-    /// <summary>
-    /// Draw a row of tiles with a small gap between tiles of the same suit
-    /// and a larger gap between suit groups.
-    /// </summary>
     public static void DrawHand(IReadOnlyList<Tile> hand, int highlightSlot = -1)
     {
         if (hand.Count == 0)

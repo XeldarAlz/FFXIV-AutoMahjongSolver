@@ -11,37 +11,23 @@ using Mahjong.Policy;
 
 namespace Mahjong.Plugin.Dalamud.UI;
 
-/// <summary>
-/// Draws a colored box + arrow on the recommended discard tile directly on top of
-/// the <c>Emj</c> game addon. Uses <see cref="ImGui.GetForegroundDrawList()"/> so
-/// it renders above every other ImGui surface without needing a dedicated window
-/// or input passthrough handling.
-///
-/// The hand-tile nodes aren't reverse-engineered yet, so we locate them by
-/// geometry: walk the addon's node list, keep the visible nodes whose rectangles
-/// are tile-shaped, cluster them by Y, and take the 14 that form the closest
-/// horizontal row. If that cluster can't be found (fewer than 14 matches, or the
-/// Y-spread is too wide) we skip drawing this frame — the MainWindow text is the
-/// fallback cue.
-/// </summary>
+/// <summary>Locates hand tiles by geometry — walk visible nodes, cluster by Y, take the tightest horizontal row of expected length.</summary>
 public sealed class HandOverlay : IDisposable
 {
-    // Tile geometry bounds (unit-local pixels, before the addon's Scale).
-    // Doman tiles are roughly square-ish, closer to 50×70. Generous bounds so
-    // users with tweaked UI scales still get a match.
     private const float MinTileWidth = 28f;
     private const float MaxTileWidth = 120f;
     private const float MinTileHeight = 45f;
     private const float MaxTileHeight = 160f;
 
-    // Max Y-spread (in addon-local pixels) across the 14 tiles we accept as a row.
-    // Doman's hand-tile row has all tiles at the same Y within a pixel or two.
     private const float MaxRowYSpread = 12f;
 
     private readonly Plugin plugin;
     private readonly IDalamudPluginInterface pluginInterface;
     private readonly MahjongAddon addon;
     private bool disposed;
+
+    /// <summary>Dev console toggle: outline every detected tile rect, not just the picked slot.</summary>
+    public bool DebugDrawAllRects { get; set; }
 
     public HandOverlay(Plugin plugin, IDalamudPluginInterface pluginInterface, MahjongAddon addon)
     {
@@ -65,11 +51,8 @@ public sealed class HandOverlay : IDisposable
     private unsafe void Draw()
     {
         var cfg = plugin.Configuration;
-        if (!cfg.TosAccepted || !cfg.ShowInGameHighlight)
-            return;
-        // Only draw when the plugin is actively advising — i.e. Suggestions mode.
-        // Auto-play mode doesn't need a visual cue since the plugin clicks for you.
-        if (!cfg.AutomationArmed || !cfg.SuggestionOnly)
+        bool prodEnabled = cfg.TosAccepted && cfg.ShowInGameHighlight && cfg.AutomationArmed && cfg.SuggestionOnly;
+        if (!DebugDrawAllRects && !prodEnabled)
             return;
 
         if (!addon.TryGet(out var unit, out _))
@@ -77,12 +60,28 @@ public sealed class HandOverlay : IDisposable
         if (!unit->IsVisible)
             return;
 
+        var viewportOffset = ImGui.GetMainViewport().Pos;
+        var candidates = CollectTileCandidates(unit);
+
+        if (DebugDrawAllRects)
+        {
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var r = candidates[i];
+                r.Pos += viewportOffset;
+                DrawDebugOutline(r, i);
+            }
+        }
+
+        if (!prodEnabled)
+            return;
+
         var snap = plugin.AddonReader.TryBuildSnapshot();
-        // Need at least a few tiles to talk about a hand. We no longer require
-        // exactly 14 — after calls (chi/pon/kan) the hand row is shorter because
-        // some tiles live in the meld area. As long as the policy gives us a
-        // discard target and the tile is actually in the hand row, highlight it.
         if (snap is null || snap.Hand.Count < 2)
+            return;
+
+        var rects = PickHandRowFromCandidates(candidates, snap.Hand.Count);
+        if (rects is null)
             return;
 
         ActionChoice choice;
@@ -93,44 +92,60 @@ public sealed class HandOverlay : IDisposable
         if (choice.DiscardTile is null)
             return;
         int slot = InputDispatcher.FindSlotOfTile(choice.DiscardTile.Value, snap.Hand);
-        if (slot < 0 || slot >= snap.Hand.Count)
+        if (slot < 0 || slot >= rects.Count)
             return;
 
-        var rects = TryFindHandTileRects(unit, snap.Hand.Count);
-        if (rects is null || slot >= rects.Count)
-            return;
-
-        // Keep the viewport offset defensively — in single-viewport mode Pos is
-        // (0, 0) so this is a no-op, in multi-viewport mode it's the desktop
-        // offset of the game window.
-        var viewportOffset = ImGui.GetMainViewport().Pos;
         var rect = rects[slot];
         rect.Pos += viewportOffset;
-        // Slot N-1 is conventionally the last-drawn tile (often slightly offset
-        // from the main row). Tag it amber so tsumogiri reads distinctly.
         bool isDrawnTile = slot == snap.Hand.Count - 1;
-        DrawHighlight(rect, isDrawnTile);
+
+        var color = (isDrawnTile ? cfg.HighlightColorTsumogiri : cfg.HighlightColorDiscard).ToVector3();
+        float intensity = Math.Clamp(cfg.HighlightIntensity, 0.4f, 1.6f);
+        var dl = ImGui.GetForegroundDrawList();
+
+        // Spotlight needs ALL rects in screen space — offset them once here so the draw method stays caller-agnostic.
+        if (cfg.HighlightStyle == HighlightStyle.Spotlight)
+        {
+            var screenRects = new List<(Vector2 Pos, Vector2 Size)>(rects.Count);
+            for (int i = 0; i < rects.Count; i++)
+                screenRects.Add((rects[i].Pos + viewportOffset, rects[i].Size));
+            DrawHighlightSpotlight(dl, screenRects, slot, color, intensity);
+            return;
+        }
+
+        switch (cfg.HighlightStyle)
+        {
+            case HighlightStyle.Arrow:
+                DrawHighlightArrow(dl, rect, color, intensity, isDrawnTile);
+                break;
+            default:
+                DrawHighlightNeonGlow(dl, rect, color, intensity);
+                break;
+        }
     }
 
-    private static unsafe List<(Vector2 Pos, Vector2 Size)>? TryFindHandTileRects(AtkUnitBase* unit, int expected)
+    private static void DrawDebugOutline((Vector2 Pos, Vector2 Size) rect, int index)
     {
+        var dl = ImGui.GetForegroundDrawList();
+        var min = rect.Pos - new Vector2(1, 1);
+        var max = rect.Pos + rect.Size + new Vector2(1, 1);
+        dl.AddRect(min, max, Theme.Pack(Theme.Info, 0.8f), 2f, ImDrawFlags.None, 1.5f);
+        dl.AddText(new Vector2(min.X + 2, min.Y + 1), Theme.Pack(Theme.Info), index.ToString());
+    }
+
+    /// <summary>Every visible node whose dimensions fit a tile, in NodeList iteration order; no row-finding heuristic applied.</summary>
+    private static unsafe List<(Vector2 Pos, Vector2 Size)> CollectTileCandidates(AtkUnitBase* unit)
+    {
+        // Parent-chain walk already includes root position and scale — do NOT add unit->X/Y or multiply by unit->Scale on top.
+        var result = new List<(Vector2 Pos, Vector2 Size)>(32);
         var uld = unit->UldManager;
         if (uld.NodeList == null || uld.NodeListCount <= 0)
-            return null;
-
-        // Walk tile-shaped visible nodes and stamp each with its absolute rect.
-        // The parent-chain walk already incorporates the root node's position
-        // and all scale factors — so we do NOT add unit->X/Y or multiply by
-        // unit->Scale again here. Doing so caused a double-count when the addon
-        // was dragged away from the top-left of the game window.
-        var tiles = new List<(float Y, Vector2 Pos, Vector2 Size)>(32);
+            return result;
 
         for (int i = 0; i < uld.NodeListCount; i++)
         {
             var n = uld.NodeList[i];
-            if (n == null)
-                continue;
-            if (!n->IsVisible())
+            if (n == null || !n->IsVisible())
                 continue;
 
             float w = n->Width;
@@ -140,26 +155,28 @@ public sealed class HandOverlay : IDisposable
             if (h < MinTileHeight || h > MaxTileHeight)
                 continue;
             if (w > h)
-                continue; // tiles are taller than wide
+                continue;
 
             AbsolutePosition(n, out float nx, out float ny, out float sx, out float sy);
-
-            tiles.Add((ny,
-                new Vector2(nx, ny),
-                new Vector2(w * sx, h * sy)));
+            result.Add((new Vector2(nx, ny), new Vector2(w * sx, h * sy)));
         }
 
-        if (tiles.Count < expected)
+        return result;
+    }
+
+    /// <summary>From the candidate pool, take the tightest Y-cluster of <paramref name="expected"/> tiles, then sort left-to-right.</summary>
+    private static List<(Vector2 Pos, Vector2 Size)>? PickHandRowFromCandidates(List<(Vector2 Pos, Vector2 Size)> candidates, int expected)
+    {
+        if (candidates.Count < expected)
             return null;
 
-        // Cluster by Y: find the tightest horizontal row of `expected` tiles.
-        tiles.Sort((a, b) => a.Y.CompareTo(b.Y));
+        candidates.Sort((a, b) => a.Pos.Y.CompareTo(b.Pos.Y));
 
         int bestStart = -1;
         float bestSpan = float.MaxValue;
-        for (int i = 0; i + expected <= tiles.Count; i++)
+        for (int i = 0; i + expected <= candidates.Count; i++)
         {
-            float span = tiles[i + expected - 1].Y - tiles[i].Y;
+            float span = candidates[i + expected - 1].Pos.Y - candidates[i].Pos.Y;
             if (span < bestSpan)
             {
                 bestSpan = span;
@@ -172,20 +189,12 @@ public sealed class HandOverlay : IDisposable
 
         var selected = new List<(Vector2 Pos, Vector2 Size)>(expected);
         for (int i = bestStart; i < bestStart + expected; i++)
-            selected.Add((tiles[i].Pos, tiles[i].Size));
+            selected.Add(candidates[i]);
         selected.Sort((a, b) => a.Pos.X.CompareTo(b.Pos.X));
         return selected;
     }
 
-    /// <summary>
-    /// Walk the parent chain and return the node's absolute position + accumulated
-    /// scale, expressed in the same coordinate space that <see cref="ImGui.GetForegroundDrawList()"/>
-    /// expects (game-window-local, before the multi-viewport desktop offset).
-    /// The recurrence mirrors the standard Dalamud overlay pattern: at each step,
-    /// scale the child's running offset by the parent's scale, then add the parent's
-    /// own translation. After the walk the result already includes the root node's
-    /// position — <em>do not</em> add <c>unit-&gt;X</c> again on top.
-    /// </summary>
+    /// <summary>Walks parent chain — result is game-window-local (before multi-viewport desktop offset) and already includes root node position.</summary>
     private static unsafe void AbsolutePosition(AtkResNode* node, out float x, out float y, out float scaleX, out float scaleY)
     {
         x = 0;
@@ -203,40 +212,187 @@ public sealed class HandOverlay : IDisposable
         }
     }
 
-    private void DrawHighlight((Vector2 Pos, Vector2 Size) rect, bool isDrawnTile)
+    /// <summary>Sine-eased pulse with a higher floor than Theme.Pulse so the overlay never fades to faint.</summary>
+    private static float OverlayPulse(float period = 1.4f, float lo = 0.78f, float hi = 1.0f)
     {
-        // Pulse the highlight so it's noticeable against a busy board. Period ~1.4s.
-        float t = (float)((DateTime.UtcNow.TimeOfDay.TotalSeconds % 1.4) / 1.4);
-        float pulse = 0.6f + 0.4f * MathF.Sin(t * MathF.PI * 2f);
+        float t = (float)((DateTime.UtcNow.TimeOfDay.TotalSeconds % period) / period);
+        float s = 0.5f + 0.5f * MathF.Sin(t * MathF.PI * 2f);
+        return lo + (hi - lo) * s;
+    }
 
-        // Theme.Accent for a normal hand discard, Theme.Warn for the just-drawn
-        // tile (slot N-1) so the user immediately sees "tsumogiri" vs. "discard
-        // from hand." Same palette as the plugin window surfaces.
-        var baseColor = isDrawnTile ? Theme.Warn : Theme.Accent;
+    private static float ArrowBounce(float period = 0.9f, float amplitude = 5f)
+    {
+        float t = (float)((DateTime.UtcNow.TimeOfDay.TotalSeconds % period) / period);
+        return amplitude * (0.5f + 0.5f * MathF.Sin(t * MathF.PI * 2f));
+    }
 
-        uint edge = Theme.Pack(baseColor, pulse);
-        uint fill = Theme.Pack(baseColor, pulse * 0.22f);
+    private static uint Pack(Vector3 rgb, float alpha)
+        => Theme.Pack(new Vector4(rgb.X, rgb.Y, rgb.Z, Math.Clamp(alpha, 0f, 1f)));
 
-        var dl = ImGui.GetForegroundDrawList();
-        var min = rect.Pos;
-        var max = rect.Pos + rect.Size;
+    internal static void DrawHighlightNeonGlow(ImDrawListPtr dl, (Vector2 Pos, Vector2 Size) rect, Vector3 color, float intensity)
+    {
+        float pulse = OverlayPulse() * intensity;
 
-        // Slight outset so the border hugs the tile edge rather than cutting into it.
-        min -= new Vector2(2, 2);
-        max += new Vector2(2, 2);
+        var min = rect.Pos - new Vector2(2, 2);
+        var max = rect.Pos + rect.Size + new Vector2(2, 2);
 
-        dl.AddRectFilled(min, max, fill, 6f);
-        dl.AddRect(min, max, edge, 6f, ImDrawFlags.None, 3f);
+        // Multi-ring outer glow: 4 expanding rings with decreasing alpha.
+        for (int i = 4; i >= 1; i--)
+        {
+            float expand = i * 2.5f;
+            float alpha = pulse * (0.42f / i);
+            dl.AddRect(
+                min - new Vector2(expand, expand),
+                max + new Vector2(expand, expand),
+                Pack(color, alpha),
+                6f + expand, ImDrawFlags.None, 2f);
+        }
 
-        // Downward-pointing arrow above the tile.
+        // Subtle inner fill so the tile reads as "active".
+        dl.AddRectFilled(min, max, Pack(color, pulse * 0.18f), 6f);
+
+        // Solid bright inner border.
+        dl.AddRect(min, max, Pack(color, pulse), 6f, ImDrawFlags.None, 2.5f);
+
+        // L-shaped corner brackets that pulse inward with the beat.
+        float bracketLen = 10f + 2f * pulse;
+        float bracketOff = 4f;
+        float thick = 2.5f;
+        uint bracket = Pack(color, pulse + 0.05f);
+        DrawCornerBracket(dl, new Vector2(min.X - bracketOff, min.Y - bracketOff), bracketLen, +1, +1, thick, bracket);
+        DrawCornerBracket(dl, new Vector2(max.X + bracketOff, min.Y - bracketOff), bracketLen, -1, +1, thick, bracket);
+        DrawCornerBracket(dl, new Vector2(min.X - bracketOff, max.Y + bracketOff), bracketLen, +1, -1, thick, bracket);
+        DrawCornerBracket(dl, new Vector2(max.X + bracketOff, max.Y + bracketOff), bracketLen, -1, -1, thick, bracket);
+
+        // Bouncing arrow above the tile.
         float cx = (min.X + max.X) * 0.5f;
-        float tipY = min.Y - 4f;
+        float bounce = ArrowBounce();
+        float tipY = min.Y - 8f - bounce;
+        float baseY = tipY - 18f;
+        uint arrowFill = Pack(color, pulse);
+        uint arrowShadow = Theme.Pack(Theme.TileShadow, 0.6f);
+        dl.AddTriangleFilled(
+            new Vector2(cx - 13f, baseY + 2f),
+            new Vector2(cx + 13f, baseY + 2f),
+            new Vector2(cx, tipY + 2f),
+            arrowShadow);
+        dl.AddTriangleFilled(
+            new Vector2(cx - 13f, baseY),
+            new Vector2(cx + 13f, baseY),
+            new Vector2(cx, tipY),
+            arrowFill);
+    }
+
+    private static void DrawCornerBracket(ImDrawListPtr dl, Vector2 origin, float length, int dirX, int dirY, float thickness, uint color)
+    {
+        var hEnd = new Vector2(origin.X + length * dirX, origin.Y);
+        var vEnd = new Vector2(origin.X, origin.Y + length * dirY);
+        dl.AddLine(origin, hEnd, color, thickness);
+        dl.AddLine(origin, vEnd, color, thickness);
+    }
+
+    /// <summary>Caller pre-translates rects to screen space; this method does not add a viewport offset.</summary>
+    internal static void DrawHighlightSpotlight(
+        ImDrawListPtr dl,
+        List<(Vector2 Pos, Vector2 Size)> rects,
+        int slot,
+        Vector3 color,
+        float intensity)
+    {
+        float pulse = OverlayPulse(1.2f, 0.85f, 1.0f) * intensity;
+
+        // Dim every tile except the pick. Dim alpha tracks intensity too — lower intensity = lighter dim.
+        float dimAlpha = MathF.Min(0.75f, 0.55f * intensity);
+        uint dim = Theme.Pack(new Vector4(0f, 0f, 0f, dimAlpha));
+        for (int i = 0; i < rects.Count; i++)
+        {
+            if (i == slot)
+                continue;
+            var r = rects[i];
+            dl.AddRectFilled(r.Pos - new Vector2(2, 2), r.Pos + r.Size + new Vector2(2, 2), dim, 4f);
+        }
+
+        // Spotlight ring around the pick.
+        var pickRect = rects[slot];
+        var pmin = pickRect.Pos - new Vector2(3, 3);
+        var pmax = pickRect.Pos + pickRect.Size + new Vector2(3, 3);
+
+        // Soft outward halo so the pick visually "lifts" off the table.
+        for (int i = 3; i >= 1; i--)
+        {
+            float expand = i * 3f;
+            float alpha = pulse * (0.30f / i);
+            dl.AddRectFilled(
+                pmin - new Vector2(expand, expand),
+                pmax + new Vector2(expand, expand),
+                Pack(color, alpha),
+                6f + expand);
+        }
+
+        dl.AddRect(pmin, pmax, Pack(color, pulse), 6f, ImDrawFlags.None, 3.5f);
+
+        // Small bouncing arrow above so you can spot the pick at a glance.
+        float cx = (pmin.X + pmax.X) * 0.5f;
+        float bounce = ArrowBounce(1.0f, 4f);
+        float tipY = pmin.Y - 6f - bounce;
         float baseY = tipY - 14f;
         dl.AddTriangleFilled(
             new Vector2(cx - 10f, baseY),
             new Vector2(cx + 10f, baseY),
             new Vector2(cx, tipY),
-            edge);
+            Pack(color, pulse));
+    }
+
+    internal static void DrawHighlightArrow(ImDrawListPtr dl, (Vector2 Pos, Vector2 Size) rect, Vector3 color, float intensity, bool isDrawnTile)
+    {
+        float pulse = OverlayPulse(1.1f, 0.82f, 1.0f) * intensity;
+
+        var min = rect.Pos - new Vector2(2, 2);
+        var max = rect.Pos + rect.Size + new Vector2(2, 2);
+
+        // Minimal tile treatment: thin outline so the user still sees which tile, but the art isn't covered.
+        dl.AddRect(min, max, Pack(color, pulse * 0.9f), 6f, ImDrawFlags.None, 2f);
+
+        // Big bouncing arrow with a label pill above the tile.
+        string label = isDrawnTile ? "TSUMOGIRI" : "DISCARD";
+        var textSize = ImGui.CalcTextSize(label);
+
+        float cx = (min.X + max.X) * 0.5f;
+        float bounce = ArrowBounce(0.85f, 6f);
+
+        // Arrow geometry (large, filled triangle).
+        float arrowHalfWidth = 18f;
+        float arrowHeight = 22f;
+        float tipY = min.Y - 8f - bounce;
+        float arrowTopY = tipY - arrowHeight;
+
+        // Label pill sits above the arrow.
+        float pillPadX = 10f;
+        float pillPadY = 4f;
+        float pillW = textSize.X + pillPadX * 2f;
+        float pillH = textSize.Y + pillPadY * 2f;
+        var pillMin = new Vector2(cx - pillW * 0.5f, arrowTopY - pillH - 2f);
+        var pillMax = pillMin + new Vector2(pillW, pillH);
+
+        // Shadow drop.
+        uint shadow = Theme.Pack(Theme.TileShadow, 0.7f);
+        dl.AddRectFilled(pillMin + new Vector2(1, 2), pillMax + new Vector2(1, 2), shadow, pillH * 0.5f);
+        dl.AddTriangleFilled(
+            new Vector2(cx - arrowHalfWidth + 1, arrowTopY + 2),
+            new Vector2(cx + arrowHalfWidth + 1, arrowTopY + 2),
+            new Vector2(cx + 1, tipY + 2),
+            shadow);
+
+        // Filled pill.
+        dl.AddRectFilled(pillMin, pillMax, Pack(color, pulse), pillH * 0.5f);
+        dl.AddText(pillMin + new Vector2(pillPadX, pillPadY), Theme.Pack(new Vector4(0.07f, 0.08f, 0.10f, 1f)), label);
+
+        // Filled arrow.
+        dl.AddTriangleFilled(
+            new Vector2(cx - arrowHalfWidth, arrowTopY),
+            new Vector2(cx + arrowHalfWidth, arrowTopY),
+            new Vector2(cx, tipY),
+            Pack(color, pulse));
     }
 
 }
