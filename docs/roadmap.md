@@ -34,7 +34,6 @@ The end goal is full intelligent automation across **all clients** (EU, NA, JP, 
 
 - Plugin-layer replay-harness fixture corpus: every captured `FireCallback` frame becomes a replayable scenario in CI ([#38](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/38))
 - JP / OC client verification (variant dumps + capture logs needed)
-- Multi-chi variant selection: currently always picks the leftmost button
 - Opponent open-meld struct decode from `agent_b64` for the opponent danger model
 - Per-discard tedashi vs. tsumogiri bit (currently all opp discards are treated as tedashi)
 - Tuner re-run against novice-table corpus once collected: current weights are Tenhou-trained against expert opponents
