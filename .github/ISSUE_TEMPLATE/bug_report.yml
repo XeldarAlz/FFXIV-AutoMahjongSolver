@@ -8,6 +8,12 @@ body:
       value: |
         Thanks for taking the time to file a bug. Please fill out as much as you can — it makes a huge difference.
 
+        **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/mjauto` → click the bug icon → **Bug report** tab. It produces every attachment this template asks for (Snap, Autosnap, Capture, Variant dump) and has an *Open plugin config dir* button so you can drag the files straight into this issue.
+
+        If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/new?category=help-troubleshooting) — triage is faster there.
+
+        For security issues, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/security/advisories/new) instead.
+
   - type: textarea
     id: what-happened
     attributes:
@@ -33,8 +39,28 @@ body:
     id: plugin-version
     attributes:
       label: Plugin version
-      description: Shown in /xlplugins next to "Doman Mahjong Solver".
-      placeholder: "v0.0.0.4"
+      description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
+      placeholder: "v0.1.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version (optional)
+      description: Patch number if you know it (e.g. 7.21). Helps me match the report to a binary.
+
+  - type: dropdown
+    id: region
+    attributes:
+      label: Region / client
+      description: Which client were you on? Client variant is a frequent root cause.
+      options:
+        - EU
+        - NA
+        - JP
+        - OC
+        - Not sure
     validations:
       required: true
 
@@ -47,20 +73,43 @@ body:
         - Hints
         - Auto-play
         - Off
+        - Switching modes when it happened
         - Not applicable
     validations:
       required: true
 
   - type: textarea
+    id: attachments
+    attributes:
+      label: Attachments
+      description: |
+        Drag and drop files into this box — GitHub will attach them and replace the drop with a link. Files live in `pluginConfigs/Mahjong.Plugin.Dalamud/` (open it from the dev console's **Bug report** → *Open plugin config dir* button). Attach whichever apply:
+
+        - `snap-<label>-<ts>.txt` — one-shot dump (dev console → **Snap**, or `/mjauto snap <label>`)
+        - `snap-auto-NNN-<ts>.txt` — continuous dump for intermittent bugs (**Autosnap**, or `/mjauto autosnap on`)
+        - `emj-captures.log` / `emjl-captures.log` (NA) — single-click capture for stuck popups (**Capture**, or `/mjauto capture <label>`)
+        - `emj-events.log` — every UI callback the addon received (**Diagnostics** → *Event logger*, or `/mjauto log on`)
+        - `emj-discards.log` — discard-hook log (always on while in a match)
+        - `emj-variant-dump.txt` — only if the bug looks like a new-client / post-patch read failure (**Variant dump**)
+        - `findings-YYYYMMDD.ndjson` — opt-in telemetry findings if you have logging enabled
+
+  - type: textarea
     id: logs
     attributes:
-      label: Logs / error text
+      label: Inline log excerpt (optional)
       description: |
-        If Dalamud showed an error, paste it here. If you were running with `/mjauto log on`, attach the log.
-      render: shell
+        Short snippets (chat-log tail, Dalamud error text, the last few `schedState` / `curState` / `path` dispatch lines) belong here. For full log files, use **Attachments** above — don't paste them inline.
+      render: text
+
+  - type: textarea
+    id: other-plugins
+    attributes:
+      label: Other Dalamud plugins / overrides
+      description: Plugins that touch input, the addon system, or the mahjong window are most likely to interact. Custom UI scale or DPI overrides matter too.
+      placeholder: "SimpleTweaks, NoClickthrough, custom UI scale 1.25..."
 
   - type: textarea
     id: extra
     attributes:
       label: Anything else?
-      description: Screenshots, game context, other plugins that might interact, etc.
+      description: Screenshots, game context, hunches — anything that helps the bug land.
