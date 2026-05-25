@@ -15,10 +15,7 @@ namespace Mahjong.Plugin.Dalamud.Commands;
 public sealed class MjAutoCommand : IDisposable
 {
     private const string Primary = "/mjauto";
-    // Short one-liner for Dalamud's command panel. The full subcommand reference
-    // lives in `/mjauto help` so the panel entry stays readable.
     private const string HelpText = "Open the Doman Mahjong Solver window. Type /mjauto help for the full command list.";
-    // Note: removed /mjauto scan and /mjauto followptr — both dereferenced untrusted pointers and crashed the client.
 
     private readonly Plugin plugin;
     private readonly IChatGui chatGui;
@@ -28,11 +25,14 @@ public sealed class MjAutoCommand : IDisposable
     private readonly ISigScanner sigScanner;
     private readonly MahjongAddon addon;
 
-    // Auto-snap state: hash-dedup'd, rate-limited, capped capture driven off the
-    // addon's ObservationChanged event. Lets the user capture every meaningful
-    // state change without typing commands between fast turns.
     private bool autoSnapOn;
     private int autoSnapCounter;
+    /// <summary>Live state for the Bug-report tab.</summary>
+    internal bool IsAutoSnapOn => autoSnapOn;
+    /// <summary>Live state for the Bug-report tab.</summary>
+    internal int AutoSnapCount => autoSnapCounter;
+    /// <summary>Live state for the Bug-report tab.</summary>
+    internal int AutoSnapMaxCountValue => AutoSnapMaxCount;
     private long autoSnapLastMs;
     private ulong autoSnapLastHash;
     private const int AutoSnapMinGapMs = 150;
@@ -105,10 +105,6 @@ public sealed class MjAutoCommand : IDisposable
                 plugin.ToggleDebugOverlay();
                 break;
 
-            case "dump":
-                chatGui.Print("[MjAuto] State dump not yet implemented.");
-                break;
-
             case "addons":
                 DumpAddons(rest);
                 break;
@@ -119,14 +115,6 @@ public sealed class MjAutoCommand : IDisposable
 
             case "atkvalues":
                 DumpAtkValues();
-                break;
-
-            case "agent":
-                DumpAgent(rest);
-                break;
-
-            case "emj":
-                DumpEmjModule(rest);
                 break;
 
             case "snap":
@@ -204,13 +192,6 @@ public sealed class MjAutoCommand : IDisposable
         }
     }
 
-    /// <summary>
-    /// Print the command reference to chat. End-user commands always shown; the
-    /// developer / capture / RE sections appear only when DevMode is on, so a
-    /// normal player's help list stays short and uncluttered. One line per
-    /// ChatGui.Print call — FFXIV's chat renderer doesn't split embedded
-    /// newlines within a single message.
-    /// </summary>
     private void PrintHelp()
     {
         chatGui.Print("Doman Mahjong Solver — /mjauto commands");
@@ -241,14 +222,17 @@ public sealed class MjAutoCommand : IDisposable
         chatGui.Print("Reverse-engineering dumps:");
         chatGui.Print("  /mjauto variant dump — layout dump for new client variants");
         chatGui.Print("  /mjauto walknodes — dump the AtkUld node tree");
+        chatGui.Print("  /mjauto findtiles — scan addon/agent memory for tile-encoded values");
+        chatGui.Print("  /mjauto poolslots — diff visible discard-pool slots for tile fields");
+        chatGui.Print("  /mjauto poolicons — decode discard-pool slot icon ids");
         chatGui.Print("  /mjauto addons [filter] — list loaded addons");
         chatGui.Print("  /mjauto dumpmem [offset] [length] — hex dump of addon memory");
         chatGui.Print("  /mjauto atkvalues — dump the Emj AtkValues array");
-        chatGui.Print("  /mjauto agent [length] — hex dump of AgentEmj");
-        chatGui.Print("  /mjauto emj [length] — hex dump of the Emj module instance");
+        chatGui.Print("  /mjauto hexdump [agent] [start] [end] — hex dump of addon or AgentEmj");
+        chatGui.Print("  /mjauto discardhook — print DiscardCapture health");
     }
 
-    private void HandleAutoDiscard()
+    internal void HandleAutoDiscard()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -294,10 +278,8 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    private void HandlePass(string arg)
+    internal void HandlePass(string arg)
     {
-        // Manual override for when the auto pass clicks the wrong option
-        // (multi-chi prompts confuse our hardcoded pass=option 1).
         if (!int.TryParse(arg.Trim(), out int opt) || opt is < 0 or > 5)
         {
             chatGui.PrintError("[MjAuto] Usage: /mjauto pass <0..5>  (0=leftmost, higher=rightward; rightmost = pass)");
@@ -310,7 +292,7 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    private void HandleTestDiscard(string arg)
+    internal void HandleTestDiscard(string arg)
     {
         if (!int.TryParse(arg.Trim(), out int slot) || slot is < 0 or > 13)
         {
@@ -318,7 +300,6 @@ public sealed class MjAutoCommand : IDisposable
             return;
         }
 
-        // Must dispatch on the framework thread.
         framework.RunOnFrameworkThread(() =>
         {
             var result = plugin.Dispatcher.DispatchDiscard(slot);
@@ -326,7 +307,7 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    private void HandleCapture(string arg)
+    internal void HandleCapture(string arg)
     {
         var label = arg.Trim();
         if (string.IsNullOrEmpty(label))
@@ -346,8 +327,6 @@ public sealed class MjAutoCommand : IDisposable
             return;
         }
 
-        // Sanitize: file gets greppable, but the label appears verbatim in the
-        // capture entry header so reject anything weird.
         foreach (var c in label)
         {
             if (!char.IsLetterOrDigit(c) && c != '-' && c != '_')
@@ -372,15 +351,6 @@ public sealed class MjAutoCommand : IDisposable
             $"Auto-disarms after one click or 60s. File: {plugin.EventLogger.CaptureLogPath}");
     }
 
-    /// <summary>
-    /// Variant-diagnostic subcommand. Today the only action is <c>dump</c>, which
-    /// writes one self-contained file describing the current Mahjong addon's
-    /// layout — enough for a maintainer to build a new <see cref="IEmjVariant"/>
-    /// from without live client access (issue #13 workflow).
-    ///
-    /// <para>Room intentionally left for future actions (<c>probe</c>, <c>list</c>)
-    /// without disturbing the subcommand grammar.</para>
-    /// </summary>
     private void HandleVariant(string arg)
     {
         var parts = arg.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
@@ -401,20 +371,7 @@ public sealed class MjAutoCommand : IDisposable
         }
     }
 
-    /// <summary>
-    /// Write one self-contained layout dump for the live Mahjong addon. Bundles
-    /// the per-variant probe verdicts, AtkUnitBase metadata, the full AtkValues
-    /// array, the flat NodeList plus every visible component's inner tree, a
-    /// 1 KiB memory sample around the known Emj offset hotspots (scores at
-    /// +0x0500/7E0/AC0/DA0 and hand at +0x0DB8), and a small AgentEmj header
-    /// sample for cross-reference.
-    ///
-    /// <para>Intended output: a single file an external reporter can attach to
-    /// issue #13 when their client doesn't match any registered variant. The
-    /// maintainer then builds the corresponding <see cref="IEmjVariant"/> by
-    /// diffing offsets/IDs against the reference Emj dump.</para>
-    /// </summary>
-    private unsafe void DumpVariant()
+    internal unsafe void DumpVariant()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -429,7 +386,6 @@ public sealed class MjAutoCommand : IDisposable
             var now = DateTime.UtcNow;
             nint addonAddr = (nint)unit;
 
-            // Header: everything needed to identify the capture without opening the file.
             sb.AppendLine($"# Emj variant dump — utc={now:o}");
             sb.AppendLine(
                 $"# Resolved addon name: \"{resolvedName}\"  " +
@@ -444,7 +400,6 @@ public sealed class MjAutoCommand : IDisposable
                 $"LoadedState={unit->UldManager.LoadedState}");
             sb.AppendLine();
 
-            // Probe results: top-of-file so the reader sees the verdict first.
             sb.AppendLine("## Variant probe results");
             var selectorVariants = plugin.AddonReader.Selector.Variants;
             if (selectorVariants.Count == 0)
@@ -468,8 +423,6 @@ public sealed class MjAutoCommand : IDisposable
             }
             sb.AppendLine();
 
-            // AtkValues: slot number, type, decoded value. First 64 only so strings
-            // don't blow up the file, but the full count is in the header above.
             sb.AppendLine("## AtkValues");
             var values = unit->AtkValues;
             int atkCount = unit->AtkValuesCount;
@@ -487,7 +440,6 @@ public sealed class MjAutoCommand : IDisposable
             }
             sb.AppendLine();
 
-            // Flat NodeList — reuse WriteNodeRow so the format matches /mjauto walknodes.
             sb.AppendLine("## NodeList (flat)");
             var mgr = unit->UldManager;
             for (int i = 0; i < mgr.NodeListCount; i++)
@@ -502,9 +454,6 @@ public sealed class MjAutoCommand : IDisposable
             }
             sb.AppendLine();
 
-            // Component inner trees — only for VISIBLE type>=1000 nodes. Invisible
-            // components balloon the file without contributing signal for layout
-            // disambiguation (hidden prompts share their tree with every other state).
             sb.AppendLine("## Component inner trees (visible, type >= 1000)");
             for (int i = 0; i < mgr.NodeListCount; i++)
             {
@@ -541,17 +490,12 @@ public sealed class MjAutoCommand : IDisposable
             }
             sb.AppendLine();
 
-            // Memory sample — covers the known Emj offset hotspots so a reporter
-            // can eyeball whether their client has comparable values in the same
-            // places (score words, discard-count bytes, hand tile array).
             sb.AppendLine("## Addon memory sample (+0x0400..+0x0E80)");
             byte* basePtr = (byte*)addonAddr;
             for (int off = 0x0400; off < 0x0E80; off += 16)
                 AppendHexRow(sb, basePtr, off, 16);
             sb.AppendLine();
 
-            // AgentEmj header — small sample for cross-reference. Full dump is
-            // still available via `/mjauto agent` if the variant work needs more.
             sb.AppendLine("## AgentEmj header sample (+0x0000..+0x0200)");
             var agentModule = AgentModule.Instance();
             if (agentModule == null)
@@ -584,11 +528,6 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    /// <summary>
-    /// Render one <see cref="AtkValue"/> as a single-line string suitable for
-    /// the variant dump. Keeps strings length-capped so one weirdly-long
-    /// ManagedString doesn't torpedo the file layout.
-    /// </summary>
     private static unsafe string FormatAtkValue(AtkValue v)
     {
         switch (v.Type)
@@ -613,15 +552,7 @@ public sealed class MjAutoCommand : IDisposable
         }
     }
 
-    /// <summary>
-    /// RE scratch tool: write one self-contained file capturing every known source
-    /// of Emj state right now — addon bytes (0..0x3000), AgentEmj bytes (0..0x2000),
-    /// AtkValues, current parsed hand and scores. Files are named with a label +
-    /// timestamp so successive calls don't overwrite. Diff two snaps taken at known
-    /// game moments (e.g. "before kamicha 8m discard" / "after") to pin the
-    /// offset of the field that changed.
-    /// </summary>
-    private unsafe void HandleSnap(string arg)
+    internal unsafe void HandleSnap(string arg)
     {
         var label = arg.Trim();
         if (string.IsNullOrEmpty(label))
@@ -648,16 +579,7 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    /// <summary>
-    /// Toggles auto-snap: while on, writes a snap file on every addon observation
-    /// where the raw memory (addon +0x500..+0x3000) has actually changed since the
-    /// last snap, with a minimum gap of <see cref="AutoSnapMinGapMs"/> ms and a hard
-    /// cap of <see cref="AutoSnapMaxCount"/> files per session. Hash-based dedup
-    /// filters animation-only redraws; the rate limit absorbs redraw bursts that
-    /// happen to touch the hashed region (rare). Files sort chronologically by the
-    /// timestamp suffix — read them in order to reconstruct the event stream.
-    /// </summary>
-    private void HandleAutoSnap(string arg)
+    internal void HandleAutoSnap(string arg)
     {
         var v = arg.Trim().ToLowerInvariant();
         switch (v)
@@ -709,7 +631,6 @@ public sealed class MjAutoCommand : IDisposable
             return;
         if (autoSnapCounter >= AutoSnapMaxCount)
         {
-            // Auto-disarm at the cap so we don't silently drop events forever.
             autoSnapOn = false;
             plugin.AddonReader.ObservationChanged -= OnAutoSnapObservation;
             chatGui.Print(
@@ -722,29 +643,18 @@ public sealed class MjAutoCommand : IDisposable
         if (nowMs - autoSnapLastMs < AutoSnapMinGapMs)
             return;
 
-        // FNV-1a 64-bit hash over addon + agent bytes only. Earlier versions
-        // also hashed memory behind agent-slot pointers to catch game-state
-        // changes that don't touch the agent itself — but dereferencing
-        // pointers from agent memory with only a range-and-alignment heuristic
-        // is the same failure mode that got /mjauto scan and followptr removed
-        // (unmapped/stale targets crash the client). Hashing addon+agent is
-        // enough to trigger a capture on any meaningful UI state change, and
-        // the dump-time walker (which fires when the user explicitly runs
-        // /mjauto snap) still inspects pointer targets for RE diagnostics.
-        ulong hash = 1469598103934665603UL; // FNV offset basis
-        byte* addonPtr = (byte*)obs.Address;
-        for (int i = 0x0500; i < 0x3000; i++)
-            hash = (hash ^ addonPtr[i]) * 1099511628211UL;
-        var agentModule = AgentModule.Instance();
-        if (agentModule != null)
+        // FireCallback can race the refresh that triggered this observation — read
+        // only what VirtualQuery says is committed, and swallow non-fatal errors so
+        // one torn struct doesn't kill the autosnap session for the rest of the match.
+        ulong hash;
+        try
         {
-            var agent = agentModule->GetAgentByInternalId((AgentId)5);
-            if (agent != null)
-            {
-                byte* agentPtr = (byte*)agent;
-                for (int i = 0; i < 0x3000; i++)
-                    hash = (hash ^ agentPtr[i]) * 1099511628211UL;
-            }
+            hash = ComputeAutoSnapHash(obs.Address);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning($"[MjAuto] autosnap hash failed: {ex.GetType().Name}: {ex.Message}");
+            return;
         }
         if (hash == autoSnapLastHash)
             return;
@@ -753,15 +663,106 @@ public sealed class MjAutoCommand : IDisposable
         autoSnapLastMs = nowMs;
         var label = $"auto-{autoSnapCounter:D3}";
         autoSnapCounter++;
-        // Quiet write — don't spam chat while the user is playing.
-        WriteSnapFile(label, verbose: false);
+        try
+        {
+            WriteSnapFile(label, verbose: false);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning($"[MjAuto] autosnap write '{label}' failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
-    /// <summary>
-    /// Shared file-writer for <c>/mjauto snap &lt;label&gt;</c> and auto-snap.
-    /// Must be called on the framework thread. Returns the written path, or null
-    /// if the addon wasn't available.
-    /// </summary>
+    private static unsafe ulong ComputeAutoSnapHash(nint addonAddr)
+    {
+        ulong hash = 1469598103934665603UL;
+        byte* addonPtr = (byte*)addonAddr;
+        int addonLen = MaxSafeReadLength(addonPtr + 0x0500, 0x3000 - 0x0500);
+        for (int i = 0; i < addonLen; i++)
+            hash = (hash ^ addonPtr[0x0500 + i]) * 1099511628211UL;
+
+        var agentModule = AgentModule.Instance();
+        if (agentModule == null)
+            return hash;
+        var agent = agentModule->GetAgentByInternalId((AgentId)5);
+        if (agent == null)
+            return hash;
+        byte* agentPtr = (byte*)agent;
+        int agentLen = MaxSafeReadLength(agentPtr, 0x3000);
+        for (int i = 0; i < agentLen; i++)
+            hash = (hash ^ agentPtr[i]) * 1099511628211UL;
+        return hash;
+    }
+
+    // ---- VirtualQuery-based readability gate -------------------------------
+    // Every byte* read in WriteSnapFile + autosnap routes through these helpers.
+    // Without them, dumping past the end of a struct (or chasing a torn agent
+    // pointer mid-PostRefresh) faults the game with an AccessViolationException
+    // that CLR can't catch.
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MEMORY_BASIC_INFORMATION
+    {
+        public nint BaseAddress;
+        public nint AllocationBase;
+        public uint AllocationProtect;
+        public nint RegionSize;
+        public uint State;
+        public uint Protect;
+        public uint Type;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern nint VirtualQuery(nint address, out MEMORY_BASIC_INFORMATION buffer, nint length);
+
+    private const uint MEM_COMMIT = 0x1000;
+    private const uint PAGE_GUARD = 0x100;
+    /// <summary>PAGE_READONLY|READWRITE|WRITECOPY|EXECUTE_READ|EXECUTE_READWRITE|EXECUTE_WRITECOPY.</summary>
+    private const uint PAGE_READABLE_MASK = 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80;
+
+    /// <summary>True if every byte in [ptr, ptr+length) is committed and readable without faulting.</summary>
+    private static unsafe bool IsReadable(void* ptr, int length)
+    {
+        if (ptr == null || length <= 0)
+            return false;
+        nint addr = (nint)ptr;
+        nint end = addr + length;
+        while (addr < end)
+        {
+            if (VirtualQuery(addr, out var info, (nint)sizeof(MEMORY_BASIC_INFORMATION)) == 0)
+                return false;
+            if (info.State != MEM_COMMIT)
+                return false;
+            if ((info.Protect & PAGE_GUARD) != 0)
+                return false;
+            if ((info.Protect & PAGE_READABLE_MASK) == 0)
+                return false;
+            nint regionEnd = info.BaseAddress + info.RegionSize;
+            if (regionEnd <= addr)
+                return false;
+            addr = regionEnd;
+        }
+        return true;
+    }
+
+    /// <summary>Largest prefix of [basePtr, basePtr+requested) that's safely readable, rounded down to 16 bytes for hex-row alignment.</summary>
+    private static unsafe int MaxSafeReadLength(byte* basePtr, int requested)
+    {
+        if (basePtr == null || requested <= 0)
+            return 0;
+        int safe = 0;
+        const int probeChunk = 0x1000;
+        while (safe < requested)
+        {
+            int probe = Math.Min(requested - safe, probeChunk);
+            if (!IsReadable(basePtr + safe, probe))
+                break;
+            safe += probe;
+        }
+        return safe & ~0xF;
+    }
+
+    /// <summary>Must be called on the framework thread.</summary>
     private unsafe string? WriteSnapFile(string label, bool verbose)
     {
         if (!addon.TryGet(out var unit, out _))
@@ -832,24 +833,28 @@ public sealed class MjAutoCommand : IDisposable
             }
         }
 
-        // Addon dump: extended to 0x6000 to catch any post-AtkUnitBase fields the
-        // UI might tack on. Prior 0x3000 cap was arbitrary and tile-pattern scans
-        // showed discard pools aren't within it — they're in the game-state module.
-        sb.AppendLine("  -- addon @ +0x0000..+0x6000 --");
         byte* addonPtr = (byte*)addonAddr;
-        for (int off = 0x0000; off < 0x6000; off += 16)
+        int addonDumpLen = MaxSafeReadLength(addonPtr, 0x6000);
+        sb.AppendLine($"  -- addon @ +0x0000..+0x{addonDumpLen:X4} --");
+        for (int off = 0; off < addonDumpLen; off += 16)
             AppendHexRow(sb, addonPtr, off, 16);
+        if (addonDumpLen < 0x6000)
+            sb.AppendLine($"  (truncated: only 0x{addonDumpLen:X} of 0x6000 committed)");
 
         var agentModule = AgentModule.Instance();
+        AgentInterface* agent = null;
         if (agentModule != null)
         {
-            var agent = agentModule->GetAgentByInternalId((AgentId)5);
+            agent = agentModule->GetAgentByInternalId((AgentId)5);
             if (agent != null)
             {
-                sb.AppendLine($"  -- AgentEmj @ 0x{(nint)agent:X} +0x0000..+0x3000 --");
                 byte* agentPtr = (byte*)agent;
-                for (int off = 0; off < 0x3000; off += 16)
+                int agentDumpLen = MaxSafeReadLength(agentPtr, 0x3000);
+                sb.AppendLine($"  -- AgentEmj @ 0x{(nint)agent:X} +0x0000..+0x{agentDumpLen:X4} --");
+                for (int off = 0; off < agentDumpLen; off += 16)
                     AppendHexRow(sb, agentPtr, off, 16);
+                if (agentDumpLen < 0x3000)
+                    sb.AppendLine($"  (truncated: only 0x{agentDumpLen:X} of 0x3000 committed)");
             }
             else
             {
@@ -861,58 +866,40 @@ public sealed class MjAutoCommand : IDisposable
             sb.AppendLine("  -- AgentModule unavailable --");
         }
 
-        // Client::Game::UI::Emj game-state module. The static slot at
-        // module_base + 0x029E1400 is stale after recent patches (empty in live),
-        // so instead we auto-discover by walking the first 0x100 bytes of
-        // AgentEmj as candidate 8-byte pointers. Any pointer that looks like a
-        // valid FFXIV heap address (0x14xx or similar) and points to non-zero
-        // memory gets its first 0x2000 bytes dumped. The game-state struct will
-        // be the one that contains tile patterns ([xx, 29, 01, 00]) when scanned.
-        sb.AppendLine("  -- Agent-referenced candidate structs --");
-        if (agentModule != null)
+        // Candidate-pointer walk: dereferences arbitrary pointers from agent memory.
+        // Skipped for autosnap because PostRefresh can race the agent updating these
+        // slots, and a torn pointer is uncatchable (AccessViolationException).
+        if (verbose && agent != null)
         {
-            var agent = agentModule->GetAgentByInternalId((AgentId)5);
-            if (agent != null)
+            sb.AppendLine("  -- Agent-referenced candidate structs --");
+            nint* slots = (nint*)agent;
+            int dumped = 0;
+            var seen = new System.Collections.Generic.HashSet<nint>();
+            for (int i = 1; i < 32 && dumped < 8; i++)
             {
-                nint* slots = (nint*)agent;
-                int dumped = 0;
-                var seen = new System.Collections.Generic.HashSet<nint>();
-                // First field is always the vtable; skip slots[0].
-                for (int i = 1; i < 32 && dumped < 8; i++)
-                {
-                    nint p = slots[i];
-                    // Heuristic for a valid FFXIV heap pointer: high 16 bits in
-                    // the usual user-range (~0x0000_01xx_xxxx_xxxx), 16-byte
-                    // aligned, not already seen.
-                    if (p == nint.Zero)
-                        continue;
-                    if ((ulong)p < 0x10000UL || (ulong)p > 0x0000_7FFF_FFFF_FFFFUL)
-                        continue;
-                    if (((ulong)p & 0xF) != 0)
-                        continue;
-                    if (!seen.Add(p))
-                        continue;
-                    // Guard against unmapped memory: probe first byte via
-                    // try/catch isn't possible from unsafe; instead trust that
-                    // the aligned-heap-range heuristic is sufficient (agents
-                    // don't normally hold stale pointers).
-                    bool nonZero = false;
-                    byte* pb = (byte*)p;
-                    for (int j = 0; j < 16 && !nonZero; j++)
-                        if (pb[j] != 0)
-                            nonZero = true;
-                    if (!nonZero)
-                        continue;
+                nint p = slots[i];
+                if (p == nint.Zero)
+                    continue;
+                if ((ulong)p < 0x10000UL || (ulong)p > 0x0000_7FFF_FFFF_FFFFUL)
+                    continue;
+                if (((ulong)p & 0xF) != 0)
+                    continue;
+                if (!seen.Add(p))
+                    continue;
 
-                    sb.AppendLine(
-                        $"  -- candidate[{i}] @ 0x{p:X}  (agent+0x{i * 8:X2})  +0x0000..+0x2000 --");
-                    for (int off = 0; off < 0x2000; off += 16)
-                        AppendHexRow(sb, pb, off, 16);
-                    dumped++;
-                }
-                if (dumped == 0)
-                    sb.AppendLine("  (no valid pointer candidates found in agent+0..+0x100)");
+                byte* pb = (byte*)p;
+                int candLen = MaxSafeReadLength(pb, 0x2000);
+                if (candLen < 0x100)
+                    continue;
+
+                sb.AppendLine(
+                    $"  -- candidate[{i}] @ 0x{p:X}  (agent+0x{i * 8:X2})  +0x0000..+0x{candLen:X4} --");
+                for (int off = 0; off < candLen; off += 16)
+                    AppendHexRow(sb, pb, off, 16);
+                dumped++;
             }
+            if (dumped == 0)
+                sb.AppendLine("  (no readable pointer candidates found in agent+0..+0x100)");
         }
 
         var dir = pluginInterface.GetPluginConfigDirectory();
@@ -941,28 +928,7 @@ public sealed class MjAutoCommand : IDisposable
         sb.AppendLine("|");
     }
 
-    /// <summary>
-    /// Scan the addon's raw memory for int32 values matching the Doman tile texture
-    /// encoding (<c>76041 + tile_id</c>, range [76041, 76074]). The player's own hand
-    /// stores tiles at <c>addon + 0xDB8</c> as exactly this encoding; if opponents'
-    /// discards are stored similarly anywhere else in addon memory, this finds them
-    /// in a single pass. 100% read-only and bounded to <c>[addon_base, addon_base+0x20000)</c>
-    /// so no pointer-chasing can crash us. The output enumerates every offset whose
-    /// 4 bytes decode to a valid tile-texture id, plus the resolved tile id (e.g.
-    /// "0xDB8: tex=76055 tile=14 (5p)").
-    /// </summary>
-    /// <summary>
-    /// Read the texture icon-id for every visible discard pool component's tile-face
-    /// image node, with strict pointer validation at every step. The earlier
-    /// IconId-read crash came from walking <i>every</i> image node in the addon,
-    /// some of which had stale texture-resource pointers; restricting to just the
-    /// 4 known pool types (1021..1024) and validating each dereference target is
-    /// in plausible heap range avoids the AV.
-    ///
-    /// Doman tile face icons are <c>76041 + tile_id</c>. If iconId reads correctly,
-    /// the displayed tile is recoverable directly.
-    /// </summary>
-    private unsafe void HandlePoolIcons()
+    internal unsafe void HandlePoolIcons()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -979,8 +945,6 @@ public sealed class MjAutoCommand : IDisposable
             if (mgr.NodeList == null)
             { sb.AppendLine("  no NodeList"); return; }
 
-            // Group visible 1021..1024 components by type. Pointers are stored as
-            // nint (addresses) since pointer types can't be generic type arguments.
             var slotsByType = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<(uint Id, nint CompNodeAddr)>>();
             for (int i = 0; i < mgr.NodeListCount; i++)
             {
@@ -1027,12 +991,6 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    /// <summary>
-    /// Find the tile-face image node (id=5) inside a discard-pool component, walk
-    /// to its texture resource icon-id, and return a one-line description. Every
-    /// pointer dereference is gated on a heap-range check; on any anomaly returns
-    /// false with a diagnostic string instead of raising.
-    /// </summary>
     private static unsafe bool TryReadSlotIcon(AtkComponentNode* compNode, out string info)
     {
         info = "?";
@@ -1043,8 +1001,7 @@ public sealed class MjAutoCommand : IDisposable
         if (inner.NodeList == null)
         { info = "no inner NodeList"; return false; }
 
-        // The visible tile face is the Image node with id=5 (per walknodes
-        // captures). Other ids are chrome (id=4 glow, id=2/3 Res containers).
+        // Tile face is Image node id=5; other ids are chrome.
         AtkImageNode* imgNode = null;
         for (int i = 0; i < inner.NodeListCount; i++)
         {
@@ -1065,9 +1022,6 @@ public sealed class MjAutoCommand : IDisposable
         if (!IsHeapPointer((nint)pl))
         { info = $"bad partsList=0x{(nint)pl:X}"; return false; }
 
-        // Capture per-slot identity signal up front: image-node bytes (where any
-        // per-instance state lives) and partsList pointer address (which varies if
-        // each slot has its own list pointing at distinct texture sub-regions).
         byte* nb = (byte*)imgNode;
         var imgHex = new System.Text.StringBuilder();
         for (int b = 0; b < 0x40; b++)
@@ -1084,8 +1038,6 @@ public sealed class MjAutoCommand : IDisposable
             return false;
         }
         var part = &pl->Parts[imgNode->PartId];
-        // Capture the part's u/v + size + asset pointer — these are the three
-        // candidate per-tile signals at this layer.
         string partInfo = $"part_uv=({part->U},{part->V}) part_wh=({part->Width},{part->Height}) asset=0x{(nint)part->UldAsset:X}";
 
         var asset = part->UldAsset;
@@ -1116,22 +1068,13 @@ public sealed class MjAutoCommand : IDisposable
         }
     }
 
-    /// <summary>Plausible-heap-pointer check matching the conservative range used
-    /// elsewhere in this file (see HandleSnap).</summary>
     private static bool IsHeapPointer(nint p) =>
         p != nint.Zero
         && (ulong)p >= 0x10000UL
         && (ulong)p <= 0x0000_7FFF_FFFF_FFFFUL
         && ((ulong)p & 0x7) == 0;
 
-    /// <summary>
-    /// Dump the first 0x100 bytes of every visible discard-pool component (types
-    /// 1021..1024, 31 slots each), then highlight bytes that <b>differ</b> across
-    /// slots of the same type. The tile-id binding has to be a byte that varies
-    /// per slot in a way correlated with the displayed tile — comparing all
-    /// visible slots side-by-side surfaces those bytes automatically.
-    /// </summary>
-    private unsafe void HandlePoolSlots()
+    internal unsafe void HandlePoolSlots()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -1148,7 +1091,6 @@ public sealed class MjAutoCommand : IDisposable
             if (mgr.NodeList == null)
             { sb.AppendLine("  no NodeList"); return; }
 
-            // Collect visible 1021..1024 components grouped by type.
             var slotsByType = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<(uint Id, nint Comp, float X, float Y)>>();
             for (int i = 0; i < mgr.NodeListCount; i++)
             {
@@ -1168,13 +1110,6 @@ public sealed class MjAutoCommand : IDisposable
                 list.Add((n->NodeId, (nint)compNode->Component, n->X, n->Y));
             }
 
-            // Dump enough to reach past the AtkComponentBase header (~0xE0 bytes)
-            // into custom Doman discard slot state. Earlier 0x100 was too shallow:
-            // image-node id=5 is shared chrome (same PartsList & texture across all
-            // slots), so the actual tile-id binding must live in the component's
-            // own custom state. 0x800 covers a wide window of custom fields. If
-            // the tile_id field for types 1021/1022/1024 isn't in this range,
-            // it's likely behind a pointer-deref'd struct, not in the comp itself.
             const int dumpLen = 0x800;
             foreach (var kvp in slotsByType.OrderBy(k => k.Key))
             {
@@ -1186,7 +1121,6 @@ public sealed class MjAutoCommand : IDisposable
                 if (slots.Count == 0)
                     continue;
 
-                // Read the bytes for each slot.
                 var slotBytes = new byte[slots.Count][];
                 for (int s = 0; s < slots.Count; s++)
                 {
@@ -1197,16 +1131,9 @@ public sealed class MjAutoCommand : IDisposable
                     slotBytes[s] = arr;
                 }
 
-                // List the slots up front (id, address, position).
                 for (int s = 0; s < slots.Count; s++)
                     sb.AppendLine($"  slot[{s}]  id={slots[s].Id}  comp=0x{slots[s].Comp:X}  xy=({slots[s].X:F0},{slots[s].Y:F0})");
 
-                // Pass 0: offsets where ALL slots have byte & 0x3F in tile-range
-                // AND those low-6-bit values are all distinct. This catches the
-                // case where the byte is `flags << 6 | tile_id` (bits 6-7 are
-                // flag/orientation marker, bits 0-5 are tile_id). Type 1022 had
-                // exactly this pattern at +0x021 in earlier dumps (high bit
-                // always set, low 6 bits = valid tile_id sequence).
                 sb.AppendLine();
                 sb.AppendLine("  -- MASKED-6BIT candidates: (byte & 0x3F) all-tile-range AND all-distinct --");
                 int maskedCount = 0;
@@ -1235,10 +1162,6 @@ public sealed class MjAutoCommand : IDisposable
                 }
                 sb.AppendLine($"  -- {maskedCount} masked-6bit candidates --");
 
-                // Pass 1: offsets where ALL slots are in tile-id range [0..33]
-                // AND have distinct values. This is the strongest possible signal —
-                // every visible slot showing a different tile would have its
-                // tile-id stored at an offset that satisfies both conditions.
                 sb.AppendLine();
                 sb.AppendLine("  -- STRONG candidates: all-tile-range AND all-distinct --");
                 int strongCount = 0;
@@ -1266,8 +1189,6 @@ public sealed class MjAutoCommand : IDisposable
                 }
                 sb.AppendLine($"  -- {strongCount} strong candidates --");
 
-                // Pass 2: weaker — at least N-1 distinct in-range values (allows
-                // for repeated tiles like dora-bait discards or duplicate honors).
                 sb.AppendLine();
                 sb.AppendLine("  -- MEDIUM candidates: all-tile-range, ≥N-1 distinct --");
                 int mediumCount = 0;
@@ -1283,7 +1204,7 @@ public sealed class MjAutoCommand : IDisposable
                         seen.Add(b);
                     }
                     if (!allInRange || seen.Count == slotBytes.Length)
-                        continue;  // captured above
+                        continue;
                     if (seen.Count < slotBytes.Length - 1)
                         continue;
                     mediumCount++;
@@ -1297,7 +1218,6 @@ public sealed class MjAutoCommand : IDisposable
                 }
                 sb.AppendLine($"  -- {mediumCount} medium candidates --");
 
-                // Pass 3 (full): all offsets that differ, for completeness.
                 sb.AppendLine();
                 sb.AppendLine("  -- ALL differing offsets (raw, includes pointer noise) --");
                 int diffCount = 0;
@@ -1331,20 +1251,12 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    /// <summary>
-    /// Hexdump a range of addon or agent memory. Usage:
-    ///   <c>/mjauto hexdump</c>                — addon +0x0C00..+0x1400 (default)
-    ///   <c>/mjauto hexdump 0x100 0x800</c>    — addon +0x100..+0x800
-    ///   <c>/mjauto hexdump agent</c>          — AgentEmj +0x100..+0x900 (per-seat region)
-    ///   <c>/mjauto hexdump agent 0 0x3000</c> — full AgentEmj
-    /// </summary>
-    private unsafe void HandleHexDump(string args)
+    internal unsafe void HandleHexDump(string args)
     {
         framework.RunOnFrameworkThread(() =>
         {
             var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-            // First arg can be the literal "agent" to switch source.
             bool agentMode = parts.Length > 0 && parts[0].Equals("agent", StringComparison.OrdinalIgnoreCase);
             int rangeArgStart = agentMode ? 1 : 0;
 
@@ -1375,6 +1287,7 @@ public sealed class MjAutoCommand : IDisposable
                 regionMax = 0x4000;
             }
 
+
             int defaultStart = agentMode ? 0x0100 : 0x0C00;
             int defaultEnd = agentMode ? 0x0900 : 0x1400;
             int start = defaultStart, end = defaultEnd;
@@ -1399,7 +1312,7 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    private unsafe void HandleFindTiles()
+    internal unsafe void HandleFindTiles()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -1409,8 +1322,7 @@ public sealed class MjAutoCommand : IDisposable
                 return;
             }
 
-            // The hand reader uses 76041 on Emj (EU); EmjL uses 76003. Try both
-            // ranges so this works on either client without needing the variant.
+            // Hand reader uses 76041 on Emj, 76003 on EmjL — try both.
             int[] candidateBases = { 76041, 76003 };
 
             var sb = new System.Text.StringBuilder();
@@ -1418,12 +1330,8 @@ public sealed class MjAutoCommand : IDisposable
             sb.AppendLine();
             int totalMatches = 0;
 
-            // Region 1: the addon itself. Hand lives at +0xDB8 here; if discards
-            // were also addon-stored we'd find them in the same 0x4000 window.
             totalMatches += ScanRegion(sb, "addon", (byte*)unit, 0x4000, candidateBases);
 
-            // Region 2: AgentEmj. Other diagnostics already dump 0..0x3000 of this
-            // safely (HandleSnap, MaybeLogMeldTransition).
             var agentModule = AgentModule.Instance();
             if (agentModule != null)
             {
@@ -1438,11 +1346,6 @@ public sealed class MjAutoCommand : IDisposable
                 sb.AppendLine("  (AgentModule unavailable)");
             }
 
-            // Region 3: every plausible heap pointer reachable from AgentEmj's
-            // first 32 slots. The static module slot at module_base + 0x29E1400
-            // is stale post-patch (per HandleSnap/DumpEmjModule comments), but the
-            // game-state struct that holds discards still gets referenced from
-            // somewhere off the agent. Scan each candidate's first 0x2000 bytes.
             if (agentModule != null)
             {
                 var agent = agentModule->GetAgentByInternalId((AgentId)5);
@@ -1462,8 +1365,6 @@ public sealed class MjAutoCommand : IDisposable
                             continue;
                         if (!seen.Add(p))
                             continue;
-                        // Probe before scanning: if first 16 bytes are all zero,
-                        // it's almost certainly an empty/stale slot.
                         bool nonZero = false;
                         byte* pb = (byte*)p;
                         for (int j = 0; j < 16 && !nonZero; j++)
@@ -1486,22 +1387,12 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
-    /// <summary>
-    /// Scan a memory region for tile-id-shaped values under several candidate
-    /// encodings. Read-only, safely bounded — no pointer-chasing, no struct
-    /// dereferences. Encodings tried per region:
-    ///   1. int32 = textureBase + tile_id (matches the hand encoding at +0xDB8)
-    ///   2. int32 = raw tile_id in [0, 34) — simplest format, no offset
-    ///   3. uint8 byte runs of length ≥ 4 with all bytes in [0, 34) and ≥ 3
-    ///      distinct values (filters out zero padding and constant fills)
-    /// </summary>
     private static unsafe int ScanRegion(
         System.Text.StringBuilder sb, string label, byte* basePtr, int length, int[] texBases)
     {
         sb.AppendLine($"## {label}  base=0x{(nint)basePtr:X}  length=0x{length:X}");
         int matches = 0;
 
-        // Encoding 1: int32 with texture base offset.
         foreach (var texBase in texBases)
         {
             int forBase = 0;
@@ -1520,7 +1411,6 @@ public sealed class MjAutoCommand : IDisposable
             matches += forBase;
         }
 
-        // Encoding 2: raw int32 tile_id in [0, 34). 4-byte aligned only.
         {
             int rawHits = 0;
             for (int off = 0; off + 4 <= length; off += 4)
@@ -1539,10 +1429,6 @@ public sealed class MjAutoCommand : IDisposable
             matches += rawHits;
         }
 
-        // Encoding 3: byte runs of length ≥ 4 with all bytes in [0, 34) and ≥ 3
-        // distinct values. Tile-id arrays packed as uint8 are the most common
-        // alternative format. The "≥ 3 distinct" filter rules out long runs of
-        // zero padding which dominate addon memory.
         {
             int runStart = -1;
             int runLen = 0;
@@ -1591,15 +1477,7 @@ public sealed class MjAutoCommand : IDisposable
         return matches;
     }
 
-    /// <summary>
-    /// Walk the Emj addon's UldManager.NodeList, dumping every node's index, type,
-    /// id, visibility, position, and — for AtkImageNodes — the texture id. Mahjong
-    /// tiles render as image nodes with texture ids in the Doman tile range
-    /// (76041 + tile_id, same encoding as hand AtkValues). Identifying which nodes
-    /// are discard-pool tiles lets us read opponent discards directly from the UI,
-    /// bypassing the (stale) game-state module offset.
-    /// </summary>
-    private unsafe void HandleWalkNodes()
+    internal unsafe void HandleWalkNodes()
     {
         framework.RunOnFrameworkThread(() =>
         {
@@ -1618,7 +1496,6 @@ public sealed class MjAutoCommand : IDisposable
                 $"  NodeListCount={mgr.NodeListCount}  ObjectsCount={mgr.ObjectCount}  " +
                 $"LoadedState={mgr.LoadedState}");
 
-            // Full flat NodeList. Every tile image on screen is somewhere in here.
             sb.AppendLine();
             sb.AppendLine("## NodeList (flat)");
             for (int i = 0; i < mgr.NodeListCount; i++)
@@ -1632,16 +1509,7 @@ public sealed class MjAutoCommand : IDisposable
                 WriteNodeRow(sb, i, n);
             }
 
-            // Recurse into every UldComponent's own inner node list. Custom
-            // component types (type >= 1000) carry their tile visuals as
-            // children under Component->UldManager — NOT under the addon's flat
-            // NodeList — so they have to be inspected separately. For Doman
-            // Mahjong the 4 discard-pool seats use custom types 1021..1024
-            // (31 slots each) and the "opponent hand" strip is type 1057.
-            // Also dump the first 0x100 bytes of each component's raw state;
-            // for discard-pool slots the tile identity sits in there and is
-            // discoverable by diffing visible vs invisible slots of the same
-            // component type.
+            // Custom component types (>=1000) carry their tile visuals under Component->UldManager, not the addon's flat NodeList.
             sb.AppendLine();
             sb.AppendLine("## Component inner trees (type >= 1000)");
             for (int i = 0; i < mgr.NodeListCount; i++)
@@ -1663,24 +1531,10 @@ public sealed class MjAutoCommand : IDisposable
                     $"vis={(visible ? "1" : "0")}  subCount={sub.NodeListCount}  " +
                     $"comp=0x{(nint)comp:X}");
 
-                // Raw component memory — 0x300 bytes, annotated as hex rows.
-                // The tile id might live deep in the component's custom state,
-                // so the default 0x100 window turned out to be too shallow.
                 sb.AppendLine("    -- comp bytes +0x00..+0x300 --");
                 byte* cb = (byte*)comp;
                 for (int off = 0; off < 0x300; off += 16)
                     AppendHexRow(sb, cb, off, 16);
-
-                // NOTE: an earlier revision dereferenced speculative pointer slots
-                // at offsets { 0x18, 0x20, 0x58, 0x80 } and dumped 0x80 bytes from
-                // each target to help RE the meld-pointer layout. The range/alignment
-                // checks weren't strong enough — the AtkComponentList popup at the
-                // state-6 Riichi prompt holds one of those slots as garbage that
-                // passed the checks but crashed the client with AccessViolation when
-                // read (follow-up repro on issue #22). Meld tracking is driven by
-                // the FireCallback hook in InputEventLogger now, not these
-                // speculative reads, so the block is removed rather than made
-                // SEH-safe.
 
                 if (sub.NodeListCount == 0 || sub.NodeList == null)
                     continue;
@@ -1714,8 +1568,6 @@ public sealed class MjAutoCommand : IDisposable
             $"vis={(n->NodeFlags.HasFlag(FFXIVClientStructs.FFXIV.Component.GUI.NodeFlags.Visible) ? "1" : "0")}  " +
             $"xy=({n->X:F0},{n->Y:F0})  wh=({n->Width},{n->Height})");
 
-        // For image nodes, dig out the texture / part info — this is where the
-        // tile identity lives for any visible tile.
         if (n->Type == FFXIVClientStructs.FFXIV.Component.GUI.NodeType.Image)
         {
             var img = (FFXIVClientStructs.FFXIV.Component.GUI.AtkImageNode*)n;
@@ -1742,7 +1594,6 @@ public sealed class MjAutoCommand : IDisposable
             var s = txt->NodeText.ToString();
             if (!string.IsNullOrEmpty(s))
             {
-                // Truncate; some text nodes hold very long strings.
                 if (s.Length > 40)
                     s = s[..40] + "...";
                 sb.Append($"  text=\"{s.Replace("\n", "\\n")}\"");
@@ -1751,7 +1602,7 @@ public sealed class MjAutoCommand : IDisposable
         sb.AppendLine();
     }
 
-    private void HandleLog(string arg)
+    internal void HandleLog(string arg)
     {
         var v = arg.Trim().ToLowerInvariant();
         switch (v)
@@ -1777,137 +1628,7 @@ public sealed class MjAutoCommand : IDisposable
         }
     }
 
-    private unsafe void DumpEmjModule(string args)
-    {
-        // Static address of Client::Game::UI::Emj per data.yml: ea 0x1429E1400.
-        // That's the IDA preferred address — at runtime it's module_base + 0x29E1400.
-        // Unclear whether the slot holds the instance directly or a pointer to it;
-        // try both, prefer whichever gives non-zero first 8 bytes.
-        var moduleBase = sigScanner.Module.BaseAddress;
-        nint slot = moduleBase + 0x029E1400;
-        nint derefPtr = *(nint*)slot;
-
-        string mode;
-        nint instanceAddr;
-        if (derefPtr != nint.Zero && derefPtr > 0x10000)
-        {
-            instanceAddr = derefPtr;
-            mode = "deref";
-        }
-        else
-        {
-            instanceAddr = slot;   // fall back to inline at slot
-            mode = "inline";
-        }
-
-        // Sanity: confirm instance actually holds non-zero bytes.
-        bool anyNonZero = false;
-        for (int i = 0; i < 32 && !anyNonZero; i++)
-            if (((byte*)instanceAddr)[i] != 0)
-                anyNonZero = true;
-
-        if (!anyNonZero)
-        {
-            chatGui.PrintError(
-                $"[MjAuto] Emj module instance at 0x{instanceAddr:X} ({mode}) is zeroed. " +
-                $"Slot value: 0x{derefPtr:X}. Patch offset may have changed — need sig-scan.");
-            return;
-        }
-
-        int length = 0x1000;
-        if (!string.IsNullOrEmpty(args.Trim()) && TryParseHex(args.Trim(), out int parsed))
-            length = Math.Clamp(parsed, 1, 0x8000);
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine(
-            $"# Client::Game::UI::Emj @ 0x{instanceAddr:X}  mode={mode}  (slot 0x{slot:X}, module_base 0x{moduleBase:X})  " +
-            $"length=0x{length:X}  utc={DateTime.UtcNow:o}");
-
-        byte* basePtr = (byte*)instanceAddr;
-        for (int row = 0; row < length; row += 16)
-        {
-            sb.Append($"0x{row:X4}: ");
-            for (int i = 0; i < 16; i++)
-            {
-                if (row + i < length)
-                    sb.Append($"{basePtr[row + i]:X2} ");
-                else
-                    sb.Append("   ");
-                if (i == 7)
-                    sb.Append(' ');
-            }
-            sb.Append(" |");
-            for (int i = 0; i < 16 && row + i < length; i++)
-            {
-                byte b = basePtr[row + i];
-                sb.Append(b >= 32 && b < 127 ? (char)b : '.');
-            }
-            sb.AppendLine("|");
-        }
-
-        var dir = pluginInterface.GetPluginConfigDirectory();
-        System.IO.Directory.CreateDirectory(dir);
-        var path = System.IO.Path.Combine(dir, "emj-module.txt");
-        System.IO.File.WriteAllText(path, sb.ToString());
-
-        chatGui.Print($"[MjAuto] wrote Emj module (0x{length:X} bytes) to {path}");
-    }
-
-    private unsafe void DumpAgent(string args)
-    {
-        var agentModule = AgentModule.Instance();
-        if (agentModule == null)
-        {
-            chatGui.PrintError("[MjAuto] AgentModule unavailable.");
-            return;
-        }
-
-        // AgentId.Emj = 5
-        var agent = agentModule->GetAgentByInternalId((AgentId)5);
-        if (agent == null)
-        {
-            chatGui.PrintError("[MjAuto] AgentEmj not found (id=5).");
-            return;
-        }
-
-        int length = 0x800;
-        if (!string.IsNullOrEmpty(args.Trim()) && TryParseHex(args.Trim(), out int parsed))
-            length = Math.Clamp(parsed, 1, 0x4000);
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"# AgentEmj @ 0x{(nint)agent:X}  length=0x{length:X}  utc={DateTime.UtcNow:o}");
-
-        byte* basePtr = (byte*)agent;
-        for (int row = 0; row < length; row += 16)
-        {
-            sb.Append($"0x{row:X4}: ");
-            for (int i = 0; i < 16; i++)
-            {
-                if (row + i < length)
-                    sb.Append($"{basePtr[row + i]:X2} ");
-                else
-                    sb.Append("   ");
-                if (i == 7)
-                    sb.Append(' ');
-            }
-            sb.Append(" |");
-            for (int i = 0; i < 16 && row + i < length; i++)
-            {
-                byte b = basePtr[row + i];
-                sb.Append(b >= 32 && b < 127 ? (char)b : '.');
-            }
-            sb.AppendLine("|");
-        }
-
-        var dir = pluginInterface.GetPluginConfigDirectory();
-        System.IO.Directory.CreateDirectory(dir);
-        var path = System.IO.Path.Combine(dir, "emj-agent.txt");
-        System.IO.File.WriteAllText(path, sb.ToString());
-
-        chatGui.Print($"[MjAuto] wrote AgentEmj (0x{length:X} bytes) to {path}");
-    }
-
-    private unsafe void DumpAtkValues()
+    internal unsafe void DumpAtkValues()
     {
         if (!addon.TryGet(out var unit, out _))
         {
@@ -1964,7 +1685,7 @@ public sealed class MjAutoCommand : IDisposable
         chatGui.Print($"[MjAuto] wrote {count} AtkValues to {path}");
     }
 
-    private unsafe void DumpMemory(string args)
+    internal unsafe void DumpMemory(string args)
     {
         var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         int offset = 0x238;
@@ -2029,7 +1750,7 @@ public sealed class MjAutoCommand : IDisposable
                             System.Globalization.CultureInfo.InvariantCulture, out value);
     }
 
-    private unsafe void DumpAddons(string filter)
+    internal unsafe void DumpAddons(string filter)
     {
         var stage = AtkStage.Instance();
         if (stage == null)

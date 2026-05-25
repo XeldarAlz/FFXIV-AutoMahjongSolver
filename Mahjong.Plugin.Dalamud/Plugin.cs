@@ -38,35 +38,17 @@ public sealed class Plugin : IDalamudPlugin
 
     public readonly WindowSystem WindowSystem = new("Mahjong.Plugin.Dalamud");
 
-    /// <summary>
-    /// MEDI service container — owns every injectable service for the plugin's
-    /// lifetime. Built in the constructor after Dalamud's <see cref="PluginService"/>
-    /// statics are populated; disposed in <see cref="Dispose"/> so the
-    /// AssemblyLoadContext gets cleaned up cleanly across plugin reloads.
-    ///
-    /// Phase 7.A: container is built and the policy components are resolved
-    /// from it. Phase 7.B will migrate the remaining ~40 static <c>Plugin.X</c>
-    /// accesses across the plugin to constructor injection through this provider.
-    /// </summary>
     public ServiceProvider Services { get; }
 
-    /// <summary>
-    /// Read-write façade over the persisted configuration. Use
-    /// <see cref="IConfigService{TConfig}.Update"/> to mutate; never reach
-    /// into the underlying record directly.
-    /// </summary>
+    /// <summary>Use Update() to mutate — never reach into the underlying record directly.</summary>
     public IConfigService<Configuration> ConfigService { get; }
 
-    /// <summary>
-    /// Convenience accessor that returns the *current* configuration record.
-    /// The reference is replaced on every edit, so don't cache it across
-    /// frames — read it fresh from <see cref="ConfigService"/> when you need
-    /// the latest values.
-    /// </summary>
+    /// <summary>Reference is replaced on every edit — read fresh each frame, don't cache.</summary>
     public Configuration Configuration => ConfigService.Current;
 
     public MainWindow MainWindow { get; }
     public AboutWindow AboutWindow { get; }
+    public SettingsWindow SettingsWindow { get; }
     public DebugOverlay DebugOverlay { get; }
     public HandOverlay HandOverlay { get; }
     public AddonEmjReader AddonReader { get; }
@@ -78,27 +60,10 @@ public sealed class Plugin : IDalamudPlugin
     public GameLogger GameLogger { get; }
     public AutoPlayLoop AutoPlay { get; }
 
-    /// <summary>
-    /// Captures every Doman discard the moment it commits. Strategy is chosen
-    /// at startup by <see cref="DiscardCaptureFactory"/> — native asm hook
-    /// when available, addon-poll fallback otherwise. <see cref="IDiscardCapture.Health"/>
-    /// reports which path is live.
-    /// </summary>
     public IDiscardCapture DiscardCapture { get; }
 
-    /// <summary>
-    /// Diagnostic file logger that mirrors every captured discard to
-    /// <c>emj-discards.log</c>. Useful for verifying the fallback strategy
-    /// during reverse-engineering sessions.
-    /// </summary>
     public DiscardCaptureLogger DiscardCaptureLogger { get; }
 
-    /// <summary>
-    /// Anonymous telemetry pipeline. Captures errors, structured findings,
-    /// and labeled memory dumps from the live addon, and ships them through
-    /// the <see cref="TelemetryUploader"/> background worker so cross-client
-    /// reverse-engineering can be done offline against a real corpus.
-    /// </summary>
     public ErrorSink ErrorSink { get; }
     public IFindingsLog FindingsLog { get; }
     public ISigprobeLog SigprobeLog { get; }
@@ -110,6 +75,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly System.Net.Http.HttpClient telemetryHttp;
     private readonly MirroredPluginLog mirroredLog = null!;
+
+    public MjAutoCommand MjAutoCommand => command;
 
     private readonly MjAutoCommand command;
 
@@ -127,22 +94,14 @@ public sealed class Plugin : IDalamudPlugin
             targetVersion: Mahjong.Plugin.Dalamud.Configuration.CurrentSchemaVersion,
             migrators);
 
-        // If migration produced a new instance, persist it now so the next
-        // launch starts at the current schema version without re-running.
+        // Dev tools never persist across launches — opt-in per session.
+        migrated = migrated with { DevMode = false };
+
+        // Persist migrated config so the next launch starts at the current schema version.
         if (!ReferenceEquals(loaded, migrated))
             PluginInterface.SavePluginConfig(migrated);
 
-        // Bundle every Dalamud-injected service into a single record and
-        // hand it to the composition root. After this point the rest of
-        // the plugin reaches for services through constructor injection,
-        // not through the static `Plugin.X` properties.
-        //
-        // The IPluginLog handed to the container is a `MirroredPluginLog`
-        // that forwards every call through to Dalamud's logger and
-        // additionally writes Warning/Error/Fatal events to the plugin's
-        // ErrorSink (attached below once the sink exists). Without this,
-        // Plugin.Log.Warning(...) calls only land in Dalamud's local log
-        // file and never reach the errors telemetry stream.
+        // MirroredPluginLog forwards to Dalamud and additionally writes Warning+ to the ErrorSink (attached below).
         mirroredLog = new MirroredPluginLog(Log);
         var dalamud = new DalamudServices(
             Log: mirroredLog,
@@ -163,30 +122,17 @@ public sealed class Plugin : IDalamudPlugin
 
         Policy = Services.GetRequiredService<IPolicy>();
 
-        // Telemetry sinks first — AddonEmjReader / VariantSelector emit
-        // findings as soon as they probe the live addon, so the sinks must
-        // exist before any reader construction.
+        // Sinks must exist before any reader construction — readers emit findings on probe.
         var configDir = PluginInterface.GetPluginConfigDirectory();
         ErrorSink = new ErrorSink(configDir);
         FindingsLog = new FindingsLog(configDir, ErrorSink);
         SigprobeLog = new SigprobeLog(configDir);
-        // Now that ErrorSink exists, hook it into the log mirror so every
-        // subsequent Plugin.Log.Warning/Error/Fatal also lands in the
-        // errors stream. Calls before this point (Dalamud's own load-time
-        // chatter) just pass through — short window, nothing critical.
         mirroredLog.AttachSink(ErrorSink);
 
-        // Resolve the addon-name helper from the container so its lastResolved
-        // cache is shared across every collaborator that probes the addon.
         var mahjongAddon = Services.GetRequiredService<MahjongAddon>();
         Dispatcher = new InputDispatcher(mahjongAddon);
 
-        // `IDalamudPluginInterface.AssemblyLocation` is the only reliable way
-        // to locate sibling files — `Assembly.Location` and
-        // `AppContext.BaseDirectory` both come back empty inside Dalamud's
-        // plugin AssemblyLoadContext (verified empirically in the findings
-        // stream). Layouts live in `<plugin-dir>/layouts/*.json`, copied
-        // there by the .csproj as build content.
+        // IDalamudPluginInterface.AssemblyLocation is the only reliable sibling-file lookup — Assembly.Location is empty inside Dalamud's ALC.
         var pluginAssemblyDir = PluginInterface.AssemblyLocation.DirectoryName ?? configDir;
         var layoutsDir = Path.Combine(pluginAssemblyDir, "layouts");
 
@@ -204,23 +150,12 @@ public sealed class Plugin : IDalamudPlugin
             meldTrackerAccessor: () => MeldTracker.SerializeState());
         AutoPlay = new AutoPlayLoop(this, Framework, Log, mahjongAddon);
 
-        // Discard capture: native asm hook on the discard-write site (verified
-        // 2026-04-27 via Cheat Engine), with an addon-poll fallback that
-        // diffs StateAggregator snapshots. The factory tries native first
-        // and falls back automatically — Health/StrategyName surface which
-        // path is live. SigprobeLog is threaded in so every ScanText attempt
-        // gets recorded for the sigprobes telemetry stream.
         DiscardCapture = DiscardCaptureFactory.Create(
             Log, Framework, SigScanner, Aggregator, SeatPoolRegistry, SigprobeLog);
         DiscardCaptureLogger = new DiscardCaptureLogger(
             DiscardCapture, PluginInterface.GetPluginConfigDirectory());
         DiscardTracker = new DiscardTracker(DiscardCapture, configDir);
 
-        // ---- Remainder of telemetry pipeline ----
-        // Sinks above wire into the readers; this section builds the
-        // network-side uploader and the memory-dump recorder. Every stage
-        // is fail-safe (errors funnel into ErrorSink which itself never
-        // throws), so a broken endpoint never bubbles up to game code.
         var envelope = TelemetryEnvelope.Build(migrated.InstallId, ClientState.ClientLanguage);
         telemetryHttp = new System.Net.Http.HttpClient
         {
@@ -231,35 +166,26 @@ public sealed class Plugin : IDalamudPlugin
             new TelemetryEndpoint(EndpointResolver.EmbeddedFallbackUrl, true, null));
         TelemetryUploader = new TelemetryUploader(http, endpointHolder, ConfigService, Log, configDir);
 
-        // Resolve the live endpoint asynchronously — startup must not block
-        // on a slow GitHub fetch. Until it returns, uploads target the
-        // embedded fallback URL above.
+        // Async — startup must not block on a GitHub fetch; uploads use the embedded fallback until this completes.
         _ = ResolveEndpointAsync(telemetryHttp, endpointHolder);
 
         MemoryDumpRecorder = new MemoryDumpRecorder(
             AddonReader, SeatPoolRegistry, ErrorSink, configDir);
 
-        // Snapshot every state change. Hash-dedup inside the recorder
-        // collapses identical layouts so this is cheap on quiet ticks; the
-        // atk_count gate inside Record drops idle-cadence captures.
         Aggregator.Changed += _ => MemoryDumpRecorder.Record("state-change");
 
-        // Bracket every Mahjong-addon FireCallback with a (pre, post) memdump
-        // pair so the offline RE pipeline (tools/find-discard-offset.mjs et al)
-        // can diff addon bytes that mutate in lockstep with a single click.
-        // Both reasons bypass the atk_count gate inside Record because the
-        // gate applies only to "state-change". The pre event reads addon
-        // state synchronously before the original FireCallback runs, so the
-        // captured bytes still reflect pre-mutation memory.
+        // Bracket every FireCallback with (pre, post) memdumps. Both labels bypass the atk_count gate that gates "state-change".
         EventLogger.BeforeFireCallback += _ => MemoryDumpRecorder.Record("input-pre");
         EventLogger.CallbackObserved += _ => MemoryDumpRecorder.Record("input-post");
 
         MainWindow = new MainWindow(this);
         AboutWindow = new AboutWindow(Log);
+        SettingsWindow = new SettingsWindow(this);
         DebugOverlay = new DebugOverlay(this, Framework, CommandManager, mahjongAddon);
         HandOverlay = new HandOverlay(this, PluginInterface, mahjongAddon);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(AboutWindow);
+        WindowSystem.AddWindow(SettingsWindow);
         WindowSystem.AddWindow(DebugOverlay);
 
         command = new MjAutoCommand(
@@ -267,7 +193,7 @@ public sealed class Plugin : IDalamudPlugin
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
-        PluginInterface.UiBuilder.OpenConfigUi += ToggleMainWindow;
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleSettingsWindow;
 
         var asmVersion = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? "(unknown)";
         Log.Information($"Doman Mahjong Solver v{asmVersion} loaded.");
@@ -278,10 +204,11 @@ public sealed class Plugin : IDalamudPlugin
         command.Dispose();
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
-        PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainWindow;
+        PluginInterface.UiBuilder.OpenConfigUi -= ToggleSettingsWindow;
         WindowSystem.RemoveAllWindows();
         MainWindow.Dispose();
         AboutWindow.Dispose();
+        SettingsWindow.Dispose();
         DebugOverlay.Dispose();
         HandOverlay.Dispose();
         AutoPlay.Dispose();
@@ -294,26 +221,17 @@ public sealed class Plugin : IDalamudPlugin
         Aggregator.Dispose();
         AddonReader.Dispose();
 
-        // Telemetry: flush the uploader first so any in-flight POSTs
-        // complete (under a 10s hard cap), then tear down the sinks. A
-        // stuck network won't block plugin unload.
+        // Flush uploader first (10s hard cap inside) so in-flight POSTs finish before sinks tear down.
         TelemetryUploader.Dispose();
         MemoryDumpRecorder.Dispose();
         (FindingsLog as IDisposable)?.Dispose();
         ErrorSink.Dispose();
         telemetryHttp.Dispose();
 
-        // Dispose last — singletons in the container may hold references that
-        // the components above still touch during their own Dispose.
+        // Services last — container singletons may still be touched by components disposed above.
         Services.Dispose();
     }
 
-    /// <summary>
-    /// Fetches the live telemetry endpoint config from GitHub and updates
-    /// the holder. Errors are intentionally swallowed — startup must never
-    /// block on this, and the embedded fallback URL keeps uploads working
-    /// in the offline-at-load case.
-    /// </summary>
     private async System.Threading.Tasks.Task ResolveEndpointAsync(
         System.Net.Http.HttpClient http, EndpointHolder holder)
     {
@@ -332,6 +250,8 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleMainWindow() => MainWindow.Toggle();
 
     public void ToggleAboutWindow() => AboutWindow.Toggle();
+
+    public void ToggleSettingsWindow() => SettingsWindow.Toggle();
 
     public void ToggleDebugOverlay() => DebugOverlay.Toggle();
 }

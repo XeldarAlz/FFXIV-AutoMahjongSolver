@@ -1,6 +1,8 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Mahjong.Engine;
 using Mahjong.Plugin.Dalamud.Actions;
@@ -9,16 +11,7 @@ using Mahjong.Policy.Efficiency;
 
 namespace Mahjong.Plugin.Dalamud.UI;
 
-/// <summary>
-/// End-user facing window, styled as stacked surface cards:
-///   1. Status     — filled mode pill on the left, match/idle badge on the right
-///   2. Mode       — three rich pills (Off / Hints / Auto-play) with subtitles
-///   3. Live game  — seat pills, hand rendered as tiles, headline best-move
-///   4. Settings   — collapsible, grouped into Play style / Appearance / Developer
-/// Debug controls (memory dumps, dispatch tests, event logger) live in the
-/// separate DebugOverlay window — reachable from Settings once DevMode is
-/// enabled, or via /mjauto debug at any time.
-/// </summary>
+/// <summary>End-user window: toolbar, status, mode, live game. Settings and debug live in their own windows.</summary>
 public sealed class MainWindow : Window, IDisposable
 {
     private readonly Plugin plugin;
@@ -50,33 +43,60 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        DrawTopToolbar();
-        DrawStatusCard(cfg);
-        ImGui.Dummy(new Vector2(0, 4));
+        DrawTopToolbar(cfg);
         DrawModeCard(cfg);
         ImGui.Dummy(new Vector2(0, 4));
         DrawLiveCard();
-        ImGui.Dummy(new Vector2(0, 6));
-        DrawSettings(cfg);
+
+        DrawAutoPlayConfirmModal(cfg);
     }
 
-    // ============================================================
-    // Top toolbar — right-aligned About button
-    // ============================================================
-    private void DrawTopToolbar()
+    private void DrawTopToolbar(Configuration cfg)
     {
-        const string label = "About";
-        float btnW = ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2;
-        float avail = ImGui.GetContentRegionAvail().X;
-        if (avail > btnW)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + avail - btnW);
-        if (ImGui.SmallButton(label + "##about-toggle"))
-            plugin.ToggleAboutWindow();
+        var bugLabel = FontAwesomeIcon.Bug.ToIconString();
+        var infoLabel = FontAwesomeIcon.InfoCircle.ToIconString();
+        var gearLabel = FontAwesomeIcon.Cog.ToIconString();
+
+        bool bugClicked = false, infoClicked, gearClicked;
+        // Tooltips render outside the icon-font scope — they would use icon glyphs otherwise.
+        int hovered = -1;
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            var framePadX = ImGui.GetStyle().FramePadding.X;
+            var spacingX = ImGui.GetStyle().ItemSpacing.X;
+            var btnW = ImGui.CalcTextSize(gearLabel).X + framePadX * 2;
+
+            int slots = cfg.DevMode ? 3 : 2;
+            float totalW = btnW * slots + spacingX * (slots - 1);
+            float avail = ImGui.GetContentRegionAvail().X;
+            if (avail > totalW)
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + avail - totalW);
+
+            if (cfg.DevMode)
+            {
+                bugClicked = ImGui.Button(bugLabel + "##debug");
+                if (ImGui.IsItemHovered()) hovered = 0;
+                ImGui.SameLine();
+            }
+            infoClicked = ImGui.Button(infoLabel + "##about");
+            if (ImGui.IsItemHovered()) hovered = 1;
+            ImGui.SameLine();
+            gearClicked = ImGui.Button(gearLabel + "##settings");
+            if (ImGui.IsItemHovered()) hovered = 2;
+        }
+
+        switch (hovered)
+        {
+            case 0: ImGui.SetTooltip("Developer console"); break;
+            case 1: ImGui.SetTooltip("About"); break;
+            case 2: ImGui.SetTooltip("Settings"); break;
+        }
+
+        if (bugClicked) plugin.ToggleDebugOverlay();
+        if (infoClicked) plugin.ToggleAboutWindow();
+        if (gearClicked) plugin.ToggleSettingsWindow();
     }
 
-    // ============================================================
-    // ToS gate
-    // ============================================================
     private void DrawTosGate(Configuration cfg)
     {
         using (Theme.BeginCard("tos"))
@@ -119,15 +139,14 @@ public sealed class MainWindow : Window, IDisposable
         }
     }
 
-    // ============================================================
-    // Status card — filled mode pill + match/idle badge
-    // ============================================================
-    private void DrawStatusCard(Configuration cfg)
+    private void DrawModeCard(Configuration cfg)
     {
-        using (Theme.BeginCard("status"))
+        using (Theme.BeginCard("mode"))
         {
-            var (tint, label) = GetStatusBadge(cfg);
-            Theme.Pill(label, tint, filled: true);
+            // Header row: "Mode" label + right-aligned in-match / idle badge.
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.Header);
+            ImGui.TextUnformatted("Mode");
+            ImGui.PopStyleColor();
 
             bool addonOk = plugin.AddonReader.Poll().Present;
             string badgeText = addonOk ? "in match" : "idle";
@@ -135,26 +154,12 @@ public sealed class MainWindow : Window, IDisposable
             float badgeW = ImGui.CalcTextSize(badgeText).X + 28;
             Theme.RightAlign(badgeW, Theme.CardPadX);
             Theme.Pill(badgeText, badgeTint, filled: false);
-        }
-    }
 
-    private static (Vector4 tint, string label) GetStatusBadge(Configuration cfg)
-    {
-        if (!cfg.AutomationArmed)
-            return (Theme.Muted, "Off");
-        if (cfg.SuggestionOnly)
-            return (Theme.Warn, "Hints only");
-        return (Theme.Accent, "Auto-play active");
-    }
-
-    // ============================================================
-    // Mode card — rich three-way pill
-    // ============================================================
-    private void DrawModeCard(Configuration cfg)
-    {
-        using (Theme.BeginCard("mode"))
-        {
-            Theme.SectionHeader("Mode");
+            var dl = ImGui.GetWindowDrawList();
+            var p = ImGui.GetCursorScreenPos();
+            float rw = ImGui.GetContentRegionAvail().X;
+            dl.AddLine(p + new Vector2(0, 2), new Vector2(p.X + rw, p.Y + 2), Theme.Pack(Theme.Divider), 1f);
+            ImGui.Dummy(new Vector2(0, 6));
 
             int current = !cfg.AutomationArmed ? 0 : (cfg.SuggestionOnly ? 1 : 2);
             float avail = ImGui.GetContentRegionAvail().X;
@@ -163,13 +168,13 @@ public sealed class MainWindow : Window, IDisposable
             var size = new Vector2(w, 50);
 
             if (ModePill("Off", "Do nothing", Theme.Muted, current == 0, size))
-                SetMode(0);
+                RequestMode(0, cfg);
             ImGui.SameLine(0, gap);
             if (ModePill("Hints", "Highlight best move", Theme.Warn, current == 1, size))
-                SetMode(1);
+                RequestMode(1, cfg);
             ImGui.SameLine(0, gap);
             if (ModePill("Auto-play", "Click for you", Theme.Accent, current == 2, size))
-                SetMode(2);
+                RequestMode(2, cfg);
         }
     }
 
@@ -202,16 +207,67 @@ public sealed class MainWindow : Window, IDisposable
         return clicked;
     }
 
-    private void SetMode(int mode) =>
+    private bool autoPlayConfirmPending;
+
+    private void RequestMode(int mode, Configuration cfg)
+    {
+        if (mode == 2 && !cfg.AutoPlayConfirmed)
+        {
+            autoPlayConfirmPending = true;
+            return;
+        }
+        ApplyMode(mode);
+    }
+
+    private void ApplyMode(int mode) =>
         plugin.ConfigService.Update(c => c with
         {
             AutomationArmed = mode > 0,
             SuggestionOnly = mode == 1,
         });
 
-    // ============================================================
-    // Live game card — seats, hand, suggestion
-    // ============================================================
+    private void DrawAutoPlayConfirmModal(Configuration cfg)
+    {
+        const string id = "Enable Auto-play?##autoplay-confirm";
+        if (autoPlayConfirmPending)
+        {
+            ImGui.OpenPopup(id);
+            autoPlayConfirmPending = false;
+        }
+
+        var center = ImGui.GetMainViewport().GetCenter();
+        ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
+        if (!ImGui.BeginPopupModal(id, ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings))
+            return;
+
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Warn);
+        ImGui.TextWrapped("Auto-play will click for you with humanized timing.");
+        ImGui.PopStyleColor();
+
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Body);
+        ImGui.PushTextWrapPos(360);
+        ImGui.TextUnformatted(
+            "Switch Mode to Off or Hints any time to stop. Third-party automation is " +
+            "against the FFXIV Terms of Service — use at your own risk.");
+        ImGui.PopTextWrapPos();
+        ImGui.PopStyleColor();
+
+        ImGui.Dummy(new Vector2(0, 10));
+
+        if (ImGui.Button("Enable Auto-play", new Vector2(160, 28)))
+        {
+            plugin.ConfigService.Update(c => c with { AutoPlayConfirmed = true });
+            ApplyMode(2);
+            ImGui.CloseCurrentPopup();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", new Vector2(100, 28)))
+            ImGui.CloseCurrentPopup();
+
+        ImGui.EndPopup();
+    }
+
     private void DrawLiveCard()
     {
         using (Theme.BeginCard("live"))
@@ -221,14 +277,11 @@ public sealed class MainWindow : Window, IDisposable
             var snap = plugin.AddonReader.TryBuildSnapshot();
             if (snap is null)
             {
-                Theme.Subtle("Open a Doman Mahjong table in the Gold Saucer to see hints here.");
+                DrawEmptyLive();
                 return;
             }
 
-            // Compute policy pick + scored discards once per frame. Both the
-            // hand-row highlight and the suggestion panel below need the
-            // result. Previously each renderer called Policy.Choose
-            // independently, doubling the work at 60Hz.
+            // Cache policy + scored discards — hand-row highlight and suggestion panel both need them.
             ScoredDiscard[]? scored = null;
             ActionChoice? choice = null;
             string? scorerError = null;
@@ -254,6 +307,35 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.Dummy(new Vector2(0, 10));
             DrawSuggestion(snap, scored, choice, scorerError);
         }
+    }
+
+    private void DrawEmptyLive()
+    {
+        var cfg = plugin.Configuration;
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Body);
+        ImGui.TextWrapped("Waiting for a Doman Mahjong table.");
+        ImGui.PopStyleColor();
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Muted);
+        ImGui.TextWrapped("When a match starts, the plugin will:");
+        ImGui.PopStyleColor();
+        ImGui.Dummy(new Vector2(0, 2));
+
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Warn);
+        ImGui.BulletText("Hints — outline the best discard in the mahjong window.");
+        ImGui.PopStyleColor();
+        ImGui.PushStyleColor(ImGuiCol.Text, Theme.Accent);
+        ImGui.BulletText("Auto-play — click the best discard for you with humanized timing.");
+        ImGui.PopStyleColor();
+
+        ImGui.Dummy(new Vector2(0, 4));
+        string modeHint = !cfg.AutomationArmed
+            ? "Mode is currently Off. Pick Hints or Auto-play above to arm the plugin."
+            : cfg.SuggestionOnly
+                ? "Hints mode is active — open a match and watch for the outline."
+                : "Auto-play is active — open a match and the plugin will take over.";
+        Theme.Subtle(modeHint);
     }
 
     private void DrawSeatRow(StateSnapshot snap)
@@ -326,13 +408,11 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        // Invariant from DrawLiveCard: Legal.Discard + no error ⇒ both non-null.
         if (scored is null || choice is null)
             return;
 
         string verb = FriendlyActionVerb(choice.Kind);
 
-        // Headline row: verb (accent) + big tile + friendly name, all vertically centered.
         float startY = ImGui.GetCursorPosY();
         float bigH = Theme.BigTileH;
         float textH = ImGui.CalcTextSize("X").Y;
@@ -356,23 +436,25 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.PopStyleColor();
         }
 
-        // Force cursor past the big tile.
         if (choice.DiscardTile is not null)
             ImGui.SetCursorPosY(startY + bigH + 4);
+
+        string why = ExplainChoice(choice, scored);
+        if (!string.IsNullOrEmpty(why))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, Theme.Body);
+            ImGui.TextWrapped(why);
+            ImGui.PopStyleColor();
+        }
 
         if (cfg.ShowInGameHighlight)
         {
             Theme.Subtle("The tile is outlined in the mahjong window.");
         }
 
-        ImGui.Dummy(new Vector2(0, 6));
-        bool details = cfg.ShowSuggestionDetails;
-        if (ImGui.Checkbox("Show analysis details", ref details))
-            plugin.ConfigService.Update(c => c with { ShowSuggestionDetails = details });
-
-        if (details)
+        if (cfg.ShowSuggestionDetails)
         {
-            ImGui.Dummy(new Vector2(0, 2));
+            ImGui.Dummy(new Vector2(0, 6));
             Theme.Subtle(
                 "shanten = turns away from ready.  ukeire = tiles that complete your wait — " +
                 "counted as distinct kinds and total copies remaining in the live wall.");
@@ -431,97 +513,36 @@ public sealed class MainWindow : Window, IDisposable
         _ => kind.ToString(),
     };
 
-    private static string FriendlyTileName(Tile tile)
+    private static string FriendlyTileName(Tile tile) => Theme.TileFriendlyName(tile);
+
+    private static string ExplainChoice(ActionChoice choice, ScoredDiscard[] scored)
     {
-        string code = tile.ShortName;
-        string name = tile.Suit switch
+        switch (choice.Kind)
         {
-            TileSuit.Man => $"{tile.Number} Character",
-            TileSuit.Pin => $"{tile.Number} Dot",
-            TileSuit.Sou => $"{tile.Number} Bamboo",
-            TileSuit.Honor => tile.HonorNumber switch
-            {
-                1 => "East Wind",
-                2 => "South Wind",
-                3 => "West Wind",
-                4 => "North Wind",
-                5 => "White Dragon",
-                6 => "Green Dragon",
-                7 => "Red Dragon",
-                _ => code,
-            },
-            _ => code,
-        };
-        return $"{name}  ({code})";
-    }
-
-    // ============================================================
-    // Settings — collapsible, grouped
-    // ============================================================
-    private void DrawSettings(Configuration cfg)
-    {
-        if (!ImGui.CollapsingHeader("Settings", ImGuiTreeNodeFlags.None))
-            return;
-
-        ImGui.Dummy(new Vector2(0, 4));
-
-        // ---- Auto-play ----
-        using (Theme.BeginCard("settings-play", alt: true))
-        {
-            Theme.SectionHeader("Auto-play");
-
-            int delay = cfg.HumanizedDelayMs;
-            ImGui.SetNextItemWidth(300);
-            if (ImGui.SliderInt("Click speed", ref delay, 400, 3000, "%d ms"))
-                plugin.ConfigService.Update(c => c with { HumanizedDelayMs = delay });
-            Theme.Subtle("Average delay before each auto-play click.");
+            case ActionKind.Tsumo:
+            case ActionKind.Ron:
+                return "Winning hand — close it out.";
+            case ActionKind.Riichi:
+                return "One tile from winning — declare riichi.";
+            case ActionKind.Pon:
+            case ActionKind.Chi:
+            case ActionKind.AnKan:
+            case ActionKind.MinKan:
+            case ActionKind.ShouMinKan:
+                return "Calling completes a set faster than drawing for it.";
         }
 
-        ImGui.Dummy(new Vector2(0, 4));
+        if (scored.Length == 0) return "";
+        var top = scored[0];
+        string kindNoun = top.UkeireKinds == 1 ? "kind" : "kinds";
+        string tileNoun = top.UkeireWeighted == 1 ? "tile" : "tiles";
 
-        // ---- Appearance ----
-        using (Theme.BeginCard("settings-appearance", alt: true))
-        {
-            Theme.SectionHeader("Appearance");
-
-            bool highlight = cfg.ShowInGameHighlight;
-            if (ImGui.Checkbox("Highlight suggested tile in the mahjong window", ref highlight))
-                plugin.ConfigService.Update(c => c with { ShowInGameHighlight = highlight });
-            Theme.Subtle("A pulsing outline on the discard to make. Shown in Hints mode.");
-        }
-
-        ImGui.Dummy(new Vector2(0, 4));
-
-        // ---- Developer ----
-        using (Theme.BeginCard("settings-dev", alt: true))
-        {
-            Theme.SectionHeader("Developer");
-
-            bool dev = cfg.DevMode;
-            if (ImGui.Checkbox("Enable developer tools", ref dev))
-            {
-                plugin.ConfigService.Update(c => c with { DevMode = dev });
-                if (dev)
-                    plugin.DebugOverlay.IsOpen = true;
-            }
-            Theme.Subtle("Unlocks the debug overlay. Leave off for normal play.");
-
-            if (cfg.DevMode)
-            {
-                ImGui.Dummy(new Vector2(0, 4));
-                if (ImGui.Button("Open debug overlay"))
-                    plugin.DebugOverlay.IsOpen = true;
-                ImGui.SameLine();
-                if (ImGui.Button("Show terms notice again"))
-                    plugin.ConfigService.Update(c => c with
-                    {
-                        TosAccepted = false,
-                        AutomationArmed = false,
-                    });
-            }
-        }
-
-        ImGui.Dummy(new Vector2(0, 4));
-        Theme.Subtle("Type /mjauto in chat to open this window.");
+        if (top.ShantenAfter < 0)
+            return "Discarding this still leaves a winning hand.";
+        if (top.ShantenAfter == 0)
+            return $"Keeps you ready — {top.UkeireKinds} {kindNoun} ({top.UkeireWeighted} {tileNoun} live) complete the hand.";
+        if (top.ShantenAfter == 1)
+            return $"One step from ready, with {top.UkeireKinds} useful {kindNoun} to draw.";
+        return $"{top.ShantenAfter} steps from ready — keeps the most useful draws available.";
     }
 }

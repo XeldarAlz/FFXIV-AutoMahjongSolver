@@ -11,30 +11,8 @@ using Mahjong.Plugin.Game;
 
 namespace Mahjong.Plugin.Dalamud.Telemetry;
 
-/// <summary>
-/// Background uploader. Watches the plugin config directory for files in
-/// known telemetry stream subdirs (games/, errors/, findings/, memdumps/,
-/// discards/, inputs/, sigprobes/), gzips and POSTs each one to the resolved
-/// endpoint, then drops a <c>.shipped</c> sidecar so it never re-uploads.
-///
-/// <para><b>Lifecycle:</b> a single long-running task pulls jobs off a
-/// <see cref="Channel{T}"/> that's fed by a periodic scan AND by direct
-/// <see cref="Enqueue(string, string)"/> calls (so newly-rolled hand files
-/// can be shipped the moment they close, without waiting for the next
-/// scan tick). On <see cref="Dispose"/> the channel is completed and we
-/// drain in-flight uploads under a hard 10s timeout — anything still
-/// pending stays on disk and ships on next launch.</para>
-///
-/// <para><b>Failure isolation:</b> exceptions inside the worker loop are
-/// logged once at Warning and swallowed. The pipeline never throws into
-/// game code; a broken endpoint just means files pile up locally until the
-/// network or server recovers.</para>
-/// </summary>
 public sealed class TelemetryUploader : IDisposable
 {
-    /// <summary>Subdirectories under the plugin config dir that the uploader
-    /// scans. Order is stable so corpus arrival order is deterministic per
-    /// install.</summary>
     public static readonly string[] StreamDirs =
         { "games", "errors", "findings", "memdumps", "discards", "inputs", "sigprobes" };
 
@@ -71,9 +49,7 @@ public sealed class TelemetryUploader : IDisposable
         this.log = log;
         this.configDir = configDir;
 
-        // Unbounded so a long offline streak doesn't drop signal — every
-        // unshipped file is on disk anyway, so worst case the channel just
-        // holds path strings.
+        // Unbounded so an offline streak doesn't drop signal — files are on disk anyway.
         queue = Channel.CreateUnbounded<UploadJob>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -84,11 +60,30 @@ public sealed class TelemetryUploader : IDisposable
         workerTask = Task.Run(() => RunAsync(cts.Token));
     }
 
-    /// <summary>
-    /// Manually enqueue a finished file for upload. Called by GameLogger on
-    /// hand close, by ErrorSink on error roll-over, etc. — anywhere we know
-    /// a file just became immutable and shouldn't wait for the next scan.
-    /// </summary>
+    /// <summary>Currently-resolved endpoint config (URL, enabled, version gate).</summary>
+    public TelemetryEndpoint CurrentEndpoint => endpoint.Current;
+
+    /// <summary>Count files under streamDirs/* that don't yet have a sibling .shipped marker.</summary>
+    public int CountPending()
+    {
+        int n = 0;
+        foreach (var stream in StreamDirs)
+        {
+            var dir = Path.Combine(configDir, stream);
+            if (!Directory.Exists(dir))
+                continue;
+            foreach (var f in Directory.EnumerateFiles(dir))
+            {
+                if (f.EndsWith(ShippedMarkerSuffix, StringComparison.Ordinal))
+                    continue;
+                if (File.Exists(f + ShippedMarkerSuffix))
+                    continue;
+                n++;
+            }
+        }
+        return n;
+    }
+
     public void Enqueue(string stream, string filePath)
     {
         if (disposed)
@@ -108,8 +103,7 @@ public sealed class TelemetryUploader : IDisposable
         catch { }
         try
         {
-            // Hard timeout on shutdown — Dalamud unloads can't block forever.
-            // Anything still in flight will retry on next launch via the scan.
+            // Hard timeout — Dalamud unloads can't block; pending files retry on next launch.
             if (!workerTask.Wait(DisposeDrainTimeout))
                 cts.Cancel();
         }
@@ -130,7 +124,6 @@ public sealed class TelemetryUploader : IDisposable
                     lastScan = DateTime.UtcNow;
                 }
 
-                // Wait for either a new job or the next scan deadline.
                 using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 waitCts.CancelAfter(ScanInterval);
                 UploadJob job;
@@ -140,7 +133,7 @@ public sealed class TelemetryUploader : IDisposable
                 }
                 catch (OperationCanceledException)
                 {
-                    continue; // scan-tick wakeup
+                    continue;
                 }
                 catch (ChannelClosedException)
                 {
@@ -153,7 +146,6 @@ public sealed class TelemetryUploader : IDisposable
             catch (Exception ex)
             {
                 log.Warning($"[Telemetry] uploader loop error: {ex.Message}");
-                // Avoid a tight failure loop if the worker itself is broken.
                 try
                 { await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false); }
                 catch { }
@@ -168,11 +160,9 @@ public sealed class TelemetryUploader : IDisposable
 
         var url = endpoint.Current.UploadUrl;
         if (string.IsNullOrWhiteSpace(url) || !endpoint.Current.Enabled)
-            return; // disabled by remote config — leave file on disk
+            return;
 
-        // Exponential backoff: 1, 2, 4, 8, 16s. Bail after that and let the
-        // periodic scan re-enqueue this file later — better than blocking
-        // the worker loop on one stuck upload.
+        // Exponential backoff with hard cap — scan re-enqueues on failure.
         var delays = new[] { 1, 2, 4, 8, 16 };
         for (int attempt = 0; attempt < delays.Length; attempt++)
         {
@@ -192,9 +182,6 @@ public sealed class TelemetryUploader : IDisposable
         }
     }
 
-    /// <summary>Walk every stream subdir and queue any file lacking a
-    /// .shipped sidecar. Cheap — just directory enumeration with a name
-    /// filter.</summary>
     private void EnqueuePendingFiles()
     {
         foreach (var stream in StreamDirs)
@@ -243,11 +230,6 @@ public sealed class TelemetryUploader : IDisposable
     private readonly record struct UploadJob(string Stream, string FilePath);
 }
 
-/// <summary>
-/// Mutable holder for the resolved <see cref="TelemetryEndpoint"/> so the
-/// uploader picks up runtime updates (e.g. if we add a refresh-from-GitHub
-/// path on a long uptime) without needing a restart.
-/// </summary>
 public sealed class EndpointHolder
 {
     public TelemetryEndpoint Current { get; private set; }
