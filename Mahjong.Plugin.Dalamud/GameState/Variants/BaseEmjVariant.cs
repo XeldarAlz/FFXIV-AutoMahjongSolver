@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -10,6 +11,9 @@ namespace Mahjong.Plugin.Dalamud.GameState.Variants;
 
 internal sealed class BaseEmjVariant : IEmjVariant
 {
+    // Diagnostic dumps go to +0x3000; production reads max out at DoraIndicator (+0x0FD8). Single budget keeps the runtime/fixture shapes aligned.
+    private const int AddonMemorySize = 0x3000;
+
     private readonly LayoutProfile profile;
     private readonly IPluginLog log;
     private readonly string pluginConfigDir;
@@ -65,29 +69,49 @@ internal sealed class BaseEmjVariant : IEmjVariant
 
     public unsafe StateSnapshot? TryBuildSnapshot(AtkUnitBase* unit, VariantReadContext ctx)
     {
-        nint addr = (nint)unit;
-        byte* basePtr = (byte*)addr;
+        if (unit == null)
+            return null;
+        var memory = new ReadOnlySpan<byte>((void*)unit, AddonMemorySize);
+        var atkValues = SnapshotAtkValues(unit->AtkValues, unit->AtkValuesCount);
+        bool modalVisible = IsCallModalVisible(unit);
+        var listLabels = modalVisible ? ReadVisibleListItemLabels(unit) : null;
+        return BuildSnapshotFromMemory(
+            memory, atkValues, ctx,
+            callModalVisible: modalVisible,
+            listWidgetLabels: listLabels,
+            enableDiagnosticLogging: true);
+    }
 
+    /// <summary>Pure entry — no Dalamud pointers. Fixture replay drives this directly with a captured byte span and decoded AtkValues.</summary>
+    public StateSnapshot? BuildSnapshotFromMemory(
+        ReadOnlySpan<byte> memory,
+        IReadOnlyList<AtkValueRecord> atkValues,
+        VariantReadContext ctx,
+        bool callModalVisible,
+        IReadOnlyList<string>? listWidgetLabels = null,
+        bool enableDiagnosticLogging = false)
+    {
         int akaDora = 0;
-        var hand = ReadHand(basePtr, ref akaDora);
+        var hand = ReadHand(memory, ref akaDora);
 
-        var scores = ReadScores(basePtr);
+        var scores = ReadScores(memory);
         if (!ScoresPlausible(scores))
             return null;
 
-        var doraIndicators = ReadDoraIndicators(basePtr);
-        var discardCounts = ReadDiscardCounts(basePtr);
+        var doraIndicators = ReadDoraIndicators(memory);
+        var discardCounts = ReadDiscardCounts(memory);
 
-        var atkValues = unit->AtkValues;
-        int atkCount = unit->AtkValuesCount;
-        int stateCode = ReadStateCode(atkValues, atkCount);
+        int stateCode = ReadStateCode(atkValues);
         int wallRemaining = ResolveWallRemaining(discardCounts);
 
-        var seats = BuildSeatViews(basePtr, discardCounts);
-        var legal = BuildLegalActions(unit, stateCode, hand, atkValues, atkCount);
+        var seats = BuildSeatViews(memory, discardCounts);
+        var legal = BuildLegalActions(stateCode, hand, atkValues, callModalVisible, listWidgetLabels);
 
-        MaybeLogCallPromptTransition(ctx, addr, stateCode, atkValues, atkCount, hand, legal);
-        MaybeLogMeldTransition(ctx, addr, stateCode, hand);
+        if (enableDiagnosticLogging)
+        {
+            MaybeLogCallPromptTransition(ctx, memory, stateCode, atkValues, hand, legal);
+            MaybeLogMeldTransition(ctx, memory, stateCode, hand);
+        }
 
         ctx.MeldTracker.ObserveWall(wallRemaining);
         ctx.MeldTracker.ObserveSnapshot(hand, discardCounts, ourSeat: 0, currentAkadora: akaDora);
@@ -112,12 +136,15 @@ internal sealed class BaseEmjVariant : IEmjVariant
         };
     }
 
-    private unsafe List<Tile> ReadHand(byte* basePtr, ref int akaDora)
+    private static int ReadInt32(ReadOnlySpan<byte> memory, int offset) =>
+        BinaryPrimitives.ReadInt32LittleEndian(memory.Slice(offset, 4));
+
+    private List<Tile> ReadHand(ReadOnlySpan<byte> memory, ref int akaDora)
     {
         int len = profile.Limits.HandSize;
         Span<int> raw = stackalloc int[len];
         for (int i = 0; i < len; i++)
-            raw[i] = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
+            raw[i] = ReadInt32(memory, profile.Offsets.HandArrayStart + i * 4);
         var (tiles, aka) = HandArrayDecoder.ReadHand(raw, profile.TileTextureBase);
         akaDora += aka;
         return tiles;
@@ -126,12 +153,12 @@ internal sealed class BaseEmjVariant : IEmjVariant
     private int DecodeTileId(int raw) =>
         HandArrayDecoder.DecodeTileId(raw, profile.TileTextureBase, out _);
 
-    private unsafe int[] ReadScores(byte* basePtr) =>
+    private int[] ReadScores(ReadOnlySpan<byte> memory) =>
     [
-        *(int*)(basePtr + profile.Offsets.SelfScore),
-        *(int*)(basePtr + profile.Offsets.ShimochaScore),
-        *(int*)(basePtr + profile.Offsets.ToimenScore),
-        *(int*)(basePtr + profile.Offsets.KamichaScore),
+        ReadInt32(memory, profile.Offsets.SelfScore),
+        ReadInt32(memory, profile.Offsets.ShimochaScore),
+        ReadInt32(memory, profile.Offsets.ToimenScore),
+        ReadInt32(memory, profile.Offsets.KamichaScore),
     ];
 
     private bool ScoresPlausible(int[] scores)
@@ -143,24 +170,24 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return true;
     }
 
-    private unsafe List<Tile> ReadDoraIndicators(byte* basePtr)
+    private List<Tile> ReadDoraIndicators(ReadOnlySpan<byte> memory)
     {
         var dora = new List<Tile>(1);
-        int rawDora = *(int*)(basePtr + profile.Offsets.DoraIndicator);
+        int rawDora = ReadInt32(memory, profile.Offsets.DoraIndicator);
         int doraTileId = DecodeTileId(rawDora);
         if (doraTileId >= 0)
             dora.Add(Tile.FromId(doraTileId));
         return dora;
     }
 
-    private unsafe int[] ReadDiscardCounts(byte* basePtr)
+    private int[] ReadDiscardCounts(ReadOnlySpan<byte> memory)
     {
         var counts = new int[4]
         {
-            basePtr[profile.Offsets.SelfDiscardCountByte],
-            basePtr[profile.Offsets.ShimochaDiscardCountByte],
-            basePtr[profile.Offsets.ToimenDiscardCountByte],
-            basePtr[profile.Offsets.KamichaDiscardCountByte],
+            memory[profile.Offsets.SelfDiscardCountByte],
+            memory[profile.Offsets.ShimochaDiscardCountByte],
+            memory[profile.Offsets.ToimenDiscardCountByte],
+            memory[profile.Offsets.KamichaDiscardCountByte],
         };
         int cap = profile.Limits.DiscardCountSanityMax;
         for (int i = 0; i < counts.Length; i++)
@@ -169,12 +196,13 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return counts;
     }
 
-    private unsafe int ReadStateCode(AtkValue* atkValues, int atkCount)
+    private int ReadStateCode(IReadOnlyList<AtkValueRecord> atkValues)
     {
-        if (atkValues == null || atkCount <= profile.AtkValues.StateCode)
+        int idx = profile.AtkValues.StateCode;
+        if (atkValues.Count <= idx)
             return -1;
-        var v = atkValues[profile.AtkValues.StateCode];
-        return v.Type == ValueType.Int ? v.Int : -1;
+        var v = atkValues[idx];
+        return v.Type == ValueType.Int ? v.IntValue : -1;
     }
 
     // wall_remaining = initial_live_wall − total_discards. Ignores kan dead-wall draws (minor under-estimate). atkValues[WallCount] uses a different baseline and flips at state transitions, breaking hand-roll detection.
@@ -187,7 +215,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return derived >= 0 && derived <= profile.Limits.WallInitial ? derived : profile.Limits.WallInitial;
     }
 
-    private unsafe SeatView[] BuildSeatViews(byte* basePtr, int[] discardCounts)
+    private SeatView[] BuildSeatViews(ReadOnlySpan<byte> memory, int[] discardCounts)
     {
         var seats = new SeatView[4];
         int?[] discardArrayOffsets =
@@ -199,7 +227,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         ];
         for (int i = 0; i < 4; i++)
         {
-            var discards = ReadDiscardArray(basePtr, discardArrayOffsets[i], discardCounts[i]);
+            var discards = ReadDiscardArray(memory, discardArrayOffsets[i], discardCounts[i]);
             seats[i] = new SeatView(
                 Discards: discards,
                 DiscardIsTedashi: Enumerable.Repeat(true, discards.Count).ToList(),
@@ -214,7 +242,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
     }
 
     /// <summary>Every discard is reported as tedashi — per-tile tedashi bits aren't mapped yet.</summary>
-    private unsafe IReadOnlyList<Tile> ReadDiscardArray(byte* basePtr, int? offset, int reportedCount)
+    private IReadOnlyList<Tile> ReadDiscardArray(ReadOnlySpan<byte> memory, int? offset, int reportedCount)
     {
         if (offset is not int off || reportedCount <= 0)
             return [];
@@ -222,7 +250,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var tiles = new List<Tile>(len);
         for (int i = 0; i < len; i++)
         {
-            int raw = *(int*)(basePtr + off + i * 4);
+            int raw = ReadInt32(memory, off + i * 4);
             if (raw == 0)
                 break;
             int tileId = DecodeTileId(raw);
@@ -234,8 +262,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
     }
 
     /// <summary>State-6 (SelfDeclareList) is dual-use: hand=14 is the self-declare popup, hand!=14 with %3==2 is the post-call discard-from-list popup — gate on hand=14 or stale "Pon" labels strand the loop.</summary>
-    private unsafe LegalActions BuildLegalActions(
-        AtkUnitBase* unit, int stateCode, List<Tile> hand, AtkValue* atkValues, int atkCount)
+    private LegalActions BuildLegalActions(
+        int stateCode, List<Tile> hand, IReadOnlyList<AtkValueRecord> atkValues,
+        bool callModalVisible, IReadOnlyList<string>? listWidgetLabels)
     {
         var states = profile.StateCodes;
         bool isCallPromptState =
@@ -243,22 +272,22 @@ internal sealed class BaseEmjVariant : IEmjVariant
             stateCode == states.CallPromptList ||
             (stateCode == states.SelfDeclareList && hand.Count == 14);
 
-        if (isCallPromptState && IsCallModalVisible(unit))
+        if (isCallPromptState && callModalVisible)
         {
             const ActionFlags acceptMask =
                 ActionFlags.Pon | ActionFlags.Chi |
                 ActionFlags.MinKan | ActionFlags.ShouMinKan |
                 ActionFlags.Ron | ActionFlags.Riichi | ActionFlags.Tsumo;
             LegalActions scanned;
-            if (atkValues != null)
+            if (atkValues.Count > 0)
             {
-                scanned = BuildCallPromptLegal(hand, atkValues, atkCount);
+                scanned = BuildCallPromptLegal(hand, atkValues);
                 if ((scanned.Flags & acceptMask) == 0)
-                    scanned = BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
+                    scanned = BuildCallPromptLegalFromListItems(hand, atkValues, listWidgetLabels);
             }
             else
             {
-                scanned = BuildCallPromptLegalFromListItems(unit, hand, atkValues, atkCount);
+                scanned = BuildCallPromptLegalFromListItems(hand, atkValues, listWidgetLabels);
             }
 
             // State-6 hand=14 popup also exposes the closed hand as a discard surface; surface Discard here so policy.Choose can pick a tile when Pass is the call verdict.
@@ -278,6 +307,30 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return LegalActions.None;
     }
 
+    private unsafe AtkValueRecord[] SnapshotAtkValues(AtkValue* atkValues, ushort atkCount)
+    {
+        if (atkValues == null || atkCount == 0)
+            return [];
+        int n = atkCount;
+        var result = new AtkValueRecord[n];
+        for (int i = 0; i < n; i++)
+        {
+            var v = atkValues[i];
+            string? s = null;
+            if ((v.Type == ValueType.String || v.Type == ValueType.String8 || v.Type == ValueType.ManagedString)
+                && v.String.Value != null)
+            {
+                s = v.String.ToString();
+            }
+            result[i] = new AtkValueRecord(
+                Type: v.Type,
+                IntValue: v.Type == ValueType.Int ? v.Int : 0,
+                UIntValue: v.Type == ValueType.UInt ? v.UInt : (v.Type == ValueType.Bool ? (uint)(v.Byte != 0 ? 1 : 0) : 0u),
+                StringValue: s);
+        }
+        return result;
+    }
+
     private unsafe bool IsCallModalVisible(AtkUnitBase* unit)
     {
         if (unit == null)
@@ -295,10 +348,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return shell != null && shell->NodeFlags.HasFlag(NodeFlags.Visible);
     }
 
-    private unsafe LegalActions BuildCallPromptLegal(
-        List<Tile> hand, AtkValue* atkValues, int atkCount)
+    private LegalActions BuildCallPromptLegal(List<Tile> hand, IReadOnlyList<AtkValueRecord> atkValues)
     {
-        var labels = ScanButtonLabels(atkValues, atkCount, scanLimit: profile.AtkValues.ButtonLabelScanLimit);
+        var labels = ScanButtonLabels(atkValues, scanLimit: profile.AtkValues.ButtonLabelScanLimit);
         if (!labels.HasAnyAcceptOffer)
             return new LegalActions(ActionFlags.Pass, [], [], [], []);
 
@@ -322,8 +374,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         {
             flags |= ActionFlags.Pon;
             // Doman exposes the discarded tile as a consecutive duplicate in [16..21]; fall back to unique-pair heuristic.
-            if (atkValues != null)
-                AppendPonCandidateFromAtkValues(hand, counts, atkValues, atkCount, pons);
+            AppendPonCandidateFromAtkValues(hand, counts, atkValues, pons);
             if (pons.Count == 0)
                 AppendPonCandidate(hand, counts, pons);
         }
@@ -337,7 +388,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
         if (labels.OffersChi)
         {
             flags |= ActionFlags.Chi;
-            AppendChiCandidate(hand, atkValues, atkCount, chis);
+            AppendChiCandidate(hand, atkValues, chis);
         }
 
         return new LegalActions(flags, [], pons, chis, kans);
@@ -356,19 +407,19 @@ internal sealed class BaseEmjVariant : IEmjVariant
     }
 
     /// <summary>The pon-triggering tile is published as a consecutive duplicate Int in [16..21]; scan and pick the tile_id appearing >= 2 times.</summary>
-    private unsafe void AppendPonCandidateFromAtkValues(
-        List<Tile> hand, int[] counts, AtkValue* atkValues, int atkCount, List<MeldCandidate> pons)
+    private void AppendPonCandidateFromAtkValues(
+        List<Tile> hand, int[] counts, IReadOnlyList<AtkValueRecord> atkValues, List<MeldCandidate> pons)
     {
         int scanLo = profile.AtkValues.PonClaimScanLo;
         int scanHi = profile.AtkValues.PonClaimScanHi;
-        int end = Math.Min(atkCount, scanHi + 1);
+        int end = Math.Min(atkValues.Count, scanHi + 1);
         Span<int> seen = stackalloc int[Tile.Count34];
         int? claimedId = null;
         for (int i = scanLo; i < end; i++)
         {
             if (atkValues[i].Type != ValueType.Int)
                 continue;
-            int tileId = DecodeTileId(atkValues[i].Int);
+            int tileId = DecodeTileId(atkValues[i].IntValue);
             if (tileId < 0)
                 continue;
             seen[tileId]++;
@@ -395,36 +446,36 @@ internal sealed class BaseEmjVariant : IEmjVariant
     }
 
     /// <summary>Try the configured chi-claim slot first; if it yields no derivable chi, scan a bounded window for any int slot that does and stop at first match.</summary>
-    private unsafe void AppendChiCandidate(
-        List<Tile> hand, AtkValue* atkValues, int atkCount, List<MeldCandidate> chis)
+    private void AppendChiCandidate(
+        List<Tile> hand, IReadOnlyList<AtkValueRecord> atkValues, List<MeldCandidate> chis)
     {
-        if (atkValues == null)
+        if (atkValues.Count == 0)
             return;
 
         // Exactly one claim tile per prompt — finding extra candidates inflates ChiCandidates.Count and corrupts the Pass-button index derived from it.
         int configuredIdx = profile.AtkValues.ChiClaimedTile;
-        if (TryDeriveChiFromSlot(hand, atkValues, atkCount, configuredIdx, chis))
+        if (TryDeriveChiFromSlot(hand, atkValues, configuredIdx, chis))
             return;
 
-        int scanLimit = Math.Min(atkCount, profile.AtkValues.ChiFallbackScanLimit);
+        int scanLimit = Math.Min(atkValues.Count, profile.AtkValues.ChiFallbackScanLimit);
         for (int i = 0; i < scanLimit; i++)
         {
             if (i == configuredIdx)
                 continue;
-            if (TryDeriveChiFromSlot(hand, atkValues, atkCount, i, chis))
+            if (TryDeriveChiFromSlot(hand, atkValues, i, chis))
                 return;
         }
     }
 
-    private unsafe bool TryDeriveChiFromSlot(
-        List<Tile> hand, AtkValue* atkValues, int atkCount,
+    private bool TryDeriveChiFromSlot(
+        List<Tile> hand, IReadOnlyList<AtkValueRecord> atkValues,
         int slot, List<MeldCandidate> chis)
     {
-        if (slot < 0 || slot >= atkCount)
+        if (slot < 0 || slot >= atkValues.Count)
             return false;
         if (atkValues[slot].Type != ValueType.Int)
             return false;
-        int tileId = DecodeTileId(atkValues[slot].Int);
+        int tileId = DecodeTileId(atkValues[slot].IntValue);
         if (tileId < 0)
             return false;
         var claimed = Tile.FromId(tileId);
@@ -437,33 +488,16 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return true;
     }
 
-    private static int? TryFindUniqueRunOrTriplet(int[] counts, int minCount)
-    {
-        int matchCount = 0;
-        int matchId = -1;
-        for (int id = 0; id < Tile.Count34; id++)
-        {
-            if (counts[id] >= minCount)
-            {
-                matchCount++;
-                matchId = id;
-            }
-        }
-        return matchCount == 1 ? matchId : null;
-    }
-
-    private unsafe ButtonLabelScan ScanButtonLabels(AtkValue* atkValues, int atkCount, int scanLimit)
+    private static ButtonLabelScan ScanButtonLabels(IReadOnlyList<AtkValueRecord> atkValues, int scanLimit)
     {
         var scan = new ButtonLabelScan();
-        int end = Math.Min(atkCount, scanLimit);
+        int end = Math.Min(atkValues.Count, scanLimit);
         for (int i = 0; i < end; i++)
         {
             var v = atkValues[i];
-            if (v.Type != ValueType.String && v.Type != ValueType.String8 && v.Type != ValueType.ManagedString)
+            if (!v.IsString || v.StringValue is null)
                 continue;
-            if (v.String.Value == null)
-                continue;
-            scan.RecordLabel(v.String.ToString());
+            scan.RecordLabel(v.StringValue);
         }
         return scan;
     }
@@ -507,15 +541,15 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    private unsafe LegalActions BuildCallPromptLegalFromListItems(
-        AtkUnitBase* unit, IReadOnlyList<Tile> hand, AtkValue* atkValues, int atkCount)
+    private LegalActions BuildCallPromptLegalFromListItems(
+        IReadOnlyList<Tile> hand, IReadOnlyList<AtkValueRecord> atkValues,
+        IReadOnlyList<string>? listWidgetLabels)
     {
-        var labels = ReadVisibleListItemLabels(unit);
-        if (labels.Count == 0)
+        if (listWidgetLabels is null || listWidgetLabels.Count == 0)
             return new LegalActions(ActionFlags.Pass, [], [], [], []);
 
         ActionFlags flags = ActionFlags.Pass;
-        foreach (var raw in labels)
+        foreach (var raw in listWidgetLabels)
         {
             switch (raw.Trim())
             {
@@ -551,13 +585,13 @@ internal sealed class BaseEmjVariant : IEmjVariant
         var handList = hand as List<Tile> ?? new List<Tile>(hand);
         if ((flags & ActionFlags.Pon) != 0)
         {
-            if (atkValues != null)
-                AppendPonCandidateFromAtkValues(handList, counts, atkValues, atkCount, pons);
+            if (atkValues.Count > 0)
+                AppendPonCandidateFromAtkValues(handList, counts, atkValues, pons);
             if (pons.Count == 0)
                 AppendPonCandidate(handList, counts, pons);
         }
-        if ((flags & ActionFlags.Chi) != 0 && atkValues != null)
-            AppendChiCandidate(handList, atkValues, atkCount, chis);
+        if ((flags & ActionFlags.Chi) != 0 && atkValues.Count > 0)
+            AppendChiCandidate(handList, atkValues, chis);
         if ((flags & ActionFlags.MinKan) != 0)
             AppendKanCandidate(handList, counts, kans);
 
@@ -599,8 +633,6 @@ internal sealed class BaseEmjVariant : IEmjVariant
             string text = FindFirstTextInComponent(itemComp) ?? string.Empty;
             items.Add((node->Y, text));
         }
-        // Top-to-bottom: the game's FireCallback option index for a list click
-        // follows visual order (opt 0 = top button).
         // Top-to-bottom order matches FireCallback option index (opt 0 = top button).
         items.Sort((a, b) => a.y.CompareTo(b.y));
         foreach (var (_, t) in items)
@@ -628,9 +660,9 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return null;
     }
 
-    private unsafe void MaybeLogCallPromptTransition(
-        VariantReadContext ctx, nint addonBase, int stateCode, AtkValue* atkValues, int atkCount,
-        IReadOnlyList<Tile> hand, LegalActions legal)
+    private void MaybeLogCallPromptTransition(
+        VariantReadContext ctx, ReadOnlySpan<byte> memory, int stateCode,
+        IReadOnlyList<AtkValueRecord> atkValues, IReadOnlyList<Tile> hand, LegalActions legal)
     {
         const ActionFlags promptFlags =
             ActionFlags.Pon | ActionFlags.Chi | ActionFlags.MinKan |
@@ -647,10 +679,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
             return;
         lastLoggedCallPromptState = profile.StateCodes.CallPrompt;
 
-        if (atkValues == null)
-            return;
-
-        var ints = SnapshotAtkInts(atkValues, atkCount, max: 24);
+        var ints = SnapshotAtkInts(atkValues, max: 24);
         ctx.EventLogger.RaiseCallPrompt(new CallPromptEvent(
             ObservedAtUtc: DateTime.UtcNow,
             AddonName: Name,
@@ -671,14 +700,15 @@ internal sealed class BaseEmjVariant : IEmjVariant
             var path = System.IO.Path.Combine(dir, "emj-call-prompts.log");
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"# {DateTime.UtcNow:o}  variant={Name}  state={stateCode}  atkCount={atkCount}");
+            sb.AppendLine($"# {DateTime.UtcNow:o}  variant={Name}  state={stateCode}  atkCount={atkValues.Count}");
             sb.Append($"hand={Tiles.Render(hand)}  flags={legal.Flags}  ");
             sb.AppendLine($"pon={legal.PonCandidates.Count} chi={legal.ChiCandidates.Count} kan={legal.KanCandidates.Count}");
 
-            for (int i = 0; i < atkCount && i < 64; i++)
+            int max = Math.Min(atkValues.Count, 64);
+            for (int i = 0; i < max; i++)
                 AppendAtkValue(sb, atkValues[i], i);
 
-            DumpMemoryRegion(sb, addonBase);
+            DumpMemoryRegion(sb, memory);
             sb.AppendLine();
 
             System.IO.File.AppendAllText(path, sb.ToString());
@@ -689,20 +719,20 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    private static unsafe int?[] SnapshotAtkInts(AtkValue* values, int count, int max)
+    private static int?[] SnapshotAtkInts(IReadOnlyList<AtkValueRecord> values, int max)
     {
-        if (values == null || count <= 0)
+        if (values.Count == 0)
             return Array.Empty<int?>();
-        int n = Math.Min(count, max);
+        int n = Math.Min(values.Count, max);
         var result = new int?[n];
         for (int i = 0; i < n; i++)
         {
             var v = values[i];
             result[i] = v.Type switch
             {
-                ValueType.Int => v.Int,
-                ValueType.UInt => unchecked((int)v.UInt),
-                ValueType.Bool => v.Byte != 0 ? 1 : 0,
+                ValueType.Int => v.IntValue,
+                ValueType.UInt => unchecked((int)v.UIntValue),
+                ValueType.Bool => v.UIntValue != 0 ? 1 : 0,
                 _ => (int?)null,
             };
         }
@@ -719,35 +749,34 @@ internal sealed class BaseEmjVariant : IEmjVariant
         return ids;
     }
 
-    private static unsafe void AppendAtkValue(System.Text.StringBuilder sb, AtkValue v, int i)
+    private static void AppendAtkValue(System.Text.StringBuilder sb, AtkValueRecord v, int i)
     {
         sb.Append($"  [{i,3}] {v.Type,-14} ");
         switch (v.Type)
         {
             case ValueType.Int:
-                sb.Append($"Int={v.Int}");
+                sb.Append($"Int={v.IntValue}");
                 break;
             case ValueType.UInt:
-                sb.Append($"UInt={v.UInt} (0x{v.UInt:X})");
+                sb.Append($"UInt={v.UIntValue} (0x{v.UIntValue:X})");
                 break;
             case ValueType.Bool:
-                sb.Append($"Bool={v.Byte != 0}");
+                sb.Append($"Bool={v.UIntValue != 0}");
                 break;
             case ValueType.String:
             case ValueType.String8:
             case ValueType.ManagedString:
-                var s = v.String.Value != null ? v.String.ToString() : "(null)";
-                sb.Append($"String=\"{s}\"");
+                sb.Append($"String=\"{v.StringValue ?? "(null)"}\"");
                 break;
             default:
-                sb.Append($"raw=0x{v.UInt:X}");
+                sb.Append($"raw=0x{v.UIntValue:X}");
                 break;
         }
         sb.AppendLine();
     }
 
-    private unsafe void MaybeLogMeldTransition(
-        VariantReadContext ctx, nint addonBase, int stateCode, IReadOnlyList<Tile> hand)
+    private void MaybeLogMeldTransition(
+        VariantReadContext ctx, ReadOnlySpan<byte> memory, int stateCode, IReadOnlyList<Tile> hand)
     {
         if (hand.Count >= 13 || hand.Count <= 0)
         {
@@ -775,7 +804,7 @@ internal sealed class BaseEmjVariant : IEmjVariant
                 $"inferredMelds={inferredMelds}{(remainder != 0 ? " (off-sync)" : "")}  " +
                 $"hand={Tiles.Render(hand)}");
 
-            DumpAddonMeldRegion(sb, addonBase);
+            DumpAddonMeldRegion(sb, memory);
             DumpAgentEmj(sb);
 
             sb.AppendLine();
@@ -787,12 +816,11 @@ internal sealed class BaseEmjVariant : IEmjVariant
         }
     }
 
-    private static unsafe void DumpAddonMeldRegion(System.Text.StringBuilder sb, nint addonBase)
+    private static void DumpAddonMeldRegion(System.Text.StringBuilder sb, ReadOnlySpan<byte> memory)
     {
-        byte* basePtr = (byte*)addonBase;
         sb.AppendLine("  -- addon @ +0x0500..+0x3000 (per-seat blocks + post-hand area + extended) --");
-        for (int off = 0x0500; off < 0x3000; off += 16)
-            AppendHexRow(sb, basePtr, off, 16);
+        for (int off = 0x0500; off < 0x3000 && off + 16 <= memory.Length; off += 16)
+            AppendHexRow(sb, memory, off, 16);
     }
 
     private static unsafe void DumpAgentEmj(System.Text.StringBuilder sb)
@@ -814,10 +842,28 @@ internal sealed class BaseEmjVariant : IEmjVariant
         sb.AppendLine($"  -- AgentEmj @ 0x{(nint)agent:X} +0x0000..+0x2000 --");
         byte* agentPtr = (byte*)agent;
         for (int off = 0; off < 0x2000; off += 16)
-            AppendHexRow(sb, agentPtr, off, 16);
+            AppendHexRowFromPointer(sb, agentPtr, off, 16);
     }
 
-    private static unsafe void AppendHexRow(System.Text.StringBuilder sb, byte* basePtr, int offset, int length)
+    private static void AppendHexRow(System.Text.StringBuilder sb, ReadOnlySpan<byte> memory, int offset, int length)
+    {
+        sb.Append($"  +0x{offset:X4}: ");
+        for (int i = 0; i < length; i++)
+        {
+            sb.Append($"{memory[offset + i]:X2} ");
+            if (i == 7)
+                sb.Append(' ');
+        }
+        sb.Append(" |");
+        for (int i = 0; i < length; i++)
+        {
+            byte b = memory[offset + i];
+            sb.Append(b >= 32 && b < 127 ? (char)b : '.');
+        }
+        sb.AppendLine("|");
+    }
+
+    private static unsafe void AppendHexRowFromPointer(System.Text.StringBuilder sb, byte* basePtr, int offset, int length)
     {
         sb.Append($"  +0x{offset:X4}: ");
         for (int i = 0; i < length; i++)
@@ -835,17 +881,16 @@ internal sealed class BaseEmjVariant : IEmjVariant
         sb.AppendLine("|");
     }
 
-    private static unsafe void DumpMemoryRegion(System.Text.StringBuilder sb, nint addonBase)
+    private static void DumpMemoryRegion(System.Text.StringBuilder sb, ReadOnlySpan<byte> memory)
     {
-        byte* basePtr = (byte*)addonBase;
-        DumpRange(sb, basePtr, 0x0100, 0x0400);
-        DumpRange(sb, basePtr, 0x0E00, 0x0400);
+        DumpRange(sb, memory, 0x0100, 0x0400);
+        DumpRange(sb, memory, 0x0E00, 0x0400);
     }
 
-    private static unsafe void DumpRange(System.Text.StringBuilder sb, byte* basePtr, int offset, int length)
+    private static void DumpRange(System.Text.StringBuilder sb, ReadOnlySpan<byte> memory, int offset, int length)
     {
         sb.AppendLine($"  -- memory @ +0x{offset:X4}..+0x{offset + length:X4} --");
-        for (int row = 0; row < length; row += 16)
-            AppendHexRow(sb, basePtr, offset + row, 16);
+        for (int row = 0; row < length && offset + row + 16 <= memory.Length; row += 16)
+            AppendHexRow(sb, memory, offset + row, 16);
     }
 }
