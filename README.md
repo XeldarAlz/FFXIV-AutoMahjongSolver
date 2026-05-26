@@ -82,6 +82,12 @@ If you're on JP or OC: seat at a Doman table, run `/mjauto variant dump`, and at
 
 Known edge cases that can stall the bot (manual click resumes play): post-MinKan transient, two consecutive Pon offers within ~1 second.
 
+## More from me
+
+If you liked this plugin, take a look at my other Dalamud work. You might find something else there for you.
+
+→ [XeldarAlz Dalamud Plugins](https://github.com/XeldarAlz/DalamudPlugins)
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE.md](LICENSE.md).
