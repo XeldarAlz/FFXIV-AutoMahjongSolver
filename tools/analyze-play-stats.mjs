@@ -134,15 +134,18 @@ for (const h of hands) {
 }
 const winCount = tsumoCount + ronCount;
 
-// Per-hanchan placement uses the LAST hand-end of a hanchan that observed
-// all four dealer seats. Anything shorter is incomplete and excluded.
+// The plugin's DealerSeat offset isn't validated yet (every hand reads
+// dealer=0, honba=0), so we can't gate on an E1-E4 dealer cycle. Treat any
+// chain of >= MIN_HANDS_FOR_RANK real hands with a final hand-end as a
+// rank sample and snapshot placement from the latest scores_after.
+const MIN_HANDS_FOR_RANK = 4;
 const ranks = [0, 0, 0, 0];
 let rankedHanchans = 0;
 let incompleteHanchans = 0;
 for (const hc of hanchans) {
-  if (hc.dealersSeen.size < 4) { incompleteHanchans++; continue; }
-  const last = [...hc.hands].reverse().find(h => h.end && Array.isArray(h.end.scores_after));
-  if (!last) { incompleteHanchans++; continue; }
+  const realHands = hc.hands.filter(h => isRealHandEnd(h.end));
+  if (realHands.length < MIN_HANDS_FOR_RANK) { incompleteHanchans++; continue; }
+  const last = [...realHands].reverse()[0];
   const scores = last.end.scores_after;
   const seat = hc.ourSeat;
   const sortedDesc = [...scores].map((v, i) => ({ v, i }))
@@ -161,7 +164,7 @@ function pct(n, total) {
 console.log(`games-dir: ${gamesDir}`);
 console.log(`files:     ${files.length} (.ndjson)`);
 console.log(`hands:     ${hands.length} parsed, ${scoredHands} real, ${initArtifactHands} init-artifact (dropped)`);
-console.log(`hanchans:  ${hanchans.length} chained, ${rankedHanchans} complete (E1-E4 dealer cycle), ${incompleteHanchans} incomplete`);
+console.log(`hanchans:  ${hanchans.length} chained, ${rankedHanchans} ranked (>=${MIN_HANDS_FOR_RANK} real hands), ${incompleteHanchans} short`);
 console.log("");
 console.log("=== per-hand stats ===");
 console.log(`  scored hands:    ${scoredHands}`);
@@ -184,5 +187,5 @@ if (rankedHanchans > 0) {
   // sub-2.45 means measurable edge, sub-2.40 is Tokujou-stable equivalent.
 } else {
   console.log("=== per-hanchan stats ===");
-  console.log("  no complete hanchans yet — need at least one continuous E1-E4 run");
+  console.log(`  no ranked hanchans yet — need at least one continuous ${MIN_HANDS_FOR_RANK}-hand chain`);
 }
