@@ -25,7 +25,7 @@
     "Punchline": "Doman Mahjong, solved for you.",
     "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
     "Changelog": "v0.1.2.2: Fix EmjL (NA/EU) tile reading. The EmjL tileTextureBase was off by 2 (76003 instead of 76001), so on NA/EU every tile decoded two ranks too low and 1m/2m tiles were dropped entirely, producing wrong discard suggestions, missing highlights, and tracker desync after a round or two. JP (Emj) was unaffected. The decoder now self-calibrates: if a client patch shifts tile texture IDs again, it detects the dropped tiles, recovers the correct base automatically (both reading and click targeting), and logs a warning instead of silently mis-reading every tile. Added regression tests that decode real captured NA/EU hands through the layout profile so a wrong per-variant base is caught in CI.",
-    "DownloadCount": 964,
+    "DownloadCount": 981,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
@@ -35,6 +35,6 @@
     "LoadPriority": 0,
     "ImageUrls": [],
     "AcceptsFeedback": true,
-    "LastUpdate": "1779873008"
+    "LastUpdate": "1779875004"
   }
 ]
