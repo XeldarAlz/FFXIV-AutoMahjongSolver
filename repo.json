@@ -3,8 +3,8 @@
     "Author": "XeldarAlz",
     "Name": "Doman Mahjong Solver",
     "InternalName": "Mahjong.Plugin.Dalamud",
-    "AssemblyVersion": "0.1.2.2",
-    "TestingAssemblyVersion": "0.1.2.2",
+    "AssemblyVersion": "0.1.2.3",
+    "TestingAssemblyVersion": "0.1.2.3",
     "IsTestingExclusive": false,
     "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
     "ApplicableVersion": "any",
@@ -24,7 +24,7 @@
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",
     "Punchline": "Doman Mahjong, solved for you.",
     "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
-    "Changelog": "v0.1.2.2: Fix EmjL (NA/EU) tile reading. The EmjL tileTextureBase was off by 2 (76003 instead of 76001), so on NA/EU every tile decoded two ranks too low and 1m/2m tiles were dropped entirely, producing wrong discard suggestions, missing highlights, and tracker desync after a round or two. JP (Emj) was unaffected. The decoder now self-calibrates: if a client patch shifts tile texture IDs again, it detects the dropped tiles, recovers the correct base automatically (both reading and click targeting), and logs a warning instead of silently mis-reading every tile. Added regression tests that decode real captured NA/EU hands through the layout profile so a wrong per-variant base is caught in CI.",
+    "Changelog": "v0.1.2.3: Fix the in-game suggestion highlight after a call. Once you called pon, chi, or kan, the highlight could jump to the wall along the top of the board or land on the wrong tile, because it located your hand by geometry and the shrunken hand let the perfectly-aligned wall slots win. It now anchors to the bottom-most row (your hand is always at the bottom) and ignores melded tiles, so the outline stays on the suggested discard. The hand reading and suggestion were always correct; only the on-tile outline was affected.",
     "DownloadCount": 981,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
@@ -35,6 +35,6 @@
     "LoadPriority": 0,
     "ImageUrls": [],
     "AcceptsFeedback": true,
-    "LastUpdate": "1779875004"
+    "LastUpdate": "1779881662"
   }
 ]
