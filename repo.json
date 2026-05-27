@@ -25,7 +25,7 @@
     "Punchline": "Doman Mahjong, solved for you.",
     "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
     "Changelog": "v0.1.2.1: DiscardWeights re-tuned on the post-furiten, kabe/no-chance/tedashi-aware simulator under DomanRuleSet. The policy pursues hand value harder and folds isolated terminals more aggressively: Dora and Yakuhai weights jump roughly 7x and 8x, IsolatedTerminal 15x, DealInCost roughly 3x, with small shrinks to UkeireKinds and UkeireWeighted. Verification across three 1000-hand seeds shows +3, +82, +315 pts/hand vs the previous defaults (avg +133), consistent with selective push/fold and value pursuit.",
-    "DownloadCount": 932,
+    "DownloadCount": 964,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
