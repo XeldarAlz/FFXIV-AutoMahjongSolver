@@ -74,7 +74,8 @@ internal sealed class VariantSelector
             log.Warning(
                 "[MjAuto] No Emj variant matched this addon layout. " +
                 $"Registered variants: {string.Join(", ", variants.Select(v => v.Name))}. " +
-                "Run `/mjauto variant dump` and attach the output to issue #13.");
+                "Run `/mjauto variant dump` and open a new issue at " +
+                "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new with the output attached.");
             EmitVariantMiss(resolvedAddonName, probeResults);
             loggedUnmatched = true;
         }
