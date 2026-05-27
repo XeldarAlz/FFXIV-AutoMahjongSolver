@@ -18,6 +18,10 @@ internal sealed class BaseEmjVariant : IEmjVariant
     private readonly IPluginLog log;
     private readonly string pluginConfigDir;
 
+    // Recomputed per snapshot from the hand array; tracks the configured base unless a client tile-ID shift forces a retune (issue #52).
+    private int effectiveTextureBase;
+    private int lastWarnedTextureBase;
+
     public BaseEmjVariant(LayoutProfile profile, IPluginLog log, string pluginConfigDir)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -26,6 +30,8 @@ internal sealed class BaseEmjVariant : IEmjVariant
         this.profile = profile;
         this.log = log;
         this.pluginConfigDir = pluginConfigDir;
+        effectiveTextureBase = profile.TileTextureBase;
+        lastWarnedTextureBase = profile.TileTextureBase;
     }
 
     public string Name => profile.Name;
@@ -48,14 +54,18 @@ internal sealed class BaseEmjVariant : IEmjVariant
             return false;
 
         byte* basePtr = (byte*)unit;
+        int len = profile.Limits.HandSize;
+        Span<int> raw = stackalloc int[len];
+        for (int i = 0; i < len; i++)
+            raw[i] = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
+        int probeBase = HandArrayDecoder.ResolveTextureBase(raw, profile.TileTextureBase, out _);
         int valid = 0;
         int unknown = 0;
-        for (int i = 0; i < profile.Limits.HandSize; i++)
+        for (int i = 0; i < len; i++)
         {
-            int raw = *(int*)(basePtr + profile.Offsets.HandArrayStart + i * 4);
-            if (raw == 0)
+            if (raw[i] == 0)
                 break;
-            int tileId = DecodeTileId(raw);
+            int tileId = HandArrayDecoder.DecodeTileId(raw[i], probeBase, out _);
             if (tileId >= 0)
                 valid++;
             else
@@ -145,13 +155,28 @@ internal sealed class BaseEmjVariant : IEmjVariant
         Span<int> raw = stackalloc int[len];
         for (int i = 0; i < len; i++)
             raw[i] = ReadInt32(memory, profile.Offsets.HandArrayStart + i * 4);
-        var (tiles, aka) = HandArrayDecoder.ReadHand(raw, profile.TileTextureBase);
+        // Drives every decode this snapshot (hand, dora, discards, atk-value tiles) off one resolved base.
+        effectiveTextureBase = HandArrayDecoder.ResolveTextureBase(raw, profile.TileTextureBase, out bool shifted);
+        if (shifted)
+            WarnTextureBaseShift();
+        var (tiles, aka) = HandArrayDecoder.ReadHand(raw, effectiveTextureBase);
         akaDora += aka;
         return tiles;
     }
 
+    private void WarnTextureBaseShift()
+    {
+        if (effectiveTextureBase == lastWarnedTextureBase)
+            return;
+        lastWarnedTextureBase = effectiveTextureBase;
+        log.Warning(
+            $"[{Name}] tile texture base shifted: configured {profile.TileTextureBase}, decoding with " +
+            $"{effectiveTextureBase} (delta {effectiveTextureBase - profile.TileTextureBase}). " +
+            "A client patch likely moved tile texture IDs; update the layout profile.");
+    }
+
     private int DecodeTileId(int raw) =>
-        HandArrayDecoder.DecodeTileId(raw, profile.TileTextureBase, out _);
+        HandArrayDecoder.DecodeTileId(raw, effectiveTextureBase, out _);
 
     private int[] ReadScores(ReadOnlySpan<byte> memory) =>
     [

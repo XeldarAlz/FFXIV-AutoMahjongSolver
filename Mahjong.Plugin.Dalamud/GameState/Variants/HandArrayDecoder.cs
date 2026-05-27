@@ -25,6 +25,53 @@ internal static class HandArrayDecoder
         }
     }
 
+    /// <summary>Distance in texture-IDs to hunt around the configured base; the only shift seen in the wild was 2 (issue #52), 8 covers a wider patch without inviting false matches.</summary>
+    private const int BaseSearchRadius = 8;
+
+    /// <summary>A frame below this many populated slots carries too little evidence to retune the base safely.</summary>
+    private const int MinSlotsForRetune = 5;
+
+    /// <summary>Populated (non-zero) slots that fail to decode at <paramref name="textureBase"/>.</summary>
+    private static int CountUndecodable(ReadOnlySpan<int> rawSlots, int textureBase)
+    {
+        int bad = 0;
+        for (int i = 0; i < rawSlots.Length; i++)
+            if (rawSlots[i] != 0 && DecodeTileId(rawSlots[i], textureBase, out _) < 0)
+                bad++;
+        return bad;
+    }
+
+    /// <summary>Base to decode with: the configured one unless it drops populated slots, in which case the nearest base that decodes the whole array, so a client tile-ID shift (issue #52) self-heals instead of silently mis-reading every tile; <paramref name="shifted"/> flags a change.</summary>
+    public static int ResolveTextureBase(ReadOnlySpan<int> rawSlots, int configuredBase, out bool shifted)
+    {
+        shifted = false;
+        if (CountUndecodable(rawSlots, configuredBase) == 0)
+            return configuredBase;
+
+        int populated = 0;
+        for (int i = 0; i < rawSlots.Length; i++)
+            if (rawSlots[i] != 0)
+                populated++;
+        if (populated < MinSlotsForRetune)
+            return configuredBase;
+
+        // Nearest base wins; downward before upward at equal distance (every observed shift went down).
+        for (int radius = 1; radius <= BaseSearchRadius; radius++)
+        {
+            if (CountUndecodable(rawSlots, configuredBase - radius) == 0)
+            {
+                shifted = true;
+                return configuredBase - radius;
+            }
+            if (CountUndecodable(rawSlots, configuredBase + radius) == 0)
+            {
+                shifted = true;
+                return configuredBase + radius;
+            }
+        }
+        return configuredBase;
+    }
+
     public static (List<Tile> Tiles, int Akadora) ReadHand(ReadOnlySpan<int> rawSlots, int textureBase)
     {
         var tiles = new List<Tile>(rawSlots.Length);

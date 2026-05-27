@@ -1,3 +1,4 @@
+using System.Linq;
 using Mahjong.Core;
 using Mahjong.Plugin.Dalamud.GameState.Variants;
 
@@ -111,5 +112,67 @@ public class HandArrayDecoderTests
         var raw = new int[14] { 76055, 0, 0, 0, 0, 76041 + 34, 0, 0, 0, 0, 0, 0, 0, 0 };
         int slot = HandArrayDecoder.FindAddonSlot(raw, EmjTextureBase, targetTileId: 4);
         Assert.Equal(5, slot);
+    }
+
+    // --- Self-calibrating base (issue #52): guard against a future tile-ID shift silently mis-reading every tile ---
+    // EU capture snap-auto-029-20260526: 13-tile hand whose array holds 1m/2m at raw 76001/76002. Under a stale
+    // base of 76003 those underflow and drop, collapsing the hand to 11 tiles. ResolveTextureBase must recover 76001.
+    private static int[] Issue52StaleBaseRaw() => new[]
+    {
+        76001, 76002, 76010, 76011, 76015, 76016, 76018, 76020, 76021, 76021, 76021, 76024, 76033, 0,
+    };
+
+    // EU capture snap-auto-001-20260526: 14-tile hand whose lowest raw is 76004, so a stale 76003 drops nothing and
+    // mis-reads silently. Decoded at the correct 76001 it must be all-valid, proving no false retune fires.
+    private static int[] Issue52SilentShiftRaw() => new[]
+    {
+        76004, 76004, 76004, 76005, 76007, 76007, 76012, 76016, 76016, 76017, 76022, 76024, 76026, 76015,
+    };
+
+    [Fact]
+    public void ResolveTextureBase_recovers_shifted_base_when_configured_drops_tiles()
+    {
+        int resolved = HandArrayDecoder.ResolveTextureBase(Issue52StaleBaseRaw(), configuredBase: 76003, out bool shifted);
+        Assert.True(shifted);
+        Assert.Equal(76001, resolved);
+    }
+
+    [Fact]
+    public void ResolveTextureBase_keeps_correct_base_for_full_hand()
+    {
+        int resolved = HandArrayDecoder.ResolveTextureBase(Issue52SilentShiftRaw(), configuredBase: 76001, out bool shifted);
+        Assert.False(shifted);
+        Assert.Equal(76001, resolved);
+    }
+
+    [Fact]
+    public void ResolveTextureBase_does_not_retune_on_a_single_junk_slot()
+    {
+        // One garbage int no base in range can decode must not drag the whole array onto a wrong base.
+        var raw = new int[14] { 76001, 76002, 76010, 76011, 999999, 76016, 76018, 76020, 76021, 0, 0, 0, 0, 0 };
+        int resolved = HandArrayDecoder.ResolveTextureBase(raw, configuredBase: 76001, out bool shifted);
+        Assert.False(shifted);
+        Assert.Equal(76001, resolved);
+    }
+
+    [Fact]
+    public void ResolveTextureBase_ignores_sparse_frames()
+    {
+        // Too few populated slots to retune safely; stay on the configured base even though it drops one.
+        var raw = new int[14] { 76001, 76002, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        int resolved = HandArrayDecoder.ResolveTextureBase(raw, configuredBase: 76003, out bool shifted);
+        Assert.False(shifted);
+        Assert.Equal(76003, resolved);
+    }
+
+    [Fact]
+    public void ReadHand_with_recovered_base_decodes_full_thirteen_tile_hand()
+    {
+        var raw = Issue52StaleBaseRaw();
+        int resolved = HandArrayDecoder.ResolveTextureBase(raw, configuredBase: 76003, out _);
+        var (tiles, _) = HandArrayDecoder.ReadHand(raw, resolved);
+        // 12m 12679p 23336s 6z — the 1m/2m a stale base would have dropped are back.
+        int[] expected = { 0, 1, 9, 10, 14, 15, 17, 19, 20, 20, 20, 23, 32 };
+        Assert.Equal(expected, tiles.Select(t => (int)t.Id).OrderBy(id => id).ToArray());
     }
 }

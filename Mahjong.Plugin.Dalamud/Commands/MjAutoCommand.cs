@@ -1322,8 +1322,8 @@ public sealed class MjAutoCommand : IDisposable
                 return;
             }
 
-            // Hand reader uses 76041 on Emj, 76003 on EmjL — try both.
-            int[] candidateBases = { 76041, 76003 };
+            // Hand reader uses 76041 on Emj, 76001 on EmjL (was 76003 pre-#52); scan the known bases.
+            int[] candidateBases = { 76041, 76001, 76003 };
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"# findtiles  utc={DateTime.UtcNow:o}");

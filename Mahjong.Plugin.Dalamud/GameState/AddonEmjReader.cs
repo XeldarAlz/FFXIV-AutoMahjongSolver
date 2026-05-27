@@ -289,7 +289,9 @@ public sealed class AddonEmjReader : IDisposable
         byte* basePtr = (byte*)unit;
         for (int i = 0; i < len; i++)
             raw[i] = *(int*)(basePtr + ActiveLayout.Offsets.HandArrayStart + i * 4);
-        return Variants.HandArrayDecoder.FindAddonSlot(raw, ActiveLayout.TileTextureBase, target.Id);
+        // Resolve off the same array the read path uses so a tile-ID shift clicks the right slot (issue #52).
+        int eff = Variants.HandArrayDecoder.ResolveTextureBase(raw, ActiveLayout.TileTextureBase, out _);
+        return Variants.HandArrayDecoder.FindAddonSlot(raw, eff, target.Id);
     }
 
     public unsafe StateSnapshot? TryBuildSnapshot()
