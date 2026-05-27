@@ -37,7 +37,8 @@ public sealed record LayoutOffsets(
 
 public sealed record LayoutNodeIds(
     uint CallModalHost,
-    uint CallModalShell);
+    uint CallModalShell,
+    uint MeldContainer = 0);
 
 /// <summary>Scan-window fields are per-variant because EmjL places claim slots differently than Emj.</summary>
 public sealed record LayoutAtkValueIndices(

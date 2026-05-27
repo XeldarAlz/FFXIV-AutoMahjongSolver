@@ -61,7 +61,8 @@ public sealed class HandOverlay : IDisposable
             return;
 
         var viewportOffset = ImGui.GetMainViewport().Pos;
-        var candidates = CollectTileCandidates(unit);
+        uint meldContainer = plugin.AddonReader.ActiveLayout?.NodeIds.MeldContainer ?? 0u;
+        var candidates = CollectTileCandidates(unit, meldContainer);
 
         if (DebugDrawAllRects)
         {
@@ -119,8 +120,8 @@ public sealed class HandOverlay : IDisposable
         dl.AddText(new Vector2(min.X + 2, min.Y + 1), Theme.Pack(Theme.Info), index.ToString());
     }
 
-    /// <summary>Every visible node whose dimensions fit a tile, in NodeList iteration order; no row-finding heuristic applied.</summary>
-    private static unsafe List<(Vector2 Pos, Vector2 Size)> CollectTileCandidates(AtkUnitBase* unit)
+    /// <summary>Visible tile-sized nodes in NodeList order, excluding the meld subtree (<paramref name="meldContainerId"/>). Melded tiles render on the hand's row but are not part of the concealed hand, so leaving them in shifted the highlight after a call (#53). <paramref name="meldContainerId"/> 0 disables the exclusion.</summary>
+    private static unsafe List<(Vector2 Pos, Vector2 Size)> CollectTileCandidates(AtkUnitBase* unit, uint meldContainerId)
     {
         // Parent-chain walk already includes root position and scale — do NOT add unit->X/Y or multiply by unit->Scale on top.
         var result = new List<(Vector2 Pos, Vector2 Size)>(32);
@@ -132,6 +133,8 @@ public sealed class HandOverlay : IDisposable
         {
             var n = uld.NodeList[i];
             if (n == null || !n->IsVisible())
+                continue;
+            if (meldContainerId != 0 && HasAncestorId(n, meldContainerId))
                 continue;
 
             float w = n->Width;
@@ -150,7 +153,7 @@ public sealed class HandOverlay : IDisposable
         return result;
     }
 
-    /// <summary>From the candidate pool, take the tightest Y-cluster of <paramref name="expected"/> tiles, then sort left-to-right.</summary>
+    /// <summary>The player's hand sits at the bottom of the screen, so take the bottom-most (highest-Y) tight row of <paramref name="expected"/> tiles, then sort left-to-right. Picking the *tightest* row instead let the perfectly-aligned wall slots along the top win once a call shrank the hand below the wall's tile count (#53).</summary>
     private static List<(Vector2 Pos, Vector2 Size)>? PickHandRowFromCandidates(List<(Vector2 Pos, Vector2 Size)> candidates, int expected)
     {
         if (candidates.Count < expected)
@@ -158,19 +161,16 @@ public sealed class HandOverlay : IDisposable
 
         candidates.Sort((a, b) => a.Pos.Y.CompareTo(b.Pos.Y));
 
+        // Ascending Y, so the last window within MaxRowYSpread is the lowest on screen — the player's hand.
         int bestStart = -1;
-        float bestSpan = float.MaxValue;
         for (int i = 0; i + expected <= candidates.Count; i++)
         {
             float span = candidates[i + expected - 1].Pos.Y - candidates[i].Pos.Y;
-            if (span < bestSpan)
-            {
-                bestSpan = span;
+            if (span <= MaxRowYSpread)
                 bestStart = i;
-            }
         }
 
-        if (bestStart < 0 || bestSpan > MaxRowYSpread)
+        if (bestStart < 0)
             return null;
 
         var selected = new List<(Vector2 Pos, Vector2 Size)>(expected);
@@ -178,6 +178,15 @@ public sealed class HandOverlay : IDisposable
             selected.Add(candidates[i]);
         selected.Sort((a, b) => a.Pos.X.CompareTo(b.Pos.X));
         return selected;
+    }
+
+    /// <summary>True when <paramref name="id"/> is <paramref name="node"/> or any ancestor. Used to drop the meld subtree from the tile pool.</summary>
+    private static unsafe bool HasAncestorId(AtkResNode* node, uint id)
+    {
+        for (var cur = node; cur != null; cur = cur->ParentNode)
+            if (cur->NodeId == id)
+                return true;
+        return false;
     }
 
     /// <summary>Walks parent chain — result is game-window-local (before multi-viewport desktop offset) and already includes root node position.</summary>

@@ -228,4 +228,16 @@ public class HandArrayDecoderTests
         int[] expected = { 0, 1, 9, 10, 14, 15, 17, 19, 20, 20, 20, 23, 32 };
         Assert.Equal(expected, tiles.Select(t => (int)t.Id).OrderBy(id => id).ToArray());
     }
+
+    // #53: the overlay drops this meld-container subtree from the highlight tile pool so melded tiles
+    // stop shifting the suggested-tile outline after a call. Pins the value; the unsafe node walk and the
+    // bottom-most row selection are verified in-game.
+    [Theory]
+    [InlineData("emj.json")]
+    [InlineData("emj_l.json")]
+    public void Layout_defines_meld_container_node(string file)
+    {
+        var profile = JsonLayoutProfileLoader.Load(Path.Combine(TestPaths.LayoutsDir, file));
+        Assert.Equal(61u, profile.NodeIds.MeldContainer);
+    }
 }

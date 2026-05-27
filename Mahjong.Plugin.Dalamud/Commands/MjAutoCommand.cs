@@ -16,6 +16,7 @@ public sealed class MjAutoCommand : IDisposable
 {
     private const string Primary = "/mjauto";
     private const string HelpText = "Open the Doman Mahjong Solver window. Type /mjauto help for the full command list.";
+    private const string IssuesUrl = "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new";
 
     private readonly Plugin plugin;
     private readonly IChatGui chatGui;
@@ -524,7 +525,7 @@ public sealed class MjAutoCommand : IDisposable
             System.IO.File.WriteAllText(path, sb.ToString());
             chatGui.Print(
                 $"[MjAuto] variant dump → {path}. " +
-                $"Attach this file to issue #13 when reporting a new client variant.");
+                $"Open a new issue at {IssuesUrl} and attach this file when reporting a new client variant.");
         });
     }
 
@@ -1559,6 +1560,20 @@ public sealed class MjAutoCommand : IDisposable
         });
     }
 
+    /// <summary>Ancestor NodeId chain (immediate parent first), so a dump shows which container a tile node belongs to. #53.</summary>
+    private static unsafe string ParentChain(AtkResNode* n)
+    {
+        var sb = new System.Text.StringBuilder();
+        int guard = 0;
+        for (var p = n->ParentNode; p != null && guard < 32; p = p->ParentNode, guard++)
+        {
+            if (sb.Length > 0)
+                sb.Append("<-");
+            sb.Append(p->NodeId);
+        }
+        return sb.Length == 0 ? "(none)" : sb.ToString();
+    }
+
     private static unsafe void WriteNodeRow(
         System.Text.StringBuilder sb, int index, AtkResNode* n)
     {
@@ -1566,7 +1581,7 @@ public sealed class MjAutoCommand : IDisposable
         sb.Append(
             $"  {idxStr} @0x{(nint)n:X}  type={n->Type,-18}  id={n->NodeId,-5}  " +
             $"vis={(n->NodeFlags.HasFlag(FFXIVClientStructs.FFXIV.Component.GUI.NodeFlags.Visible) ? "1" : "0")}  " +
-            $"xy=({n->X:F0},{n->Y:F0})  wh=({n->Width},{n->Height})");
+            $"xy=({n->X:F0},{n->Y:F0})  wh=({n->Width},{n->Height})  parents={ParentChain(n)}");
 
         if (n->Type == FFXIVClientStructs.FFXIV.Component.GUI.NodeType.Image)
         {
