@@ -3,8 +3,8 @@
     "Author": "XeldarAlz",
     "Name": "Doman Mahjong Solver",
     "InternalName": "Mahjong.Plugin.Dalamud",
-    "AssemblyVersion": "0.1.2.1",
-    "TestingAssemblyVersion": "0.1.2.1",
+    "AssemblyVersion": "0.1.2.2",
+    "TestingAssemblyVersion": "0.1.2.2",
     "IsTestingExclusive": false,
     "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
     "ApplicableVersion": "any",
@@ -24,7 +24,7 @@
     "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",
     "Punchline": "Doman Mahjong, solved for you.",
     "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
-    "Changelog": "v0.1.2.1: DiscardWeights re-tuned on the post-furiten, kabe/no-chance/tedashi-aware simulator under DomanRuleSet. The policy pursues hand value harder and folds isolated terminals more aggressively: Dora and Yakuhai weights jump roughly 7x and 8x, IsolatedTerminal 15x, DealInCost roughly 3x, with small shrinks to UkeireKinds and UkeireWeighted. Verification across three 1000-hand seeds shows +3, +82, +315 pts/hand vs the previous defaults (avg +133), consistent with selective push/fold and value pursuit.",
+    "Changelog": "v0.1.2.2: Fix EmjL (NA/EU) tile reading. The EmjL tileTextureBase was off by 2 (76003 instead of 76001), so on NA/EU every tile decoded two ranks too low and 1m/2m tiles were dropped entirely, producing wrong discard suggestions, missing highlights, and tracker desync after a round or two. JP (Emj) was unaffected. The decoder now self-calibrates: if a client patch shifts tile texture IDs again, it detects the dropped tiles, recovers the correct base automatically (both reading and click targeting), and logs a warning instead of silently mis-reading every tile. Added regression tests that decode real captured NA/EU hands through the layout profile so a wrong per-variant base is caught in CI.",
     "DownloadCount": 964,
     "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
@@ -35,6 +35,6 @@
     "LoadPriority": 0,
     "ImageUrls": [],
     "AcceptsFeedback": true,
-    "LastUpdate": "1779805747"
+    "LastUpdate": "1779873008"
   }
 ]

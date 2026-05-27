@@ -1,6 +1,9 @@
+using System.IO;
 using System.Linq;
 using Mahjong.Core;
 using Mahjong.Plugin.Dalamud.GameState.Variants;
+using Mahjong.Plugin.Dalamud.Tests.Replay;
+using Mahjong.Plugin.Game.Variants;
 
 namespace Mahjong.Plugin.Dalamud.Tests;
 
@@ -112,6 +115,56 @@ public class HandArrayDecoderTests
         var raw = new int[14] { 76055, 0, 0, 0, 0, 76041 + 34, 0, 0, 0, 0, 0, 0, 0, 0 };
         int slot = HandArrayDecoder.FindAddonSlot(raw, EmjTextureBase, targetTileId: 4);
         Assert.Equal(5, slot);
+    }
+
+    // --- Real NA EmjL captures (issue #30) ---
+    // These decode raw addon ints read at handArrayStart 0x0DB8 on a live NA EmjL table through the
+    // *loaded* data/layouts/emj_l.json profile, so they pin the texture base against ground truth.
+    // The shipped base of 76003 (off by 2) read every tile two ranks too low and dropped any tile
+    // whose raw was 76001/76002 (1m/2m) as out-of-range, collapsing the hand and desyncing the tracker.
+    // Synthetic fixtures round-trip through the same base and could never catch this; real captures can.
+
+    private static LayoutProfile EmjLProfile() =>
+        JsonLayoutProfileLoader.Load(Path.Combine(TestPaths.LayoutsDir, "emj_l.json"));
+
+    // snap-report-20260526-162159: state-15 pon prompt, 13-tile concealed hand including two 1m (raw 76001)
+    // and one aka 5s (raw 76037). Pre-fix this decoded to only 11 tiles (the two 1m vanished).
+    private static int[] NaPonPromptRaw() => new[]
+    {
+        76001, 76001, 76004, 76005, 76006, 76008, 76011, 76012, 76019, 76023, 76037, 76024, 76032, 0,
+    };
+
+    // snap-report-20260526-161740: state-30 our-turn-discard, 14-tile hand. Pre-fix every tile decoded two
+    // ranks too low (e.g. real 3m shown as 1m), so suggestions targeted a hand the player never held.
+    private static int[] NaDiscardTurnRaw() => new[]
+    {
+        76003, 76006, 76009, 76010, 76015, 76016, 76018, 76019, 76026, 76029, 76030, 76030, 76033, 76010,
+    };
+
+    [Fact]
+    public void EmjL_profile_texture_base_is_76001()
+    {
+        Assert.Equal(76001, EmjLProfile().TileTextureBase);
+    }
+
+    [Fact]
+    public void ReadHand_na_pon_prompt_capture_decodes_full_thirteen_tile_hand()
+    {
+        var (tiles, aka) = HandArrayDecoder.ReadHand(NaPonPromptRaw(), EmjLProfile().TileTextureBase);
+        // 114568m 23p 1556s 5z (the aka is one of the two 5s).
+        int[] expected = { 0, 0, 3, 4, 5, 7, 10, 11, 18, 22, 22, 23, 31 };
+        Assert.Equal(expected, tiles.Select(t => (int)t.Id).OrderBy(id => id).ToArray());
+        Assert.Equal(1, aka);
+    }
+
+    [Fact]
+    public void ReadHand_na_discard_turn_capture_decodes_correct_fourteen_tile_hand()
+    {
+        var (tiles, aka) = HandArrayDecoder.ReadHand(NaDiscardTurnRaw(), EmjLProfile().TileTextureBase);
+        // 369m 11679p 18s 2336z.
+        int[] expected = { 2, 5, 8, 9, 9, 14, 15, 17, 18, 25, 28, 29, 29, 32 };
+        Assert.Equal(expected, tiles.Select(t => (int)t.Id).OrderBy(id => id).ToArray());
+        Assert.Equal(0, aka);
     }
 
     // --- Self-calibrating base (issue #52): guard against a future tile-ID shift silently mis-reading every tile ---

@@ -1,7 +1,7 @@
 {
   "name": "EmjL",
   "addonName": "EmjL",
-  "tileTextureBase": 76003,
+  "tileTextureBase": 76001,
   "offsets": {
     "selfScore": "0x0500",
     "shimochaScore": "0x07E0",
