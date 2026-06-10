@@ -2,7 +2,7 @@
   <img src="Mahjong.Plugin.Dalamud/Images/Icon.png" width="180" alt="Doman Mahjong Solver icon" />
 </p>
 
-<h1 align="center">Doman Mahjong Solver</h1>
+<h1 align="center">Currently unstable, new full overhaul version coming very soon</h1>
 
 <p align="center">
   <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/XeldarAlz/FFXIV-DomanMahjongSolver?style=flat-square&color=blue"></a>
