@@ -1,93 +1,56 @@
-<p align="center">
-  <img src="Mahjong.Plugin.Dalamud/Images/Icon.png" width="180" alt="Doman Mahjong Solver icon" />
-</p>
+# Auto Mahjong Solver
 
-<h1 align="center">Currently unstable, new full overhaul version coming very soon</h1>
+A Dalamud plugin that reads FFXIV Doman Mahjong, computes the mathematically best discard and call, shows a suggestion overlay, and (optionally, behind a gate) plays for you.
 
-<p align="center">
-  <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/XeldarAlz/FFXIV-DomanMahjongSolver?style=flat-square&color=blue"></a>
-  <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/XeldarAlz/FFXIV-DomanMahjongSolver/total?style=flat-square&color=blue"></a>
-  <a href="https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/actions/workflows/ci.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/XeldarAlz/FFXIV-DomanMahjongSolver/ci.yml?style=flat-square"></a>
-  <a href="LICENSE.md"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square"></a>
-</p>
+Command: `/amjs` (alias `/mahjong`).
 
-<p align="center">
-  <em>Doman Mahjong, solved for you. Built on Dalamud.</em>
-</p>
+## Status
 
----
+The solver engine, board reading, and the autonomous play loop are live-verified on casual tables
+(multi-hand sessions without stalls). Riichi declaration and the defense layer are implemented and
+await their first observed in-game trigger.
 
-<p align="center">
-  <img src="Mahjong.Plugin.Dalamud/Images/demo.gif" alt="Doman Mahjong Solver demo" />
-</p>
-
-## What it does
-
-Sit at a mahjong table and a small window watches your hand, suggesting the best discard and why. Three modes:
-
-- **Off**: plugin sleeps.
-- **Hints**: shows the best discard + top alternatives with reasoning. You click every move. *100% safe.*
-- **Auto-play**: plays for you with natural pacing.
-
-## Features
-
-- Three modes: Off / Hints / Auto-play, one click each.
-- Hand, score, and discard-count readout from addon memory.
-- Top-3 discard candidates with short reasoning.
-- Full call handling: Pon · Chi · Kan · Riichi · Tsumo · Ron.
-- Akadora-aware scoring; meld inference for chi/pon/minkan races.
-- Adjustable "thinking" delay so auto-play looks human.
-- Per-dispatch chat-log annotations make regressions a single log paste away.
-
-## Install
-
-In-game: `/xlsettings` → **Experimental** → paste into **Custom Plugin Repositories**:
-
-```
-https://raw.githubusercontent.com/XeldarAlz/DalamudPlugins/main/repo.json
-```
-
-Tick **Enabled**, click **+**, then **Save and Close**. Open `/xlplugins` → **All Plugins**, search for **Doman Mahjong Solver**, and install.
-
-## Commands
-
-| Command | Action |
+| Capability | State |
 |---|---|
-| `/mjauto` | Toggle the main window |
-| `/mjauto pass <N>` | Click button index `<N>` on a call prompt (0 = leftmost) |
-| `/mjauto capture <label>` | Capture the next dispatch payload to disk (debugging) |
-| `/mjauto variant dump` | Dump client variant info (JP / OC verification) |
+| Solver engine (shanten, ukeire) | Implemented, unit-tested |
+| Yaku / Doman scoring | Implemented, unit-tested; han→points table pending live verification |
+| `Emj` hand reader (closed hand, aka) | **Verified live** (incl. under popups) |
+| `Emj` meld reader (chii/pon/kan, feeds meldCount) | **Verified live** — meld strips mapped (self=112 family); post-call discard state 28 handled |
+| `Emj` addon reader (rivers, dora, winds, scores, riichi badges) | Implemented; opponent river↔panel pairing pending live verification (`/amjs state`) |
+| Seen-tile ukeire + furiten avoidance + fold vs riichi | Implemented; fold path awaits first observed opponent riichi |
+| Auto-riichi (declare on live closed tenpai, then tsumogiri) | **Verified live** |
+| Auto-play loop (discard, win, calls, redeal prompt, result screens) | **Verified live** — multi-hand sessions; popup fires retry-verified; settle grace + stall watchdog |
+| Nine-terminals redeal prompt (keep on kokushi shanten ≤ 2) | Implemented; option label match pending first observation |
+| Value-aware discard EV (exact points EV at tenpai; dora/aka/yakuhai retention above) | Implemented, unit-tested |
+| Shared turn policy (engine `TurnPolicy`, used by bot and simulator) | Implemented |
+| Self-play simulator (`tools/AutoMahjongSolver.Simulator`) | Implemented; baseline below |
+| Calling strategy v1 (pon: yakuhai / secured-yaku / dora-tanyao; chi+kan never) | Implemented, unit-tested, simulated; pending live verification |
+| Suggestion overlay | Planned |
+| Chi / kan calls | Planned (chi variant-selection UI unverified; kan flips unreadable dora) |
 
-## Client compatibility
+## Layout
 
-The mahjong addon ships under different names and memory layouts per region. EU is the reference variant; NA has the same texture base + offsets but hasn't been re-verified against v0.1.0.11. JP and OC need verification dumps.
+- `AutoMahjongSolver.Engine` — pure C# (`net10.0`), no Dalamud dependency. Tiles, shanten, ukeire, and (later) yaku/scoring. Fully unit-testable offline.
+- `tests/AutoMahjongSolver.Engine.Tests` — xUnit tests for the engine.
+- `AutoMahjongSolver` — the Dalamud plugin (planned): `Emj` reader, suggestion overlay, gated actuation. Built on ECommons.
 
-| Feature | EU (`Emj`) | NA (`EmjL`) | JP | OC |
-|---|---|---|---|---|
-| Window detection | Yes | Yes | Untested | Untested |
-| Hand / score reading | Yes | Needs re-verification ([#30](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/30)) | Untested | Untested |
-| Discard (state-30 in-hand) | Yes | Probably yes | Untested | Untested |
-| Discard (state-6 self-declare popup) | Yes | Probably yes | Untested | Untested |
-| Post-call discard popup | Yes | Probably yes | Untested | Untested |
-| Pon / Chi / Kan acceptance | Yes | Likely yes ([#30](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/30)) | Untested | Untested |
-| Riichi / Tsumo / Ron commit | Yes (v0.1.0.11) | Untested | Untested | Untested |
+## Build
 
-If you're on JP or OC: seat at a Doman table, run `/mjauto variant dump`, and attach the file to a new issue.
+```
+dotnet test                                                   # engine + tests (no game required)
+dotnet run --project tools/AutoMahjongSolver.Simulator -c Release -- 200 7   # self-play: matches, seed
+```
 
-## Troubleshooting
+Self-play baseline (200 matches, seed 7, all four seats on the current policy), with pon calls
+(2026-06-12): 1125 hands, ~17.5% win rate per seat-hand, ~9.7% deal-in, ~30.5% riichi, 30.1%
+exhaustive draws, average win 5990 points / 3.31 han. The closed-hands-only run before calls was
+38.7% draws / 15.3% wins / 7.2% deal-in / avg win 7302 — pon trades win size for completion rate.
+Policy changes should be judged against these numbers, same seed.
 
-**Misclicked a call prompt?** Click the right option yourself in-game: the plugin resumes on the next turn. Or from chat: `/mjauto pass <N>`.
+The Dalamud plugin project builds against `Dalamud.NET.Sdk` and requires a Dalamud dev environment.
 
-**Plugin stalled on a popup?** Switch to **Off**, click manually, then re-enable **Auto-play**. If you can reproduce, run `/mjauto capture <label>` first: the `FireCallback` payload lands in `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` and is the fastest way to get a fix shipped.
+## Notes
 
-Known edge cases that can stall the bot (manual click resumes play): post-MinKan transient, two consecutive Pon offers within ~1 second.
+Doman Mahjong is standard 4-player Japanese riichi with FFXIV-specific scoring: a flat han-to-points table with **no fu calculation**. The engine targets this ruleset.
 
-## More from me
-
-If you liked this plugin, take a look at my other Dalamud work. You might find something else there for you.
-
-→ [XeldarAlz Dalamud Plugins](https://github.com/XeldarAlz/DalamudPlugins)
-
-## License
-
-AGPL-3.0-or-later. See [LICENSE.md](LICENSE.md).
+Auto-play of a ranked, human-PvP minigame carries account risk. Auto-play is off by default, gated behind an explicit opt-in, and disabled in ranked rooms.

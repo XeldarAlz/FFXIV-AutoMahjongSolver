@@ -9,11 +9,11 @@ body:
       value: |
         Thanks for taking the time to file a bug. Please fill out as much as you can; it makes a huge difference.
 
-        **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/mjauto` → click the bug icon → **Bug report** tab. Every attachment this template asks for has a button right there (Snap, Autosnap, Capture, Variant dump), plus an *Open plugin config dir* button so you can drag the files straight into this issue.
+        **Shortcut for dev-tools users:** if you have *Developer tools* enabled in Settings, open `/amjs` → click the bug icon → **Bug report** tab. Every attachment this template asks for has a button right there (Snap, Autosnap, Capture, Variant dump), plus an *Open plugin config dir* button so you can drag the files straight into this issue.
 
-        If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/new?category=help-troubleshooting); triage is faster there.
+        If you're not sure whether it's a bug or expected behavior, prefer [Help & troubleshooting discussions](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/discussions/new?category=help-troubleshooting); triage is faster there.
 
-        For security issues, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/security/advisories/new) instead.
+        For security issues, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/security/advisories/new) instead.
 
   - type: textarea
     id: what-happened
@@ -40,7 +40,7 @@ body:
     id: plugin-version
     attributes:
       label: Plugin version
-      description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
+      description: Shown in /xlplugins next to "Auto Mahjong Solver", and at the bottom of the /amjs window.
       options:
         - 0.1.1.1
         - 0.1.1.0
@@ -84,7 +84,7 @@ body:
       description: |
         **If you can provide any of these, it's hugely appreciated; they turn guesswork into a fix.**
 
-        Easiest path: open `/mjauto` → bug icon → **Bug report** tab. Press the buttons listed below, then hit *Open plugin config dir* and drag the resulting files into this box. GitHub will attach them and replace the drop with a link.
+        Easiest path: open `/amjs` → bug icon → **Bug report** tab. Press the buttons listed below, then hit *Open plugin config dir* and drag the resulting files into this box. GitHub will attach them and replace the drop with a link.
 
         - **Snap**: one-shot memory dump
         - **Start autosnap**: continuous capture for intermittent bugs (press **Stop autosnap** once you've reproduced it)

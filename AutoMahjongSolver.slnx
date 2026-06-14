@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/AutoMahjongSolver.Engine.Tests/AutoMahjongSolver.Engine.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AutoMahjongSolver.Simulator/AutoMahjongSolver.Simulator.csproj" />
+  </Folder>
+  <Project Path="AutoMahjongSolver.Engine/AutoMahjongSolver.Engine.csproj" />
+  <Project Path="AutoMahjongSolver/AutoMahjongSolver.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

@@ -1,0 +1,16 @@
+{
+    "Author": "XeldarAlz",
+    "Name": "Auto Mahjong Solver",
+    "Punchline": "Doman Mahjong, solved for you.",
+    "Description": "Reads Doman Mahjong, computes the best discard and call, shows a suggestion overlay, and can play for you.",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver",
+    "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-AutoMahjongSolver/main/AutoMahjongSolver/Images/Icon.png",
+    "Tags": [
+        "mahjong",
+        "doman mahjong",
+        "gold saucer",
+        "solver",
+        "automation"
+    ]
+}

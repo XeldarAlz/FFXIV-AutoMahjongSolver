@@ -6,11 +6,11 @@ body:
       value: |
         Thanks for helping verify a client variant. This is the single biggest unblocker for cross-region parity.
 
-        Context: see the [Client variants help wanted](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/42) discussion.
+        Context: see the [Client variants help wanted](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/discussions/42) discussion.
 
         TL;DR of what to do before submitting:
         1. Seat at a Doman Mahjong table (lobby is fine — you don't need to be mid-hand).
-        2. Run `/mjauto variant dump`.
+        2. Run `/amjs variant dump`.
         3. Note where the file lands — under `pluginConfigs/Mahjong.Plugin.Dalamud/`.
         4. Fill out the fields below and attach the dump file.
 
@@ -40,7 +40,7 @@ body:
     id: plugin-version
     attributes:
       label: Plugin version
-      description: Shown in /xlplugins, and at the bottom of /mjauto.
+      description: Shown in /xlplugins, and at the bottom of /amjs.
       placeholder: "v0.1.0.11"
     validations:
       required: true
@@ -57,7 +57,7 @@ body:
       label: What works on your client?
       description: Check anything you've actually observed. "Untested" = leave unchecked.
       options:
-        - label: "/mjauto opens and finds the mahjong window when I sit at a table"
+        - label: "/amjs opens and finds the mahjong window when I sit at a table"
         - label: "The main window populates with scores for all four seats"
         - label: "The main window populates with my hand and top-3 discards"
         - label: "Hints mode shows reasoning that matches what I'd expect"
@@ -92,7 +92,7 @@ body:
     id: screenshot
     attributes:
       label: Main window screenshot (optional)
-      description: A screenshot of /mjauto open at a Doman table is sometimes faster than describing what populates and what doesn't.
+      description: A screenshot of /amjs open at a Doman table is sometimes faster than describing what populates and what doesn't.
 
   - type: textarea
     id: extra

@@ -69,10 +69,10 @@ jobs:
           Remove-Item dalamud.zip
 
       - name: Restore
-        run: dotnet restore Mahjong.Plugin.Dalamud.sln
+        run: dotnet restore AutoMahjongSolver.slnx
 
       - name: Build (Release)
-        run: dotnet build Mahjong.Plugin.Dalamud.sln --configuration Release --no-restore
+        run: dotnet build AutoMahjongSolver.slnx --configuration Release --no-restore
 
       - name: Find test projects
         id: find_tests
@@ -86,12 +86,12 @@ jobs:
 
       - name: Run tests
         if: steps.find_tests.outputs.found == 'true'
-        run: dotnet test Mahjong.Plugin.Dalamud.sln --configuration Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test AutoMahjongSolver.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Upload plugin artifact
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: Mahjong.Plugin.Dalamud-plugin
-          path: Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip
+          name: AutoMahjongSolver-plugin
+          path: AutoMahjongSolver/bin/x64/Release/Mahjong.Plugin.Dalamud/latest.zip
           if-no-files-found: warn

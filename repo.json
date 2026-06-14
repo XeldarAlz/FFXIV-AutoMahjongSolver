@@ -1,40 +1,33 @@
 [
   {
     "Author": "XeldarAlz",
-    "Name": "Doman Mahjong Solver",
+    "Name": "Auto Mahjong Solver",
     "InternalName": "Mahjong.Plugin.Dalamud",
-    "AssemblyVersion": "0.1.2.3",
-    "TestingAssemblyVersion": "0.1.2.3",
+    "AssemblyVersion": "0.2.0.0",
+    "TestingAssemblyVersion": "0.2.0.0",
     "IsTestingExclusive": false,
-    "RepoUrl": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver",
+    "Description": "Reads Doman Mahjong, computes the best discard and call, shows a suggestion overlay, and can play for you.",
+    "Punchline": "Doman Mahjong, solved for you.",
+    "Changelog": "Rebranded to Auto Mahjong Solver. Same plugin (InternalName Mahjong.Plugin.Dalamud), so existing installs update in place.",
+    "RepoUrl": "https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "TestingDalamudApiLevel": 15,
-    "MinimumDalamudVersion": null,
     "Tags": [
       "mahjong",
-      "doman",
-      "gold-saucer",
-      "ai",
+      "doman mahjong",
+      "gold saucer",
+      "solver",
       "automation"
     ],
     "CategoryTags": [
-      "Utility"
+      "utility"
     ],
-    "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-DomanMahjongSolver/main/Mahjong.Plugin.Dalamud/Images/Icon.png",
-    "Punchline": "Doman Mahjong, solved for you.",
-    "Description": "Reads your Doman Mahjong hand and either suggests the best discard or plays the match for you.",
-    "Changelog": "v0.1.2.3: Fix the in-game suggestion highlight after a call. Once you called pon, chi, or kan, the highlight could jump to the wall along the top of the board or land on the wrong tile, because it located your hand by geometry and the shrunken hand let the perfectly-aligned wall slots win. It now anchors to the bottom-most row (your hand is always at the bottom) and ignores melded tiles, so the outline stays on the suggested discard. The hand reading and suggestion were always correct; only the on-tile outline was affected.",
+    "IconUrl": "https://raw.githubusercontent.com/XeldarAlz/FFXIV-AutoMahjongSolver/main/AutoMahjongSolver/Images/Icon.png",
     "DownloadCount": 1539,
-    "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
-    "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/releases/latest/download/latest.zip",
-    "LoadRequiredState": 0,
-    "LoadSync": false,
-    "CanUnloadAsync": false,
-    "LoadPriority": 0,
-    "ImageUrls": [],
-    "AcceptsFeedback": true,
-    "LastUpdate": "1779882403"
+    "DownloadLinkInstall": "https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/releases/latest/download/latest.zip",
+    "DownloadLinkTesting": "https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/releases/latest/download/latest.zip",
+    "AcceptsFeedback": true
   }
 ]

@@ -6,9 +6,9 @@ body:
       value: |
         For "is this normal?" / "am I doing this right?" / "the bot did something weird, is it a bug?" questions.
 
-        If you're confident it's a bug (crash, freeze, reproducible misclick), use [Issues](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new/choose) instead — the bug template captures the same info with clearer triage.
+        If you're confident it's a bug (crash, freeze, reproducible misclick), use [Issues](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/issues/new/choose) instead — the bug template captures the same info with clearer triage.
 
-        If it's a security issue, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/security/advisories/new) — not a public post.
+        If it's a security issue, please use [private vulnerability reporting](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/security/advisories/new) — not a public post.
 
   - type: textarea
     id: what-happened
@@ -23,7 +23,7 @@ body:
     id: plugin-version
     attributes:
       label: Plugin version
-      description: Shown in /xlplugins next to "Doman Mahjong Solver", and at the bottom of the /mjauto window.
+      description: Shown in /xlplugins next to "Auto Mahjong Solver", and at the bottom of the /amjs window.
       placeholder: "v0.1.0.11"
     validations:
       required: true
@@ -79,9 +79,9 @@ body:
     attributes:
       label: Capture file (for stuck states)
       description: |
-        If the bot froze with a popup open: switch to Off, run `/mjauto capture <some-label>`, click the right option manually, then attach the resulting `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` (or `emjl-captures.log` on NA).
+        If the bot froze with a popup open: switch to Off, run `/amjs capture <some-label>`, click the right option manually, then attach the resulting `pluginConfigs/Mahjong.Plugin.Dalamud/emj-captures.log` (or `emjl-captures.log` on NA).
 
-        See the [Reporting bugs discussion](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/41) for the full flow.
+        See the [Reporting bugs discussion](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/discussions/41) for the full flow.
 
   - type: textarea
     id: extra

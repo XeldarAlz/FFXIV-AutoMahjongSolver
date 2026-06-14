@@ -1,4 +1,4 @@
-name: Release Doman Mahjong Solver
+name: Release Auto Mahjong Solver
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v1.0.0.0). Defaults to the ref this is dispatched on.'
+        description: 'Tag to release (e.g. v0.2.0.0). Defaults to the ref this is dispatched on.'
         required: false
         type: string
 
@@ -69,15 +69,15 @@ jobs:
           Remove-Item dalamud.zip
 
       - name: Build (Release)
-        run: dotnet build Mahjong.Plugin.Dalamud.sln --configuration Release
+        run: dotnet build AutoMahjongSolver.slnx --configuration Release
 
       - name: Run tests
-        run: dotnet test Mahjong.Plugin.Dalamud.sln --configuration Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test AutoMahjongSolver.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Stage latest.zip
         shell: pwsh
         run: |
-          $src = 'Mahjong.Plugin.Dalamud/bin/Release/Mahjong.Plugin.Dalamud/latest.zip'
+          $src = 'AutoMahjongSolver/bin/x64/Release/Mahjong.Plugin.Dalamud/latest.zip'
           if (-not (Test-Path $src)) { throw "SDK-built plugin zip not found at $src" }
           Copy-Item $src 'latest.zip' -Force
 

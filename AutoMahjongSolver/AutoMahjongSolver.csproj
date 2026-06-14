@@ -1,0 +1,46 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <!-- Frozen to the original published InternalName: Dalamud keys plugin updates off
+         this name, so keeping it lets every existing install update in place despite the rebrand. -->
+    <AssemblyName>Mahjong.Plugin.Dalamud</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))'">
+    <DalamudLibPath>$(DALAMUD_HOME)/</DalamudLibPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Images\Icon.png" Condition="Exists('Images\Icon.png')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoMahjongSolver.Engine\AutoMahjongSolver.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Linq" />
+  </ItemGroup>
+
+  <!-- DalamudPackager omits the Images/ folder from latest.zip; patch the icon in afterwards. -->
+  <Target Name="BundleIcon"
+          AfterTargets="DefaultDalamudPackagerRelease"
+          Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <ZipPath>$(ProjectDir)$(OutputPath)$(AssemblyName)\latest.zip</ZipPath>
+      <IconPath>$(ProjectDir)Images\Icon.png</IconPath>
+    </PropertyGroup>
+    <Exec WorkingDirectory="$(ProjectDir)"
+          Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)bundle_icon.ps1&quot; -ZipPath &quot;$(ZipPath)&quot; -IconPath &quot;$(IconPath)&quot;"
+          Condition="Exists('$(ZipPath)') and Exists('$(IconPath)')" />
+  </Target>
+
+</Project>

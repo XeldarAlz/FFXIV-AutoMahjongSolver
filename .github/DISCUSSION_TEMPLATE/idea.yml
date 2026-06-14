@@ -6,9 +6,9 @@ body:
       value: |
         Use this template for new features, behavior changes, or UX improvements you'd like to see.
 
-        For things that are *broken*, use [Issues](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/issues/new/choose) instead.
+        For things that are *broken*, use [Issues](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/issues/new/choose) instead.
 
-        Before posting, please skim the [Feature request guidelines](https://github.com/XeldarAlz/FFXIV-DomanMahjongSolver/discussions/45) — they cover what's likely to ship and what's out of scope.
+        Before posting, please skim the [Feature request guidelines](https://github.com/XeldarAlz/FFXIV-AutoMahjongSolver/discussions/45) — they cover what's likely to ship and what's out of scope.
 
   - type: textarea
     id: problem
